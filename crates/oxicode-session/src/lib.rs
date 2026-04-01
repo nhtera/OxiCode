@@ -47,6 +47,20 @@ pub struct SessionSummary {
     pub preview: Option<String>,
 }
 
+impl SessionSummary {
+    /// Human-readable one-line display.
+    pub fn display(&self) -> String {
+        let preview = self.preview.as_deref().unwrap_or("(empty)");
+        format!(
+            "{} [{}] ({} msgs) — {}",
+            self.id.chars().take(8).collect::<String>(),
+            self.model,
+            self.message_count,
+            preview,
+        )
+    }
+}
+
 /// Get the sessions directory path.
 pub fn sessions_dir(config_dir_override: Option<&Path>) -> PathBuf {
     let base = config_dir_override.map_or_else(

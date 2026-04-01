@@ -69,6 +69,13 @@ impl StateStore {
         });
     }
 
+    /// Clear all messages.
+    pub fn clear_messages(&self) {
+        self.update(|state| {
+            state.messages.clear();
+        });
+    }
+
     /// Accumulate usage from a response.
     pub fn add_usage(&self, usage: &Usage) {
         self.update(|state| {

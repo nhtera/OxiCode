@@ -21,7 +21,10 @@ oxicode-session = { workspace = true }
 oxicode-tui = { workspace = true }
 oxicode-tools = { workspace = true }
 oxicode-permissions = { workspace = true }
+oxicode-hooks = { workspace = true }
+oxicode-mcp = { workspace = true }
 clap = { workspace = true }
+dirs = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -9,6 +9,8 @@ members = [
     "crates/oxicode-tools",
     "crates/oxicode-permissions",
     "crates/oxicode-tui",
+    "crates/oxicode-hooks",
+    "crates/oxicode-mcp",
     "crates/oxicode-cli",
 ]
 resolver = "2"
@@ -107,3 +109,5 @@ oxicode-session = { path = "crates/oxicode-session" }
 oxicode-tools = { path = "crates/oxicode-tools" }
 oxicode-permissions = { path = "crates/oxicode-permissions" }
 oxicode-tui = { path = "crates/oxicode-tui" }
+oxicode-hooks = { path = "crates/oxicode-hooks" }
+oxicode-mcp = { path = "crates/oxicode-mcp" }
