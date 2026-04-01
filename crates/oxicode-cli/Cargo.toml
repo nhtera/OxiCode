@@ -1,0 +1,27 @@
+[package]
+name = "oxicode-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "oxicode"
+path = "src/main.rs"
+
+[dependencies]
+oxicode-common = { workspace = true }
+oxicode-config = { workspace = true }
+oxicode-api = { workspace = true }
+oxicode-core = { workspace = true }
+oxicode-state = { workspace = true }
+oxicode-session = { workspace = true }
+oxicode-tui = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }

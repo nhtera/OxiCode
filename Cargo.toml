@@ -1,0 +1,88 @@
+[workspace]
+members = [
+    "crates/oxicode-common",
+    "crates/oxicode-config",
+    "crates/oxicode-api",
+    "crates/oxicode-core",
+    "crates/oxicode-state",
+    "crates/oxicode-session",
+    "crates/oxicode-tui",
+    "crates/oxicode-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/nicktien007/oxicode"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Allow common patterns
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+return_self_not_must_use = "allow"
+struct_field_names = "allow"
+enum_variant_names = "allow"
+unused_self = "allow"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP + SSE
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+reqwest-eventsource = "0.6"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Config
+toml = "0.8"
+dirs = "6"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Git
+git2 = "0.19"
+
+# Futures / streams
+futures = "0.3"
+tokio-stream = "0.1"
+
+# Internal crates
+oxicode-common = { path = "crates/oxicode-common" }
+oxicode-config = { path = "crates/oxicode-config" }
+oxicode-api = { path = "crates/oxicode-api" }
+oxicode-core = { path = "crates/oxicode-core" }
+oxicode-state = { path = "crates/oxicode-state" }
+oxicode-session = { path = "crates/oxicode-session" }
+oxicode-tui = { path = "crates/oxicode-tui" }
