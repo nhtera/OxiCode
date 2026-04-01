@@ -6,6 +6,8 @@ members = [
     "crates/oxicode-core",
     "crates/oxicode-state",
     "crates/oxicode-session",
+    "crates/oxicode-tools",
+    "crates/oxicode-permissions",
     "crates/oxicode-tui",
     "crates/oxicode-cli",
 ]
@@ -33,6 +35,10 @@ return_self_not_must_use = "allow"
 struct_field_names = "allow"
 enum_variant_names = "allow"
 unused_self = "allow"
+unnecessary_literal_bound = "allow"
+needless_pass_by_value = "allow"
+cast_possible_truncation = "allow"
+doc_markdown = "allow"
 
 [workspace.dependencies]
 # Async runtime
@@ -74,9 +80,22 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Git
 git2 = "0.19"
 
+# Markdown + syntax
+pulldown-cmark = "0.12"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+
 # Futures / streams
 futures = "0.3"
 tokio-stream = "0.1"
+
+# Search / filesystem
+glob = "0.3"
+regex = "1"
+walkdir = "2"
+ignore = "0.4"
+
+# Async trait
+async-trait = "0.1"
 
 # Internal crates
 oxicode-common = { path = "crates/oxicode-common" }
@@ -85,4 +104,6 @@ oxicode-api = { path = "crates/oxicode-api" }
 oxicode-core = { path = "crates/oxicode-core" }
 oxicode-state = { path = "crates/oxicode-state" }
 oxicode-session = { path = "crates/oxicode-session" }
+oxicode-tools = { path = "crates/oxicode-tools" }
+oxicode-permissions = { path = "crates/oxicode-permissions" }
 oxicode-tui = { path = "crates/oxicode-tui" }

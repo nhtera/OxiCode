@@ -19,6 +19,8 @@ oxicode-core = { workspace = true }
 oxicode-state = { workspace = true }
 oxicode-session = { workspace = true }
 oxicode-tui = { workspace = true }
+oxicode-tools = { workspace = true }
+oxicode-permissions = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

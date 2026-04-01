@@ -8,8 +8,10 @@ use oxicode_common::constants;
 use oxicode_common::Message;
 use oxicode_config::Settings;
 use oxicode_core::{Conversation, QueryEngine};
+use oxicode_permissions::pipeline::{PermissionMode, PermissionPipeline};
 use oxicode_session::Session;
 use oxicode_state::{AppState, StateStore};
+use oxicode_tools::ToolContext;
 use oxicode_tui::{App, CoreEvent, UiEvent};
 use tokio::sync::mpsc;
 
@@ -95,9 +97,19 @@ async fn main() -> Result<()> {
         Session::new(&settings.model)
     };
 
+    let tool_registry = Arc::new(oxicode_tools::default_registry());
+    let permission_mode = PermissionMode::parse(&settings.permission_mode);
+    let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
+    let tool_context = ToolContext {
+        working_dir: cwd.clone(),
+    };
+
     let engine = Arc::new(QueryEngine::new(
         provider,
         state_store.clone(),
+        tool_registry,
+        permission_pipeline,
+        tool_context,
         settings.model.clone(),
         settings.max_tokens,
         system_prompt,
