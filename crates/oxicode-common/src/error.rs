@@ -47,6 +47,10 @@ impl OxiError {
         }
     }
 
+    pub fn config(message: impl Into<String>) -> Self {
+        Self::Config(message.into())
+    }
+
     pub fn api_with_status(message: impl Into<String>, status: u16) -> Self {
         let retryable = matches!(status, 429 | 500 | 502 | 503 | 529);
         Self::Api {
