@@ -108,6 +108,9 @@ impl SlashCommand for McpCommand {
                 oxicode_mcp::config::McpTransportType::Sse => {
                     cfg.url.as_deref().unwrap_or("sse")
                 }
+                oxicode_mcp::config::McpTransportType::WebSocket => {
+                    cfg.url.as_deref().unwrap_or("websocket")
+                }
             };
             output.push_str(&format!("  {name:<20} {transport}\n"));
         }

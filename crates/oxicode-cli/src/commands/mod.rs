@@ -3,9 +3,18 @@
 //! Commands are invoked with `/name [args]` in the TUI input.
 
 pub mod agent_commands;
+pub mod debug_commands;
 pub mod general;
+pub mod git_commands;
+pub mod hook_commands;
+pub mod mcp_commands;
+pub mod plan_commands;
+pub mod plugin_commands;
 pub mod provider;
 pub mod session_commands;
+pub mod task_commands;
+pub mod team_commands;
+pub mod view_commands;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -122,6 +131,15 @@ impl CommandRegistry {
         cmds.sort_by_key(|(name, _)| *name);
         cmds
     }
+
+    /// Number of registered commands.
+    pub fn len(&self) -> usize {
+        self.commands.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.commands.is_empty()
+    }
 }
 
 /// Create a registry with all built-in commands.
@@ -158,6 +176,82 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(agent_commands::AgentCommand));
     reg.register(Box::new(agent_commands::SkillsCommand));
     reg.register(Box::new(agent_commands::TasksCommand));
+
+    // Phase 5: Plugin commands
+    reg.register(Box::new(plugin_commands::PluginCommand));
+
+    // Phase 5: Plan commands
+    reg.register(Box::new(plan_commands::PlanCommand));
+
+    // Phase 5: Git commands
+    reg.register(Box::new(git_commands::CommitCommand));
+    reg.register(Box::new(git_commands::PrCommand));
+    reg.register(Box::new(git_commands::BranchCommand));
+    reg.register(Box::new(git_commands::LogCommand));
+    reg.register(Box::new(git_commands::StashCommand));
+    reg.register(Box::new(git_commands::PushCommand));
+    reg.register(Box::new(git_commands::PullCommand));
+
+    // Phase 5: Team commands
+    reg.register(Box::new(team_commands::TeamCommand));
+    reg.register(Box::new(team_commands::AgentsCommand));
+
+    // Phase 5: Task commands
+    reg.register(Box::new(task_commands::TaskCommand));
+
+    // Phase 5: MCP extended commands
+    reg.register(Box::new(mcp_commands::McpConnectCommand));
+    reg.register(Box::new(mcp_commands::McpDisconnectCommand));
+    reg.register(Box::new(mcp_commands::McpToolsCommand));
+    reg.register(Box::new(mcp_commands::McpServersCommand));
+
+    // Phase 5: Hook commands
+    reg.register(Box::new(hook_commands::HookCommand));
+
+    // Phase 5: Debug commands
+    reg.register(Box::new(debug_commands::DebugCommand));
+    reg.register(Box::new(debug_commands::DebugToolCallCommand));
+    reg.register(Box::new(debug_commands::TokensCommand));
+    reg.register(Box::new(debug_commands::ContextCommand));
+
+    // Phase 5: View/UI commands
+    reg.register(Box::new(view_commands::ThemeCommand));
+    reg.register(Box::new(view_commands::ShortcutsCommand));
+    reg.register(Box::new(view_commands::AboutCommand));
+    reg.register(Box::new(view_commands::ToolsCommand));
+    reg.register(Box::new(view_commands::FastCommand));
+    reg.register(Box::new(view_commands::VerboseCommand));
+    reg.register(Box::new(view_commands::HistoryCommand));
+    reg.register(Box::new(view_commands::ReviewCommand));
+    reg.register(Box::new(view_commands::LoginCommand));
+    reg.register(Box::new(view_commands::LogoutCommand));
+    reg.register(Box::new(view_commands::ResumeCommand));
+    reg.register(Box::new(view_commands::SkillCommand));
+    reg.register(Box::new(view_commands::CronCommand));
+    reg.register(Box::new(view_commands::ScheduleCommand));
+    reg.register(Box::new(view_commands::WorktreeCommand));
+    reg.register(Box::new(view_commands::ProviderCommand));
+    reg.register(Box::new(view_commands::ContextWindowCommand));
+    reg.register(Box::new(view_commands::EditConfigCommand));
+    reg.register(Box::new(view_commands::ResetCommand));
+    reg.register(Box::new(view_commands::RetryCommand));
+    reg.register(Box::new(view_commands::ForkCommand));
+    reg.register(Box::new(view_commands::SystemPromptCommand));
+    reg.register(Box::new(view_commands::ApproveCommand));
+    reg.register(Box::new(view_commands::RejectCommand));
+    reg.register(Box::new(view_commands::FileCommand));
+    reg.register(Box::new(view_commands::SearchCommand));
+    reg.register(Box::new(view_commands::RunCommand));
+    reg.register(Box::new(view_commands::TestCommand));
+    reg.register(Box::new(view_commands::LintCommand));
+    reg.register(Box::new(view_commands::FormatCommand));
+    reg.register(Box::new(view_commands::BuildCommand));
+    reg.register(Box::new(view_commands::DeployCommand));
+    reg.register(Box::new(view_commands::ChatCommand));
+    reg.register(Box::new(view_commands::CodeCommand));
+    reg.register(Box::new(view_commands::ShareCommand));
+    reg.register(Box::new(view_commands::FeedbackCommand));
+    reg.register(Box::new(view_commands::DocsCommand));
 
     reg
 }
