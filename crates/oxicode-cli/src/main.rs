@@ -1,9 +1,11 @@
 mod commands;
+mod completions;
+mod structured_output;
 
 use std::sync::Arc;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use futures::StreamExt;
 use oxicode_api::{AnthropicProvider, MessageRequest, StreamEvent};
 use oxicode_common::constants;
@@ -16,6 +18,18 @@ use oxicode_state::{AppState, StateStore};
 use oxicode_tools::ToolContext;
 use oxicode_tui::{App, CoreEvent, UiEvent};
 use tokio::sync::mpsc;
+
+use structured_output::NdjsonWriter;
+
+/// Output format for the CLI.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+enum OutputFormat {
+    /// Human-readable text (default, interactive TUI).
+    #[default]
+    Text,
+    /// NDJSON structured output (one JSON object per line to stdout).
+    Json,
+}
 
 /// `OxiCode` — A Rust-powered CLI agent for software engineering.
 #[derive(Parser, Debug)]
@@ -37,11 +51,35 @@ struct Cli {
     /// Send a single message and exit (non-interactive mode).
     #[arg(short = 'p', long)]
     prompt: Option<String>,
+
+    /// Output format: text (default) or json (NDJSON structured output).
+    #[arg(short, long, default_value = "text")]
+    output: OutputFormat,
+
+    /// Generate shell completions for the given shell and exit.
+    #[arg(long, value_name = "SHELL")]
+    completions: Option<clap_complete::Shell>,
+
+    /// Generate man page to stdout and exit.
+    #[arg(long)]
+    man_page: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Fast-exit: generate shell completions
+    if let Some(shell) = cli.completions {
+        completions::generate_completions(shell, &mut std::io::stdout());
+        return Ok(());
+    }
+
+    // Fast-exit: generate man page
+    if cli.man_page {
+        completions::generate_man_page(&mut std::io::stdout())?;
+        return Ok(());
+    }
 
     // Setup tracing
     tracing_subscriber::fmt()
@@ -119,7 +157,16 @@ async fn main() -> Result<()> {
     ));
 
     if let Some(prompt) = cli.prompt {
-        return run_single_prompt(engine, &mut session, &prompt).await;
+        return match cli.output {
+            OutputFormat::Json => {
+                run_single_prompt_json(engine, &mut session, &prompt, &settings.model).await
+            }
+            OutputFormat::Text => run_single_prompt(engine, &mut session, &prompt).await,
+        };
+    }
+
+    if matches!(cli.output, OutputFormat::Json) {
+        eprintln!("Warning: --output json is only supported with --prompt (non-interactive mode).");
     }
 
     run_tui(engine, state_store, &mut session, &settings).await
@@ -152,6 +199,75 @@ async fn run_single_prompt(
         }
     }
 
+    Ok(())
+}
+
+/// Run a single prompt with NDJSON structured output.
+async fn run_single_prompt_json(
+    engine: Arc<QueryEngine>,
+    session: &mut Session,
+    prompt: &str,
+    model: &str,
+) -> Result<()> {
+    let mut writer = NdjsonWriter::new();
+
+    writer.session_start(&session.id, model)?;
+    writer.user_message(prompt)?;
+
+    let mut conversation = Conversation::new();
+    for msg in &session.messages {
+        conversation.push(msg.clone());
+    }
+
+    let user_msg = Message::user(prompt);
+    session.push_message(user_msg.clone());
+    conversation.push(user_msg);
+
+    match engine.execute_turn(&mut conversation).await {
+        Ok(assistant_msg) => {
+            // Emit content blocks as structured events
+            for block in &assistant_msg.content {
+                match block {
+                    oxicode_common::ContentBlock::Text { text } => {
+                        writer.assistant_text(text)?;
+                    }
+                    oxicode_common::ContentBlock::ToolUse { name, input, .. } => {
+                        writer.tool_use(name, input)?;
+                    }
+                    oxicode_common::ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } => {
+                        writer.tool_result(tool_use_id, content, *is_error)?;
+                    }
+                    oxicode_common::ContentBlock::Thinking { .. } => {}
+                }
+            }
+
+            if let Some(usage) = &assistant_msg.usage {
+                writer.emit(&structured_output::NdjsonEvent::Usage {
+                    input_tokens: usage.input_tokens,
+                    output_tokens: usage.output_tokens,
+                })?;
+            }
+
+            let stop_reason = assistant_msg
+                .stop_reason
+                .map_or("end_turn".to_string(), |r| format!("{r:?}").to_lowercase());
+            writer.turn_complete(&stop_reason)?;
+
+            session.push_message(assistant_msg);
+            oxicode_session::save_session(session, None)?;
+        }
+        Err(e) => {
+            writer.error(&e.to_string())?;
+            writer.session_end("error")?;
+            std::process::exit(1);
+        }
+    }
+
+    writer.session_end("complete")?;
     Ok(())
 }
 

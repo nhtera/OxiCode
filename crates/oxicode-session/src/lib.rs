@@ -111,6 +111,13 @@ pub fn save_session(session: &Session, config_dir_override: Option<&Path>) -> Ox
 
 /// Load a session from disk by ID.
 pub fn load_session(id: &str, config_dir_override: Option<&Path>) -> OxiResult<Session> {
+    // Reject path traversal in session IDs
+    if id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(OxiError::Session(format!(
+            "Invalid session ID (contains path separators): {id}"
+        )));
+    }
+
     let dir = sessions_dir(config_dir_override);
     let path = dir.join(format!("{id}.json"));
 

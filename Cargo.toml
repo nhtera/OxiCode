@@ -61,6 +61,8 @@ reqwest-eventsource = "0.6"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+clap_mangen = "0.2"
 
 # TUI
 ratatui = "0.29"
@@ -107,6 +109,9 @@ ignore = "0.4"
 # Async trait
 async-trait = "0.1"
 
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
 # Internal crates
 oxicode-common = { path = "crates/oxicode-common" }
 oxicode-config = { path = "crates/oxicode-config" }
@@ -124,3 +129,24 @@ oxicode-agents = { path = "crates/oxicode-agents" }
 oxicode-skills = { path = "crates/oxicode-skills" }
 oxicode-tasks = { path = "crates/oxicode-tasks" }
 oxicode-plugins = { path = "crates/oxicode-plugins" }
+
+# --- Release Profiles ---
+
+[profile.release]
+lto = "thin"          # Link-Time Optimization (thin = faster builds, good size reduction)
+strip = true          # Strip debug symbols from binary
+codegen-units = 1     # Single codegen unit for maximum optimization
+opt-level = 3         # Maximum speed optimization
+panic = "abort"       # Smaller binary (no unwinding tables)
+
+# Maximum size optimization profile
+[profile.release-small]
+inherits = "release"
+opt-level = "z"       # Optimize for size over speed
+lto = "fat"           # Full LTO for maximum size reduction
+
+# Profiling profile — release speed with debug info
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = true
