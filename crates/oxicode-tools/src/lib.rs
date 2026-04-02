@@ -22,6 +22,10 @@ pub mod tool_search;
 // Task tools
 pub mod task_tools;
 
+// Web tools
+pub mod web_fetch;
+pub mod web_search;
+
 // Phase 5: New tools
 pub mod brief;
 pub mod cron;
@@ -75,5 +79,9 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(task_tools::TaskUpdateTool));
     reg.register(Box::new(task_tools::TaskStopTool));
     reg.register(Box::new(task_tools::TaskOutputTool));
+
+    // Web tools
+    reg.register(Box::new(web_fetch::WebFetchTool));
+    reg.register(Box::new(web_search::WebSearchTool));
     reg
 }
