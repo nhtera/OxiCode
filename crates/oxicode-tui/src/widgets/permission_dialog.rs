@@ -4,15 +4,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
-/// User response to a permission prompt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PermissionResponse {
-    AllowOnce,
-    AlwaysAllow,
-    Deny,
-    AlwaysDeny,
-}
-
 /// Overlay dialog for permission approval/denial.
 pub struct PermissionDialog<'a> {
     tool_name: &'a str,
@@ -32,22 +23,12 @@ impl<'a> PermissionDialog<'a> {
     }
 
     pub fn with_selected(mut self, selected: usize) -> Self {
-        self.selected = selected.min(3);
+        self.selected = selected.min(OPTIONS.len() - 1);
         self
-    }
-
-    /// Get the currently selected response option.
-    pub fn selected_response(&self) -> PermissionResponse {
-        match self.selected {
-            0 => PermissionResponse::AllowOnce,
-            1 => PermissionResponse::AlwaysAllow,
-            2 => PermissionResponse::Deny,
-            _ => PermissionResponse::AlwaysDeny,
-        }
     }
 }
 
-const OPTIONS: [&str; 4] = ["Allow once", "Always allow", "Deny", "Always deny"];
+const OPTIONS: [&str; 2] = ["Allow", "Deny"];
 
 impl Widget for PermissionDialog<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -80,9 +61,14 @@ impl Widget for PermissionDialog<'_> {
         )));
         lines.push(Line::from(""));
 
-        // Input summary.
-        let summary = if self.input_summary.len() > 50 {
-            format!("{}...", &self.input_summary[..47])
+        // Input summary (char-safe truncation to avoid panic on multibyte).
+        let summary = if self.input_summary.chars().count() > 50 {
+            let idx = self
+                .input_summary
+                .char_indices()
+                .nth(47)
+                .map_or(self.input_summary.len(), |(i, _)| i);
+            format!("{}...", &self.input_summary[..idx])
         } else {
             self.input_summary.to_string()
         };

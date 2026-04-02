@@ -55,7 +55,6 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(config_tool::ConfigTool));
     reg.register(Box::new(tool_search::ToolSearchTool));
     reg.register(Box::new(stub_tools::AgentTool));
-    reg.register(Box::new(stub_tools::McpTool));
 
     // Phase 5: Workflow tools
     reg.register(Box::new(plan_mode::EnterPlanModeTool));

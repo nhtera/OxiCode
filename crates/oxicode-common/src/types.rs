@@ -110,6 +110,15 @@ pub struct Usage {
     pub cache_read_input_tokens: Option<u32>,
 }
 
+/// User response to a tool permission prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionResponse {
+    AllowOnce,
+    AlwaysAllow,
+    Deny,
+    AlwaysDeny,
+}
+
 /// Model metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {

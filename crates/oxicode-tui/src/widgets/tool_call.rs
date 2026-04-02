@@ -65,8 +65,13 @@ impl Widget for ToolCallWidget<'_> {
 
         // Input summary (always shown).
         let input_style = Style::default().fg(Color::DarkGray);
-        let summary = if self.input_summary.len() > 80 {
-            format!("{}...", &self.input_summary[..77])
+        let summary = if self.input_summary.chars().count() > 80 {
+            let idx = self
+                .input_summary
+                .char_indices()
+                .nth(77)
+                .map_or(self.input_summary.len(), |(i, _)| i);
+            format!("{}...", &self.input_summary[..idx])
         } else {
             self.input_summary.to_string()
         };

@@ -6,8 +6,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use futures::StreamExt;
-use oxicode_api::{AnthropicProvider, MessageRequest, StreamEvent};
+use oxicode_api::AnthropicProvider;
 use oxicode_common::constants;
 use oxicode_common::Message;
 use oxicode_config::Settings;
@@ -205,7 +204,7 @@ async fn run_single_prompt(
     session.push_message(user_msg.clone());
     conversation.push(user_msg);
 
-    match engine.execute_turn(&mut conversation).await {
+    match engine.execute_turn(&mut conversation, None).await {
         Ok(assistant_msg) => {
             println!("{}", assistant_msg.text());
             session.push_message(assistant_msg);
@@ -241,7 +240,7 @@ async fn run_single_prompt_json(
     session.push_message(user_msg.clone());
     conversation.push(user_msg);
 
-    match engine.execute_turn(&mut conversation).await {
+    match engine.execute_turn(&mut conversation, None).await {
         Ok(assistant_msg) => {
             // Emit content blocks as structured events
             for block in &assistant_msg.content {
@@ -289,12 +288,44 @@ async fn run_single_prompt_json(
     Ok(())
 }
 
+/// Translate a `TurnEvent` from the engine into a `CoreEvent` for the TUI.
+fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
+    use oxicode_core::TurnEvent;
+    match te {
+        TurnEvent::TextDelta(t) => CoreEvent::TextDelta(t),
+        TurnEvent::TurnStart => CoreEvent::StreamStart,
+        TurnEvent::TurnEnd => CoreEvent::StreamEnd,
+        TurnEvent::ToolUseStart { id, name, input } => CoreEvent::ToolUseStart { id, name, input },
+        TurnEvent::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => CoreEvent::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        },
+        TurnEvent::PermissionAsk {
+            tool_name,
+            input_summary,
+            prompt,
+            reply_tx,
+        } => CoreEvent::PermissionAsk {
+            tool_name,
+            input_summary,
+            prompt,
+            reply_tx,
+        },
+        TurnEvent::Error(e) => CoreEvent::Error(e),
+    }
+}
+
 /// Run the interactive TUI.
 async fn run_tui(
     engine: Arc<QueryEngine>,
     state_store: Arc<StateStore>,
     session: &mut Session,
-    settings: &Settings,
+    _settings: &Settings,
 ) -> Result<()> {
     let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(32);
     let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(256);
@@ -308,8 +339,8 @@ async fn run_tui(
     let engine_clone = engine.clone();
     let core_tx_clone = core_tx.clone();
     let state_store_clone = state_store.clone();
-    let model = settings.model.clone();
 
+    // Engine task: owns conversation, calls execute_turn(), forwards events to TUI.
     let engine_handle = tokio::spawn(async move {
         let mut conversation = Conversation::new();
         let state = state_store_clone.current();
@@ -321,54 +352,42 @@ async fn run_tui(
             match event {
                 UiEvent::UserInput(text) => {
                     let user_msg = Message::user(&text);
+                    // Push user message to state_store (for TUI rendering).
+                    // execute_turn does NOT push user messages, only assistant/tool results.
                     state_store_clone.push_message(user_msg.clone());
                     conversation.push(user_msg);
 
-                    let _ = core_tx_clone.send(CoreEvent::StreamStart).await;
+                    // Create TurnEvent channel for this turn.
+                    let (turn_tx, mut turn_rx) =
+                        tokio::sync::mpsc::channel::<oxicode_core::TurnEvent>(256);
 
-                    let request = MessageRequest::new(&model, conversation.api_messages().to_vec())
-                        .with_system(engine_clone.system_prompt_ref())
-                        .with_max_tokens(engine_clone.max_tokens());
+                    // Spawn forwarder: translates TurnEvent -> CoreEvent for TUI.
+                    let core_tx_fwd = core_tx_clone.clone();
+                    let forwarder = tokio::spawn(async move {
+                        while let Some(te) = turn_rx.recv().await {
+                            let _ = core_tx_fwd.send(translate_turn_event(te)).await;
+                        }
+                    });
 
-                    match engine_clone.provider_ref().stream_message(request).await {
-                        Ok(mut stream) => {
-                            let mut full_text = String::new();
-                            while let Some(event_result) = stream.next().await {
-                                match event_result {
-                                    Ok(StreamEvent::TextDelta { text }) => {
-                                        full_text.push_str(&text);
-                                        let _ =
-                                            core_tx_clone.send(CoreEvent::TextDelta(text)).await;
-                                    }
-                                    Ok(StreamEvent::MessageStop { .. }) => break,
-                                    Ok(StreamEvent::Error { message }) => {
-                                        let _ = core_tx_clone.send(CoreEvent::Error(message)).await;
-                                        break;
-                                    }
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        let _ = core_tx_clone
-                                            .send(CoreEvent::Error(e.to_string()))
-                                            .await;
-                                        break;
-                                    }
-                                }
-                            }
+                    // Run execute_turn in this task (owns conversation).
+                    let result = engine_clone
+                        .execute_turn(&mut conversation, Some(&turn_tx))
+                        .await;
 
-                            let mut assistant_msg = Message::assistant();
-                            assistant_msg
-                                .content
-                                .push(oxicode_common::ContentBlock::Text { text: full_text });
-                            state_store_clone.push_message(assistant_msg.clone());
-                            conversation.push(assistant_msg);
-                            state_store_clone.set_streaming(false);
+                    // Drop sender to close forwarder, then wait for it.
+                    drop(turn_tx);
+                    let _ = forwarder.await;
+
+                    // execute_turn already pushed messages to state_store and conversation.
+                    match result {
+                        Ok(_) => {
+                            let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
                         }
                         Err(e) => {
-                            let _ = core_tx_clone.send(CoreEvent::Error(e.to_string())).await;
+                            let _ =
+                                core_tx_clone.send(CoreEvent::Error(e.to_string())).await;
                         }
                     }
-
-                    let _ = core_tx_clone.send(CoreEvent::StreamEnd).await;
                 }
                 UiEvent::Quit => break,
                 _ => {}

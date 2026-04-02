@@ -4,12 +4,13 @@ use futures::StreamExt;
 use oxicode_api::{LlmProvider, MessageRequest, StreamEvent};
 use oxicode_common::{ContentBlock, Message, OxiError, OxiResult, Role, StopReason};
 use oxicode_context::BudgetManager;
-use oxicode_permissions::{PermissionDecision, PermissionPipeline};
+use oxicode_permissions::PermissionPipeline;
 use oxicode_state::StateStore;
-use oxicode_tools::{PermissionLevel, ToolContext, ToolRegistry};
+use oxicode_tools::{ToolContext, ToolRegistry};
 use tokio::sync::Mutex;
 
 use crate::conversation::Conversation;
+use crate::turn_event::{emit, TurnEvent};
 
 /// Maximum number of tool-use turns before forcing a stop.
 const MAX_TOOL_TURNS: usize = 50;
@@ -20,10 +21,10 @@ const DEFAULT_MODEL_MAX_TOKENS: usize = 200_000;
 /// Multi-turn query engine with tool execution support.
 pub struct QueryEngine {
     provider: Arc<dyn LlmProvider>,
-    state_store: Arc<StateStore>,
-    tool_registry: Arc<ToolRegistry>,
-    permission_pipeline: Arc<PermissionPipeline>,
-    tool_context: ToolContext,
+    pub(crate) state_store: Arc<StateStore>,
+    pub(crate) tool_registry: Arc<ToolRegistry>,
+    pub(crate) permission_pipeline: Arc<PermissionPipeline>,
+    pub(crate) tool_context: ToolContext,
     model: String,
     max_tokens: u32,
     system_prompt: String,
@@ -75,7 +76,16 @@ impl QueryEngine {
     ///
     /// Sends messages to the LLM, executes any tool calls, appends results,
     /// and continues until the LLM returns EndTurn or MaxTokens.
-    pub async fn execute_turn(&self, conversation: &mut Conversation) -> OxiResult<Message> {
+    /// Execute a multi-turn conversation loop.
+    ///
+    /// When `event_tx` is `Some`, emits `TurnEvent`s so the TUI can render
+    /// streaming text, tool calls, and permission dialogs in real-time.
+    /// When `None` (single-prompt mode), behavior is unchanged.
+    pub async fn execute_turn(
+        &self,
+        conversation: &mut Conversation,
+        event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
+    ) -> OxiResult<Message> {
         let mut turn_count = 0;
 
         loop {
@@ -96,7 +106,6 @@ impl QueryEngine {
                         &self.tool_context.working_dir,
                     )
                     .await?;
-                // Only replace when messages were actually compacted.
                 if defended.len() < conversation.len() {
                     tracing::info!(
                         before = conversation.len(),
@@ -107,7 +116,7 @@ impl QueryEngine {
                 }
             }
 
-            let assistant_msg = self.stream_one_turn(conversation).await?;
+            let assistant_msg = self.stream_one_turn(conversation, event_tx).await?;
             let stop_reason = assistant_msg.stop_reason.unwrap_or(StopReason::EndTurn);
 
             // Extract tool use blocks from the assistant message.
@@ -123,14 +132,13 @@ impl QueryEngine {
                 .collect();
 
             if tool_uses.is_empty() || stop_reason == StopReason::EndTurn {
-                // No tool calls or LLM signaled end — we're done.
                 return Ok(assistant_msg);
             }
 
             // Execute each tool and build a user message with tool results.
             let mut tool_results = Vec::new();
             for (id, name, input) in &tool_uses {
-                let result = self.execute_tool(id, name, input).await;
+                let result = self.execute_tool(id, name, input, event_tx).await;
                 tool_results.push(result);
             }
 
@@ -148,7 +156,6 @@ impl QueryEngine {
             self.state_store.push_message(result_msg.clone());
             conversation.push(result_msg);
 
-            // If stop reason was ToolUse, loop back for the LLM to continue.
             if stop_reason != StopReason::ToolUse {
                 return Ok(assistant_msg);
             }
@@ -158,22 +165,47 @@ impl QueryEngine {
     }
 
     /// Stream a single LLM turn, collecting the full assistant message.
-    async fn stream_one_turn(&self, conversation: &mut Conversation) -> OxiResult<Message> {
-        let mut tool_schemas = self.tool_registry.schemas_json();
+    /// Cleanup helper: reset streaming state and emit error + end events.
+    async fn abort_streaming(
+        &self,
+        event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
+        error: &OxiError,
+    ) {
+        self.state_store.set_streaming(false);
+        emit(event_tx, TurnEvent::Error(error.to_string())).await;
+        emit(event_tx, TurnEvent::TurnEnd).await;
+    }
 
-        // Append MCP tool schemas so the LLM knows about connected MCP servers.
+    /// Build a MessageRequest with all tool schemas (built-in + MCP).
+    fn build_request(&self, conversation: &Conversation) -> MessageRequest {
+        let mut tool_schemas = self.tool_registry.schemas_json();
         for (server_name, server_tools) in self.mcp_tool_schemas() {
             tool_schemas.extend(oxicode_mcp::mcp_tools_to_schemas(&server_name, &server_tools));
         }
-
         let mut request = MessageRequest::new(&self.model, conversation.api_messages().to_vec())
             .with_system(&self.system_prompt)
             .with_max_tokens(self.max_tokens);
         request.tools = tool_schemas;
+        request
+    }
+
+    async fn stream_one_turn(
+        &self,
+        conversation: &mut Conversation,
+        event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
+    ) -> OxiResult<Message> {
+        let request = self.build_request(conversation);
 
         self.state_store.set_streaming(true);
+        emit(event_tx, TurnEvent::TurnStart).await;
 
-        let mut stream = self.provider.stream_message(request).await?;
+        let mut stream = match self.provider.stream_message(request).await {
+            Ok(s) => s,
+            Err(e) => {
+                self.abort_streaming(event_tx, &e).await;
+                return Err(e);
+            }
+        };
         let mut assistant_msg = Message::assistant();
         assistant_msg.model = Some(self.model.clone());
 
@@ -183,14 +215,22 @@ impl QueryEngine {
         let mut current_tool_input_json = String::new();
 
         while let Some(event_result) = stream.next().await {
-            let event = event_result?;
+            let event = match event_result {
+                Ok(ev) => ev,
+                Err(e) => {
+                    self.abort_streaming(event_tx, &e).await;
+                    return Err(e);
+                }
+            };
 
             match event {
                 StreamEvent::TextDelta { text } => {
                     current_text.push_str(&text);
+                    emit(event_tx, TurnEvent::TextDelta(text)).await;
                 }
                 StreamEvent::ThinkingDelta { thinking } => {
-                    tracing::debug!("Thinking: {}", &thinking[..thinking.len().min(50)]);
+                    let preview: String = thinking.chars().take(50).collect();
+                    tracing::debug!("Thinking: {}", preview);
                 }
                 StreamEvent::ToolUseStart { id, name } => {
                     // Finalize any pending text block.
@@ -213,9 +253,18 @@ impl QueryEngine {
                             serde_json::from_str(&current_tool_input_json)
                                 .unwrap_or(serde_json::Value::Object(serde_json::Map::default()));
 
+                        let id = std::mem::take(&mut current_tool_id);
+                        let name = std::mem::take(&mut current_tool_name);
+
+                        emit(event_tx, TurnEvent::ToolUseStart {
+                            id: id.clone(),
+                            name: name.clone(),
+                            input: input.clone(),
+                        }).await;
+
                         assistant_msg.content.push(ContentBlock::ToolUse {
-                            id: std::mem::take(&mut current_tool_id),
-                            name: std::mem::take(&mut current_tool_name),
+                            id,
+                            name,
                             input,
                         });
                         current_tool_input_json.clear();
@@ -233,6 +282,7 @@ impl QueryEngine {
                         });
                     }
                     assistant_msg.stop_reason = Some(stop_reason);
+                    emit(event_tx, TurnEvent::TurnEnd).await;
 
                     if stop_reason == StopReason::MaxTokens {
                         tracing::warn!("Response truncated — max tokens reached");
@@ -240,8 +290,9 @@ impl QueryEngine {
                     break;
                 }
                 StreamEvent::Error { message } => {
-                    self.state_store.set_streaming(false);
-                    return Err(OxiError::api(message));
+                    let err = OxiError::api(&message);
+                    self.abort_streaming(event_tx, &err).await;
+                    return Err(err);
                 }
                 StreamEvent::Ping => {}
             }
@@ -256,141 +307,4 @@ impl QueryEngine {
         Ok(assistant_msg)
     }
 
-    /// Collect MCP tool definitions grouped by server name.
-    fn mcp_tool_schemas(&self) -> Vec<(String, Vec<oxicode_mcp::McpToolDef>)> {
-        let mut by_server: std::collections::HashMap<String, Vec<oxicode_mcp::McpToolDef>> =
-            std::collections::HashMap::new();
-        for (server_name, server) in self.tool_context.mcp_manager.all_tools() {
-            // Extract actual server name from prefix (e.g., "myserver__tool" -> "myserver").
-            let sn = server_name
-                .split("__")
-                .next()
-                .unwrap_or(&server_name)
-                .to_string();
-            by_server.entry(sn).or_default().push(server.clone());
-        }
-        by_server.into_iter().collect()
-    }
-
-    /// Try executing an MCP tool by its prefixed name (server__tool).
-    async fn try_mcp_tool(
-        &self,
-        tool_name: &str,
-        input: &serde_json::Value,
-    ) -> Option<oxicode_tools::ToolResult> {
-        let (server, tool) = oxicode_mcp::McpServerManager::resolve_tool_name(tool_name)?;
-        match self
-            .tool_context
-            .mcp_manager
-            .call_tool(server, tool, input.clone())
-            .await
-        {
-            Ok(result) => {
-                let text: String = result
-                    .content
-                    .iter()
-                    .filter_map(|c| c.as_text())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let has_non_text = result.content.iter().any(|c| c.as_text().is_none());
-                let mut output = if text.is_empty() {
-                    "(no text content returned)".to_string()
-                } else {
-                    text
-                };
-                if has_non_text {
-                    output.push_str(
-                        "\n[Note: non-text content (images/resources) was returned but omitted]",
-                    );
-                }
-                if result.is_error {
-                    Some(oxicode_tools::ToolResult::error(output))
-                } else {
-                    Some(oxicode_tools::ToolResult::success(output))
-                }
-            }
-            Err(e) => Some(oxicode_tools::ToolResult::error(format!(
-                "MCP tool call failed: {e}"
-            ))),
-        }
-    }
-
-    /// Execute a single tool, checking permissions first.
-    async fn execute_tool(
-        &self,
-        tool_use_id: &str,
-        tool_name: &str,
-        input: &serde_json::Value,
-    ) -> ContentBlock {
-        // Map tool permission level to the permissions crate type.
-        let tool_level = self.tool_registry.get(tool_name).map_or(
-            oxicode_permissions::pipeline::ToolPermissionLevel::System,
-            |t| match t.permission_level() {
-                PermissionLevel::ReadOnly => {
-                    oxicode_permissions::pipeline::ToolPermissionLevel::ReadOnly
-                }
-                PermissionLevel::FileWrite => {
-                    oxicode_permissions::pipeline::ToolPermissionLevel::FileWrite
-                }
-                PermissionLevel::ShellExec => {
-                    oxicode_permissions::pipeline::ToolPermissionLevel::ShellExec
-                }
-                PermissionLevel::System => {
-                    oxicode_permissions::pipeline::ToolPermissionLevel::System
-                }
-            },
-        );
-
-        // Check permissions.
-        let decision = self.permission_pipeline.check(tool_name, tool_level, input);
-
-        match decision {
-            PermissionDecision::Allow => {
-                // Try built-in registry first, then MCP tools.
-                let result = if self.tool_registry.get(tool_name).is_some() {
-                    self.tool_registry
-                        .execute(tool_name, input.clone(), &self.tool_context)
-                        .await
-                } else if let Some(mcp_result) = self.try_mcp_tool(tool_name, input).await {
-                    Ok(mcp_result)
-                } else {
-                    Err(OxiError::Tool {
-                        name: tool_name.to_string(),
-                        message: format!("Tool '{tool_name}' not found"),
-                    })
-                };
-
-                match result {
-                    Ok(result) => ContentBlock::ToolResult {
-                        tool_use_id: tool_use_id.to_string(),
-                        content: result.content,
-                        is_error: result.is_error,
-                    },
-                    Err(e) => ContentBlock::ToolResult {
-                        tool_use_id: tool_use_id.to_string(),
-                        content: format!("Tool error: {e}"),
-                        is_error: true,
-                    },
-                }
-            }
-            PermissionDecision::Deny(reason) => {
-                self.permission_pipeline.record_denial(tool_name, &reason);
-                ContentBlock::ToolResult {
-                    tool_use_id: tool_use_id.to_string(),
-                    content: format!("Permission denied: {reason}"),
-                    is_error: true,
-                }
-            }
-            PermissionDecision::Ask(prompt) => {
-                // TODO: In Phase 2 TUI integration, this will send a permission
-                // dialog event and wait for user response. For now, auto-deny.
-                tracing::info!("Permission ask (auto-deny for now): {}", prompt);
-                ContentBlock::ToolResult {
-                    tool_use_id: tool_use_id.to_string(),
-                    content: format!("Permission required: {prompt}"),
-                    is_error: true,
-                }
-            }
-        }
-    }
 }

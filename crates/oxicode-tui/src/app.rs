@@ -13,9 +13,27 @@ use tokio::sync::{mpsc, watch};
 
 use crate::events::{CoreEvent, UiEvent};
 use crate::widgets::{
-    AgentInfo, AgentPanel, InputBox, MessageView, Notification, NotificationWidget, SplitPane,
-    StatusBar, TaskInfo, TaskPanel,
+    ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageView, Notification,
+    NotificationWidget, PermissionDialog, SplitPane, StatusBar, TaskInfo, TaskPanel,
 };
+
+/// A tool call in progress (between ToolUseStart and ToolResult events).
+struct ActiveToolCall {
+    id: String,
+    name: String,
+    input_summary: String,
+    /// `Some((content, is_error))` when the tool has completed.
+    result: Option<(String, bool)>,
+}
+
+/// A pending permission request awaiting user response.
+struct PendingPermission {
+    tool_name: String,
+    input_summary: String,
+    prompt: String,
+    selected: usize,
+    reply_tx: tokio::sync::oneshot::Sender<oxicode_common::PermissionResponse>,
+}
 
 /// Main TUI application.
 pub struct App {
@@ -32,6 +50,10 @@ pub struct App {
     split_pane: SplitPane,
     /// Toast notifications rendered as an overlay.
     notifications: Vec<Notification>,
+    /// Tool calls in progress during the current turn.
+    active_tools: Vec<ActiveToolCall>,
+    /// Permission dialog state (blocks input while active).
+    pending_permission: Option<PendingPermission>,
 }
 
 impl App {
@@ -51,6 +73,8 @@ impl App {
             should_quit: false,
             split_pane: SplitPane::new(),
             notifications: Vec::new(),
+            active_tools: Vec::new(),
+            pending_permission: None,
         }
     }
 
@@ -139,7 +163,18 @@ impl App {
             } else {
                 None
             };
-            let message_view = MessageView::new(&state.messages, streaming, self.scroll_offset);
+            // Build active tools snapshot for streaming display.
+            let active_tool_info: Vec<ActiveToolInfo<'_>> = self
+                .active_tools
+                .iter()
+                .map(|t| ActiveToolInfo {
+                    name: &t.name,
+                    input_summary: &t.input_summary,
+                    result: t.result.as_ref().map(|(c, e)| (c.as_str(), *e)),
+                })
+                .collect();
+            let message_view =
+                MessageView::new(&state.messages, streaming, &active_tool_info, self.scroll_offset);
             frame.render_widget(message_view, left_area);
 
             // Right pane: agent panel (top) + task panel (bottom)
@@ -181,6 +216,17 @@ impl App {
                 frame.render_widget(notif_widget, content_area);
             }
 
+            // Permission dialog overlay (drawn on top of everything).
+            if let Some(ref perm) = self.pending_permission {
+                let dialog = PermissionDialog::new(
+                    &perm.tool_name,
+                    &perm.input_summary,
+                    &perm.prompt,
+                )
+                .with_selected(perm.selected);
+                frame.render_widget(dialog, content_area);
+            }
+
             // Input box — convert char cursor to byte offset for widget
             let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
             let input = InputBox::new(&self.input_text, byte_cursor, true);
@@ -191,6 +237,12 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) {
+        // Permission dialog takes priority over all other input.
+        if self.pending_permission.is_some() {
+            self.handle_permission_key(key).await;
+            return;
+        }
+
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
                 let _ = self.ui_tx.send(UiEvent::Quit).await;
@@ -253,6 +305,43 @@ impl App {
         }
     }
 
+    /// Handle key events when the permission dialog is active.
+    async fn handle_permission_key(&mut self, key: KeyEvent) {
+        let Some(ref mut perm) = self.pending_permission else {
+            return;
+        };
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Up) => {
+                perm.selected = perm.selected.saturating_sub(1);
+            }
+            (_, KeyCode::Down) => {
+                perm.selected = (perm.selected + 1).min(1);
+            }
+            (_, KeyCode::Enter) => {
+                let response = match perm.selected {
+                    0 => oxicode_common::PermissionResponse::AllowOnce,
+                    _ => oxicode_common::PermissionResponse::Deny,
+                };
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm.reply_tx.send(response);
+                }
+            }
+            (_, KeyCode::Esc) => {
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
+                }
+                let _ = self.ui_tx.send(UiEvent::Quit).await;
+                self.should_quit = true;
+            }
+            _ => {}
+        }
+    }
+
     fn handle_core_event(&mut self, event: CoreEvent) {
         match event {
             CoreEvent::TextDelta(text) => {
@@ -264,12 +353,70 @@ impl App {
             }
             CoreEvent::StreamEnd | CoreEvent::MessageComplete => {
                 self.streaming_text.clear();
+                self.active_tools.clear();
                 self.scroll_offset = u16::MAX;
             }
             CoreEvent::Error(msg) => {
                 tracing::error!("Core error: {}", msg);
+                // Clear streaming state on error (engine may not send StreamEnd).
+                self.streaming_text.clear();
+                self.active_tools.clear();
+            }
+            CoreEvent::ToolUseStart { id, name, input } => {
+                let summary = summarize_input(&input);
+                self.active_tools.push(ActiveToolCall {
+                    id,
+                    name,
+                    input_summary: summary,
+                    result: None,
+                });
+                self.scroll_offset = u16::MAX;
+            }
+            CoreEvent::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => {
+                if let Some(tool) = self.active_tools.iter_mut().find(|t| t.id == tool_use_id) {
+                    tool.result = Some((content, is_error));
+                }
+                self.scroll_offset = u16::MAX;
+            }
+            CoreEvent::PermissionAsk {
+                tool_name,
+                input_summary,
+                prompt,
+                reply_tx,
+            } => {
+                self.pending_permission = Some(PendingPermission {
+                    tool_name,
+                    input_summary,
+                    prompt,
+                    selected: 0,
+                    reply_tx,
+                });
             }
         }
+    }
+}
+
+/// Summarize tool input for display (show the most relevant field).
+fn summarize_input(input: &serde_json::Value) -> String {
+    let raw = if let Some(cmd) = input.get("command").and_then(|v| v.as_str()) {
+        cmd.to_string()
+    } else if let Some(path) = input.get("file_path").and_then(|v| v.as_str()) {
+        path.to_string()
+    } else if let Some(pattern) = input.get("pattern").and_then(|v| v.as_str()) {
+        let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        format!("{pattern} in {path}")
+    } else {
+        serde_json::to_string(input).unwrap_or_else(|_| "{}".to_string())
+    };
+    // Truncate to 80 chars.
+    if let Some((idx, _)) = raw.char_indices().nth(80) {
+        format!("{}...", &raw[..idx])
+    } else {
+        raw
     }
 }
 

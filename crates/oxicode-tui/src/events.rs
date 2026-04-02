@@ -14,7 +14,8 @@ pub enum UiEvent {
 }
 
 /// Events flowing from core engine to TUI for rendering.
-#[derive(Debug, Clone)]
+///
+/// Note: Cannot derive Clone because `PermissionAsk` contains a oneshot sender.
 pub enum CoreEvent {
     /// New text delta from streaming response.
     TextDelta(String),
@@ -26,4 +27,23 @@ pub enum CoreEvent {
     Error(String),
     /// New assistant message completed.
     MessageComplete,
+    /// A tool call is about to execute.
+    ToolUseStart {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    /// A tool call completed.
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        is_error: bool,
+    },
+    /// Permission required — TUI must show dialog and send response via `reply_tx`.
+    PermissionAsk {
+        tool_name: String,
+        input_summary: String,
+        prompt: String,
+        reply_tx: tokio::sync::oneshot::Sender<oxicode_common::PermissionResponse>,
+    },
 }
