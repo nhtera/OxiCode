@@ -54,9 +54,8 @@ impl HookManager {
     ///
     /// Returns `HookResponse::Pass` if no hook is configured for this event.
     pub async fn fire(&self, event: HookEvent, data: serde_json::Value) -> HookResponse {
-        let hook_def = match self.config.get(event) {
-            Some(def) => def,
-            None => return HookResponse::Pass,
+        let Some(hook_def) = self.config.get(event) else {
+            return HookResponse::Pass;
         };
 
         let payload = HookPayload {

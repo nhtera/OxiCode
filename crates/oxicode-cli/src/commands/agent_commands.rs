@@ -5,6 +5,8 @@
 //!   /skills — list active skills for this session
 //!   /tasks  — list background tasks registered in the task manager
 
+use std::fmt::Write as _;
+
 use super::{CommandContext, CommandOutput, SlashCommand};
 
 // ── /agent ──────────────────────────────────────────────────────────────────
@@ -27,10 +29,11 @@ impl SlashCommand for AgentCommand {
         }
         let mut output = String::from("Active Agents:\n");
         for agent in &state.active_agents {
-            output.push_str(&format!(
-                "  {} [{}] — {}\n",
+            let _ = writeln!(
+                output,
+                "  {} [{}] — {}",
                 agent.name, agent.status, agent.started_at
-            ));
+            );
         }
         CommandOutput::Message(output)
     }
@@ -58,7 +61,7 @@ impl SlashCommand for SkillsCommand {
         }
         let mut output = String::from("Active Skills:\n");
         for skill in &state.active_skills {
-            output.push_str(&format!("  - {skill}\n"));
+            let _ = writeln!(output, "  - {skill}");
         }
         CommandOutput::Message(output)
     }
@@ -84,10 +87,11 @@ impl SlashCommand for TasksCommand {
         }
         let mut output = String::from("Background Tasks:\n");
         for task in &state.background_tasks {
-            output.push_str(&format!(
-                "  #{} [{}] {}: {}\n",
+            let _ = writeln!(
+                output,
+                "  #{} [{}] {}: {}",
                 task.id, task.status, task.task_type, task.command_preview
-            ));
+            );
         }
         CommandOutput::Message(output)
     }

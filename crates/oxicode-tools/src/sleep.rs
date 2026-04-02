@@ -38,7 +38,7 @@ impl Tool for SleepTool {
         PermissionLevel::ReadOnly
     }
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let secs = match input.get("seconds").and_then(|v| v.as_u64()) {
+        let secs = match input.get("seconds").and_then(serde_json::Value::as_u64) {
             Some(s) => s.min(MAX_SLEEP_SECS),
             None => return Ok(ToolResult::error("seconds is required (integer)")),
         };

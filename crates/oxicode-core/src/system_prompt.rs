@@ -44,8 +44,7 @@ mod tests {
 
     #[test]
     fn test_with_claude_md() {
-        let prompt =
-            assemble_system_prompt(Some("global rules"), Some("project rules"), None);
+        let prompt = assemble_system_prompt(Some("global rules"), Some("project rules"), None);
         assert!(prompt.contains("global rules"));
         assert!(prompt.contains("project rules"));
         assert!(prompt.contains("Global Instructions"));
@@ -61,11 +60,8 @@ mod tests {
 
     #[test]
     fn test_all_sections() {
-        let prompt = assemble_system_prompt(
-            Some("global rules"),
-            Some("project rules"),
-            Some("skill a"),
-        );
+        let prompt =
+            assemble_system_prompt(Some("global rules"), Some("project rules"), Some("skill a"));
         assert!(prompt.contains("Global Instructions"));
         assert!(prompt.contains("Project Instructions"));
         assert!(prompt.contains("Active Skills"));

@@ -1,13 +1,19 @@
 //! Provider-related commands: /model, /permissions, /hooks, /mcp, /cost.
 
+use std::fmt::Write as _;
+
 use super::{CommandContext, CommandOutput, SlashCommand};
 
 /// /model — show or switch the active model.
 pub struct ModelCommand;
 
 impl SlashCommand for ModelCommand {
-    fn name(&self) -> &str { "model" }
-    fn description(&self) -> &str { "Show or switch model (e.g., /model gpt-4o)" }
+    fn name(&self) -> &str {
+        "model"
+    }
+    fn description(&self) -> &str {
+        "Show or switch model (e.g., /model gpt-4o)"
+    }
 
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
@@ -47,8 +53,12 @@ impl SlashCommand for ModelCommand {
 pub struct PermissionsCommand;
 
 impl SlashCommand for PermissionsCommand {
-    fn name(&self) -> &str { "permissions" }
-    fn description(&self) -> &str { "Show permission settings" }
+    fn name(&self) -> &str {
+        "permissions"
+    }
+    fn description(&self) -> &str {
+        "Show permission settings"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(
@@ -61,8 +71,12 @@ impl SlashCommand for PermissionsCommand {
 pub struct HooksCommand;
 
 impl SlashCommand for HooksCommand {
-    fn name(&self) -> &str { "hooks" }
-    fn description(&self) -> &str { "List configured hooks" }
+    fn name(&self) -> &str {
+        "hooks"
+    }
+    fn description(&self) -> &str {
+        "List configured hooks"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         let config = oxicode_hooks::HooksConfig::load_from_settings_dir();
@@ -73,10 +87,7 @@ impl SlashCommand for HooksCommand {
         let mut output = String::from("Configured hooks:\n");
         for (event, def) in &config.hooks {
             let status = if def.enabled { "enabled" } else { "disabled" };
-            output.push_str(&format!(
-                "  {event:<20} {status:<10} {}\n",
-                def.command
-            ));
+            let _ = writeln!(output, "  {event:<20} {status:<10} {}", def.command);
         }
         CommandOutput::Message(output)
     }
@@ -86,8 +97,12 @@ impl SlashCommand for HooksCommand {
 pub struct McpCommand;
 
 impl SlashCommand for McpCommand {
-    fn name(&self) -> &str { "mcp" }
-    fn description(&self) -> &str { "List MCP server connections" }
+    fn name(&self) -> &str {
+        "mcp"
+    }
+    fn description(&self) -> &str {
+        "List MCP server connections"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         let config = oxicode_mcp::McpConfig::load();
@@ -105,14 +120,12 @@ impl SlashCommand for McpCommand {
                 oxicode_mcp::config::McpTransportType::Stdio => {
                     cfg.command.as_deref().unwrap_or("stdio")
                 }
-                oxicode_mcp::config::McpTransportType::Sse => {
-                    cfg.url.as_deref().unwrap_or("sse")
-                }
+                oxicode_mcp::config::McpTransportType::Sse => cfg.url.as_deref().unwrap_or("sse"),
                 oxicode_mcp::config::McpTransportType::WebSocket => {
                     cfg.url.as_deref().unwrap_or("websocket")
                 }
             };
-            output.push_str(&format!("  {name:<20} {transport}\n"));
+            let _ = writeln!(output, "  {name:<20} {transport}");
         }
         CommandOutput::Message(output)
     }
@@ -122,8 +135,12 @@ impl SlashCommand for McpCommand {
 pub struct CostCommand;
 
 impl SlashCommand for CostCommand {
-    fn name(&self) -> &str { "cost" }
-    fn description(&self) -> &str { "Show token usage and estimated cost" }
+    fn name(&self) -> &str {
+        "cost"
+    }
+    fn description(&self) -> &str {
+        "Show token usage and estimated cost"
+    }
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         let state = ctx.state_store.current();

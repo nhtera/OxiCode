@@ -81,9 +81,8 @@ impl Tool for ExitPlanModeTool {
         PermissionLevel::ReadOnly
     }
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let plan = match input.get("plan").and_then(|v| v.as_str()) {
-            Some(p) => p,
-            None => return Ok(ToolResult::error("plan field is required")),
+        let Some(plan) = input.get("plan").and_then(|v| v.as_str()) else {
+            return Ok(ToolResult::error("plan field is required"));
         };
 
         // The core engine reads this result to trigger the approval flow.

@@ -73,10 +73,7 @@ impl MessageBus {
     /// across an await boundary in the caller's context.
     pub async fn peek(&self, agent_name: &str) -> Vec<AgentMessage> {
         let guard = self.mailboxes.read().await;
-        guard
-            .get(agent_name)
-            .cloned()
-            .unwrap_or_default()
+        guard.get(agent_name).cloned().unwrap_or_default()
     }
 
     /// Returns the number of pending messages for `agent_name`.

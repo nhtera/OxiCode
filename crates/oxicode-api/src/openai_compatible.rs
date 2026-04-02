@@ -79,12 +79,13 @@ impl OpenAiCompatibleProvider {
 
         for msg in &request.messages {
             match msg.role {
-                oxicode_common::Role::System => {},
+                oxicode_common::Role::System => {}
                 oxicode_common::Role::User => {
                     // Check if this message contains tool results.
-                    let has_tool_results = msg.content.iter().any(|b| {
-                        matches!(b, oxicode_common::ContentBlock::ToolResult { .. })
-                    });
+                    let has_tool_results = msg
+                        .content
+                        .iter()
+                        .any(|b| matches!(b, oxicode_common::ContentBlock::ToolResult { .. }));
 
                     if has_tool_results {
                         // Emit each tool result as a separate "tool" role message.
@@ -172,7 +173,10 @@ fn parse_openai_sse_chunk(data: &str) -> Option<Vec<StreamEvent>> {
 
     // Usage info (some providers include it in the final chunk).
     if let Some(usage) = chunk.get("usage") {
-        let input = usage.get("prompt_tokens").and_then(serde_json::Value::as_u64).unwrap_or(0) as u32;
+        let input = usage
+            .get("prompt_tokens")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as u32;
         let output = usage
             .get("completion_tokens")
             .and_then(serde_json::Value::as_u64)
@@ -189,9 +193,7 @@ fn parse_openai_sse_chunk(data: &str) -> Option<Vec<StreamEvent>> {
 
     for choice in choices {
         let delta = choice.get("delta");
-        let finish_reason = choice
-            .get("finish_reason")
-            .and_then(|v| v.as_str());
+        let finish_reason = choice.get("finish_reason").and_then(|v| v.as_str());
 
         if let Some(delta) = delta {
             // Text content delta.
@@ -207,10 +209,9 @@ fn parse_openai_sse_chunk(data: &str) -> Option<Vec<StreamEvent>> {
             if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                 for tc in tool_calls {
                     // Tool call start: has id and function.name
-                    if let (Some(id), Some(func)) = (
-                        tc.get("id").and_then(|v| v.as_str()),
-                        tc.get("function"),
-                    ) {
+                    if let (Some(id), Some(func)) =
+                        (tc.get("id").and_then(|v| v.as_str()), tc.get("function"))
+                    {
                         if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
                             events.push(StreamEvent::ToolUseStart {
                                 id: id.to_string(),
@@ -260,8 +261,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
         let base_url = self.base_url.clone();
         let extra_headers = self.extra_headers.clone();
         let body = self.build_request_body(&request);
-        let body_str =
-            serde_json::to_string(&body).map_err(|e| OxiError::api(e.to_string()))?;
+        let body_str = serde_json::to_string(&body).map_err(|e| OxiError::api(e.to_string()))?;
         let retry_policy = self.retry_policy.clone();
 
         let stream = async_stream::stream! {
@@ -417,15 +417,14 @@ pub fn azure_openai_provider(
 
 /// Create an OpenRouter provider.
 pub fn openrouter_provider(api_key: String) -> OpenAiCompatibleProvider {
-    OpenAiCompatibleProvider::new(
-        "https://openrouter.ai/api/v1",
-        Some(api_key),
-        "openrouter",
-    )
-    .with_extra_headers(vec![
-        ("HTTP-Referer".to_string(), "https://oxicode.dev".to_string()),
-        ("X-Title".to_string(), "OxiCode".to_string()),
-    ])
+    OpenAiCompatibleProvider::new("https://openrouter.ai/api/v1", Some(api_key), "openrouter")
+        .with_extra_headers(vec![
+            (
+                "HTTP-Referer".to_string(),
+                "https://oxicode.dev".to_string(),
+            ),
+            ("X-Title".to_string(), "OxiCode".to_string()),
+        ])
 }
 
 #[cfg(test)]
@@ -449,7 +448,9 @@ mod tests {
     fn test_parse_tool_call_start() {
         let data = r#"{"choices":[{"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"bash","arguments":""}}]}}]}"#;
         let events = parse_openai_sse_chunk(data).unwrap();
-        assert!(events.iter().any(|e| matches!(e, StreamEvent::ToolUseStart { name, .. } if name == "bash")));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, StreamEvent::ToolUseStart { name, .. } if name == "bash")));
     }
 
     #[test]
@@ -458,7 +459,9 @@ mod tests {
         let events = parse_openai_sse_chunk(data).unwrap();
         assert!(events.iter().any(|e| matches!(
             e,
-            StreamEvent::MessageStop { stop_reason: oxicode_common::StopReason::EndTurn }
+            StreamEvent::MessageStop {
+                stop_reason: oxicode_common::StopReason::EndTurn
+            }
         )));
     }
 
@@ -468,7 +471,11 @@ mod tests {
         let events = parse_openai_sse_chunk(data).unwrap();
         assert!(events.iter().any(|e| matches!(
             e,
-            StreamEvent::UsageUpdate(Usage { input_tokens: 10, output_tokens: 5, .. })
+            StreamEvent::UsageUpdate(Usage {
+                input_tokens: 10,
+                output_tokens: 5,
+                ..
+            })
         )));
     }
 

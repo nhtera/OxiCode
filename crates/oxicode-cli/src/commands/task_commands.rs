@@ -4,8 +4,12 @@ use super::{CommandContext, CommandOutput, SlashCommand};
 
 pub struct TaskCommand;
 impl SlashCommand for TaskCommand {
-    fn name(&self) -> &str { "task" }
-    fn description(&self) -> &str { "Manage background tasks (create/stop/list)" }
+    fn name(&self) -> &str {
+        "task"
+    }
+    fn description(&self) -> &str {
+        "Manage background tasks (create/stop/list)"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
         match sub {
@@ -31,7 +35,7 @@ impl SlashCommand for TaskCommand {
         ["create", "stop", "list"]
             .iter()
             .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_string())
             .collect()
     }
 }

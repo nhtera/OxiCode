@@ -23,10 +23,7 @@ impl ContextCollapse {
     /// Collapse context: keep last 3 messages + prepend a fresh projection.
     ///
     /// Returns `[projection_message, ...last_3_messages]`.
-    pub fn collapse(
-        working_dir: &Path,
-        recent_messages: &[Message],
-    ) -> OxiResult<Vec<Message>> {
+    pub fn collapse(working_dir: &Path, recent_messages: &[Message]) -> OxiResult<Vec<Message>> {
         tracing::warn!(
             dir = %working_dir.display(),
             total_messages = recent_messages.len(),
@@ -81,7 +78,10 @@ impl ContextCollapse {
                 parts.push(format!("Files: {}", names.join(", ")));
             }
             Err(e) => {
-                tracing::warn!("L5: could not read directory {}: {e}", working_dir.display());
+                tracing::warn!(
+                    "L5: could not read directory {}: {e}",
+                    working_dir.display()
+                );
                 parts.push("Files: (unreadable)".to_string());
             }
         }
@@ -138,8 +138,7 @@ mod tests {
 
         // Remaining 3 should match the last 3 original messages (in order).
         let result_ids: Vec<&str> = result[1..].iter().map(|m| m.id.as_str()).collect();
-        let expected_ids: Vec<&str> =
-            original_ids[7..].iter().map(|s| s.as_str()).collect();
+        let expected_ids: Vec<&str> = original_ids[7..].iter().map(|s| s.as_str()).collect();
         assert_eq!(result_ids, expected_ids);
     }
 

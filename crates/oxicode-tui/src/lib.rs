@@ -5,4 +5,4 @@ pub mod widgets;
 
 pub use app::App;
 pub use events::{CoreEvent, UiEvent};
-pub use themes::{ThemePalette, get_theme};
+pub use themes::{get_theme, ThemePalette};

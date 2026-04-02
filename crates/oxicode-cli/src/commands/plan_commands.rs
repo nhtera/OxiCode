@@ -5,8 +5,12 @@ use super::{CommandContext, CommandOutput, SlashCommand};
 pub struct PlanCommand;
 
 impl SlashCommand for PlanCommand {
-    fn name(&self) -> &str { "plan" }
-    fn description(&self) -> &str { "Plan mode (create/list/show)" }
+    fn name(&self) -> &str {
+        "plan"
+    }
+    fn description(&self) -> &str {
+        "Plan mode (create/list/show)"
+    }
 
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
@@ -32,7 +36,7 @@ impl SlashCommand for PlanCommand {
         ["create", "list", "show"]
             .iter()
             .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_string())
             .collect()
     }
 }

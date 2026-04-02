@@ -4,8 +4,12 @@ use super::{CommandContext, CommandOutput, SlashCommand};
 
 pub struct TeamCommand;
 impl SlashCommand for TeamCommand {
-    fn name(&self) -> &str { "team" }
-    fn description(&self) -> &str { "Manage agent teams (create/delete/list)" }
+    fn name(&self) -> &str {
+        "team"
+    }
+    fn description(&self) -> &str {
+        "Manage agent teams (create/delete/list)"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
         match sub {
@@ -31,15 +35,19 @@ impl SlashCommand for TeamCommand {
         ["create", "delete", "list"]
             .iter()
             .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_string())
             .collect()
     }
 }
 
 pub struct AgentsCommand;
 impl SlashCommand for AgentsCommand {
-    fn name(&self) -> &str { "agents" }
-    fn description(&self) -> &str { "List running agents" }
+    fn name(&self) -> &str {
+        "agents"
+    }
+    fn description(&self) -> &str {
+        "List running agents"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Active agents: (none running)".into())
     }

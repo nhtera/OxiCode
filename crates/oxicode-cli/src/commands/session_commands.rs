@@ -1,41 +1,41 @@
 //! Session-related commands: /session, /export, /diff, /memory, /undo, /bug, /doctor.
 
+use std::fmt::Write as _;
+
 use super::{CommandContext, CommandOutput, SlashCommand};
 
 /// /session — show or manage sessions.
 pub struct SessionCommand;
 
 impl SlashCommand for SessionCommand {
-    fn name(&self) -> &str { "session" }
-    fn description(&self) -> &str { "Show current session info or list sessions" }
+    fn name(&self) -> &str {
+        "session"
+    }
+    fn description(&self) -> &str {
+        "Show current session info or list sessions"
+    }
 
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         match args.trim() {
-            "list" | "ls" => {
-                match oxicode_session::list_sessions(None) {
-                    Ok(sessions) => {
-                        if sessions.is_empty() {
-                            return CommandOutput::Message("No saved sessions.".to_string());
-                        }
-                        let mut output = String::from("Sessions:\n");
-                        for s in sessions {
-                            output.push_str(&format!("  {}\n", s.display()));
-                        }
-                        CommandOutput::Message(output)
+            "list" | "ls" => match oxicode_session::list_sessions(None) {
+                Ok(sessions) => {
+                    if sessions.is_empty() {
+                        return CommandOutput::Message("No saved sessions.".to_string());
                     }
-                    Err(e) => CommandOutput::Error(format!("Failed to list sessions: {e}")),
+                    let mut output = String::from("Sessions:\n");
+                    for s in sessions {
+                        let _ = writeln!(output, "  {}", s.display());
+                    }
+                    CommandOutput::Message(output)
                 }
-            }
-            "" => {
-                CommandOutput::Message(format!(
-                    "Current session: {}\nMessages: {}",
-                    ctx.session_id,
-                    ctx.state_store.current().messages.len(),
-                ))
-            }
-            _ => CommandOutput::Error(
-                "Usage: /session or /session list".to_string(),
-            ),
+                Err(e) => CommandOutput::Error(format!("Failed to list sessions: {e}")),
+            },
+            "" => CommandOutput::Message(format!(
+                "Current session: {}\nMessages: {}",
+                ctx.session_id,
+                ctx.state_store.current().messages.len(),
+            )),
+            _ => CommandOutput::Error("Usage: /session or /session list".to_string()),
         }
     }
 }
@@ -44,8 +44,12 @@ impl SlashCommand for SessionCommand {
 pub struct ExportCommand;
 
 impl SlashCommand for ExportCommand {
-    fn name(&self) -> &str { "export" }
-    fn description(&self) -> &str { "Export conversation to file (markdown or JSON)" }
+    fn name(&self) -> &str {
+        "export"
+    }
+    fn description(&self) -> &str {
+        "Export conversation to file (markdown or JSON)"
+    }
 
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         let path = if args.is_empty() {
@@ -63,7 +67,7 @@ impl SlashCommand for ExportCommand {
                 oxicode_common::Role::Assistant => "Assistant",
                 oxicode_common::Role::System => "System",
             };
-            content.push_str(&format!("## {role}\n\n{}\n\n", msg.text()));
+            let _ = write!(content, "## {role}\n\n{}\n\n", msg.text()); // two newlines needed; writeln! only adds one
         }
 
         match std::fs::write(&path, &content) {
@@ -77,8 +81,12 @@ impl SlashCommand for ExportCommand {
 pub struct DiffCommand;
 
 impl SlashCommand for DiffCommand {
-    fn name(&self) -> &str { "diff" }
-    fn description(&self) -> &str { "Show recent file changes in working directory" }
+    fn name(&self) -> &str {
+        "diff"
+    }
+    fn description(&self) -> &str {
+        "Show recent file changes in working directory"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         match std::process::Command::new("git")
@@ -93,7 +101,9 @@ impl SlashCommand for DiffCommand {
                     CommandOutput::Message(format!("Changes:\n{stdout}"))
                 }
             }
-            Err(_) => CommandOutput::Error("Not a git repository or git not available.".to_string()),
+            Err(_) => {
+                CommandOutput::Error("Not a git repository or git not available.".to_string())
+            }
         }
     }
 }
@@ -102,8 +112,12 @@ impl SlashCommand for DiffCommand {
 pub struct MemoryCommand;
 
 impl SlashCommand for MemoryCommand {
-    fn name(&self) -> &str { "memory" }
-    fn description(&self) -> &str { "Show conversation memory usage" }
+    fn name(&self) -> &str {
+        "memory"
+    }
+    fn description(&self) -> &str {
+        "Show conversation memory usage"
+    }
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         let state = ctx.state_store.current();
@@ -121,8 +135,12 @@ impl SlashCommand for MemoryCommand {
 pub struct UndoCommand;
 
 impl SlashCommand for UndoCommand {
-    fn name(&self) -> &str { "undo" }
-    fn description(&self) -> &str { "Remove last assistant response and your prompt" }
+    fn name(&self) -> &str {
+        "undo"
+    }
+    fn description(&self) -> &str {
+        "Remove last assistant response and your prompt"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         // TODO: Implement state mutation to pop last message pair.
@@ -134,8 +152,12 @@ impl SlashCommand for UndoCommand {
 pub struct BugCommand;
 
 impl SlashCommand for BugCommand {
-    fn name(&self) -> &str { "bug" }
-    fn description(&self) -> &str { "Report a bug" }
+    fn name(&self) -> &str {
+        "bug"
+    }
+    fn description(&self) -> &str {
+        "Report a bug"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(
@@ -148,8 +170,12 @@ impl SlashCommand for BugCommand {
 pub struct DoctorCommand;
 
 impl SlashCommand for DoctorCommand {
-    fn name(&self) -> &str { "doctor" }
-    fn description(&self) -> &str { "Check system health and dependencies" }
+    fn name(&self) -> &str {
+        "doctor"
+    }
+    fn description(&self) -> &str {
+        "Check system health and dependencies"
+    }
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         let mut checks = Vec::new();
@@ -159,7 +185,10 @@ impl SlashCommand for DoctorCommand {
             .arg("--version")
             .output()
             .is_ok();
-        checks.push(format!("  git: {}", if git_ok { "ok" } else { "not found" }));
+        checks.push(format!(
+            "  git: {}",
+            if git_ok { "ok" } else { "not found" }
+        ));
 
         // Check model config.
         checks.push(format!("  model: {}", ctx.model));

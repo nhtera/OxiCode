@@ -4,8 +4,12 @@ use super::{CommandContext, CommandOutput, SlashCommand};
 
 pub struct HookCommand;
 impl SlashCommand for HookCommand {
-    fn name(&self) -> &str { "hook" }
-    fn description(&self) -> &str { "Manage hooks (enable/disable/list)" }
+    fn name(&self) -> &str {
+        "hook"
+    }
+    fn description(&self) -> &str {
+        "Manage hooks (enable/disable/list)"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
         match sub {
@@ -26,7 +30,11 @@ impl SlashCommand for HookCommand {
             "list" | "" => {
                 use oxicode_hooks::events::HookEvent;
                 let events: Vec<&str> = HookEvent::ALL.iter().map(HookEvent::as_str).collect();
-                CommandOutput::Message(format!("Hook events ({}):\n  {}", events.len(), events.join("\n  ")))
+                CommandOutput::Message(format!(
+                    "Hook events ({}):\n  {}",
+                    events.len(),
+                    events.join("\n  ")
+                ))
             }
             _ => CommandOutput::Error(format!("Unknown: /hook {sub}")),
         }
@@ -35,7 +43,7 @@ impl SlashCommand for HookCommand {
         ["enable", "disable", "list"]
             .iter()
             .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_string())
             .collect()
     }
 }

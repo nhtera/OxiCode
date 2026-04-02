@@ -31,11 +31,28 @@ pub fn validate_method(plugin_name: &str, method: &str) -> OxiResult<()> {
 /// Uses prefix matching: a plugin cannot register "bash_extended" either.
 pub fn validate_tool_name(plugin_name: &str, tool_name: &str) -> OxiResult<()> {
     const RESERVED_PREFIXES: &[&str] = &[
-        "bash", "file_read", "file_write", "file_edit", "glob", "grep",
-        "notebook_edit", "agent", "mcp", "send_message", "ask_user",
-        "tool_search", "config", "enter_plan_mode", "exit_plan_mode",
-        "enter_worktree", "exit_worktree", "sleep", "remote_trigger",
-        "cron_", "brief", "structured_output",
+        "bash",
+        "file_read",
+        "file_write",
+        "file_edit",
+        "glob",
+        "grep",
+        "notebook_edit",
+        "agent",
+        "mcp",
+        "send_message",
+        "ask_user",
+        "tool_search",
+        "config",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "enter_worktree",
+        "exit_worktree",
+        "sleep",
+        "remote_trigger",
+        "cron_",
+        "brief",
+        "structured_output",
     ];
 
     for prefix in RESERVED_PREFIXES {

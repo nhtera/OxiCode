@@ -52,16 +52,12 @@ impl AutoCompactor {
 
         tracing::info!(summary_len = summary.len(), "L3: summary received");
 
-        Ok(Message::user(format!(
-            "[Conversation summary]\n{summary}"
-        )))
+        Ok(Message::user(format!("[Conversation summary]\n{summary}")))
     }
 }
 
 /// Drain an `EventStream` and concatenate all text deltas into a single string.
-async fn collect_stream_text(
-    mut stream: oxicode_api::EventStream,
-) -> OxiResult<String> {
+async fn collect_stream_text(mut stream: oxicode_api::EventStream) -> OxiResult<String> {
     use futures::StreamExt;
     use oxicode_api::StreamEvent;
 

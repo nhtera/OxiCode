@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use oxicode_agents::spawner::{AgentConfig, spawn_agent};
+use oxicode_agents::spawner::{spawn_agent, AgentConfig};
 use oxicode_common::OxiResult;
 
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
@@ -50,11 +50,7 @@ impl Tool for AgentTool {
     fn permission_level(&self) -> PermissionLevel {
         PermissionLevel::System
     }
-    async fn execute(
-        &self,
-        input: serde_json::Value,
-        ctx: &ToolContext,
-    ) -> OxiResult<ToolResult> {
+    async fn execute(&self, input: serde_json::Value, ctx: &ToolContext) -> OxiResult<ToolResult> {
         let prompt = match input.get("prompt").and_then(|v| v.as_str()) {
             Some(p) => p.to_string(),
             None => return Ok(ToolResult::error("agent tool requires 'prompt' field")),
@@ -74,7 +70,7 @@ impl Tool for AgentTool {
 
         let timeout_secs = input
             .get("timeout")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(300);
 
         let config = AgentConfig {

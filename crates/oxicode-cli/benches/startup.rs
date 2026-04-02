@@ -1,6 +1,6 @@
 //! Startup time benchmark — measures cold-start initialization cost.
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_config_load(c: &mut Criterion) {
     c.bench_function("config_load", |b| {
@@ -30,5 +30,10 @@ fn bench_tool_registry(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_config_load, bench_system_prompt_assembly, bench_tool_registry);
+criterion_group!(
+    benches,
+    bench_config_load,
+    bench_system_prompt_assembly,
+    bench_tool_registry
+);
 criterion_main!(benches);

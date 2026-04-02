@@ -45,9 +45,8 @@ impl Tool for EnterWorktreeTool {
         PermissionLevel::System
     }
     async fn execute(&self, input: serde_json::Value, ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let branch = match input.get("branch").and_then(|v| v.as_str()) {
-            Some(b) => b,
-            None => return Ok(ToolResult::error("branch is required")),
+        let Some(branch) = input.get("branch").and_then(|v| v.as_str()) else {
+            return Ok(ToolResult::error("branch is required"));
         };
 
         let repo = match git2::Repository::discover(&ctx.working_dir) {
@@ -56,16 +55,15 @@ impl Tool for EnterWorktreeTool {
         };
 
         // Determine worktree path.
-        let worktree_path: PathBuf = match input.get("path").and_then(|v| v.as_str()) {
-            Some(p) => PathBuf::from(p),
-            None => {
-                let parent = repo
-                    .workdir()
-                    .unwrap_or(ctx.working_dir.as_path())
-                    .parent()
-                    .unwrap_or(ctx.working_dir.as_path());
-                parent.join(format!(".worktrees/{branch}"))
-            }
+        let worktree_path: PathBuf = if let Some(p) = input.get("path").and_then(|v| v.as_str()) {
+            PathBuf::from(p)
+        } else {
+            let parent = repo
+                .workdir()
+                .unwrap_or(ctx.working_dir.as_path())
+                .parent()
+                .unwrap_or(ctx.working_dir.as_path());
+            parent.join(format!(".worktrees/{branch}"))
         };
 
         // Create parent directory.
@@ -86,7 +84,9 @@ impl Tool for EnterWorktreeTool {
 
         // Create branch pointing at HEAD.
         if let Err(e) = repo.branch(branch, &commit, false) {
-            return Ok(ToolResult::error(format!("Cannot create branch '{branch}': {e}")));
+            return Ok(ToolResult::error(format!(
+                "Cannot create branch '{branch}': {e}"
+            )));
         }
 
         // Add worktree.
@@ -94,11 +94,10 @@ impl Tool for EnterWorktreeTool {
         if let Err(e) = repo.worktree(
             branch,
             worktree_path.as_path(),
-            Some(git2::WorktreeAddOptions::new().reference(
-                repo.find_reference(&reference)
-                    .ok()
-                    .as_ref(),
-            )),
+            Some(
+                git2::WorktreeAddOptions::new()
+                    .reference(repo.find_reference(&reference).ok().as_ref()),
+            ),
         ) {
             return Ok(ToolResult::error(format!("Cannot create worktree: {e}")));
         }
@@ -154,7 +153,10 @@ impl Tool for ExitWorktreeTool {
             None => return Ok(ToolResult::error("worktree_path is required")),
         };
 
-        let discard = input.get("discard").and_then(|v| v.as_bool()).unwrap_or(false);
+        let discard = input
+            .get("discard")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
 
         let repo = match git2::Repository::discover(&ctx.working_dir) {
             Ok(r) => r,

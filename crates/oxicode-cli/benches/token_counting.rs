@@ -1,6 +1,6 @@
 //! Token counting and message serialization throughput benchmarks.
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_message_creation(c: &mut Criterion) {
     c.bench_function("message_user_create", |b| {

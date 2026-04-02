@@ -85,8 +85,7 @@ impl PluginManager {
             &installed.manifest.command,
             &installed.manifest.args,
             &env,
-        )
-        .await?;
+        )?;
 
         tracing::info!(
             "Plugin '{name}' loaded: {} tools, {} hooks",
@@ -115,9 +114,10 @@ impl PluginManager {
     ) -> OxiResult<serde_json::Value> {
         security::validate_method(plugin_name, "tool/call")?;
 
-        let plugin = self.plugins.get(plugin_name).ok_or_else(|| {
-            OxiError::Other(format!("Plugin '{plugin_name}' not loaded"))
-        })?;
+        let plugin = self
+            .plugins
+            .get(plugin_name)
+            .ok_or_else(|| OxiError::Other(format!("Plugin '{plugin_name}' not loaded")))?;
 
         // Verify the tool exists in the manifest.
         if !plugin.manifest.tools.iter().any(|t| t.name == tool_name) {

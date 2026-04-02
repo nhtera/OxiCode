@@ -13,21 +13,66 @@ struct Shortcut {
 }
 
 const SHORTCUTS: &[Shortcut] = &[
-    Shortcut { key: "Enter", description: "Send message / submit" },
-    Shortcut { key: "Ctrl+C", description: "Cancel / interrupt" },
-    Shortcut { key: "Ctrl+D", description: "Quit OxiCode" },
-    Shortcut { key: "Ctrl+L", description: "Clear screen" },
-    Shortcut { key: "Esc", description: "Cancel input / close overlay" },
-    Shortcut { key: "Tab", description: "Accept autocomplete" },
-    Shortcut { key: "/", description: "Open search" },
-    Shortcut { key: "?", description: "Toggle shortcuts overlay" },
-    Shortcut { key: "Up/Down", description: "Scroll messages" },
-    Shortcut { key: "PgUp/PgDn", description: "Page scroll" },
-    Shortcut { key: "Home/End", description: "Jump to top/bottom" },
-    Shortcut { key: "Ctrl+K", description: "Clear input line" },
-    Shortcut { key: "Ctrl+W", description: "Delete word backward" },
-    Shortcut { key: "Ctrl+U", description: "Delete to line start" },
-    Shortcut { key: "Alt+Enter", description: "Newline in input" },
+    Shortcut {
+        key: "Enter",
+        description: "Send message / submit",
+    },
+    Shortcut {
+        key: "Ctrl+C",
+        description: "Cancel / interrupt",
+    },
+    Shortcut {
+        key: "Ctrl+D",
+        description: "Quit OxiCode",
+    },
+    Shortcut {
+        key: "Ctrl+L",
+        description: "Clear screen",
+    },
+    Shortcut {
+        key: "Esc",
+        description: "Cancel input / close overlay",
+    },
+    Shortcut {
+        key: "Tab",
+        description: "Accept autocomplete",
+    },
+    Shortcut {
+        key: "/",
+        description: "Open search",
+    },
+    Shortcut {
+        key: "?",
+        description: "Toggle shortcuts overlay",
+    },
+    Shortcut {
+        key: "Up/Down",
+        description: "Scroll messages",
+    },
+    Shortcut {
+        key: "PgUp/PgDn",
+        description: "Page scroll",
+    },
+    Shortcut {
+        key: "Home/End",
+        description: "Jump to top/bottom",
+    },
+    Shortcut {
+        key: "Ctrl+K",
+        description: "Clear input line",
+    },
+    Shortcut {
+        key: "Ctrl+W",
+        description: "Delete word backward",
+    },
+    Shortcut {
+        key: "Ctrl+U",
+        description: "Delete to line start",
+    },
+    Shortcut {
+        key: "Alt+Enter",
+        description: "Newline in input",
+    },
 ];
 
 /// Whether the shortcuts overlay is currently visible.
@@ -83,7 +128,11 @@ impl Widget for ShortcutsPanel {
 
         let block = Block::default()
             .title(" Keyboard Shortcuts ")
-            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .title_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Blue));
 

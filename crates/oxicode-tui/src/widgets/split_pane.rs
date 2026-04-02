@@ -45,7 +45,11 @@ impl SplitPane {
 
     /// Adjust the split ratio by `delta` percentage points (clamped to 30–90).
     pub fn adjust_ratio(&mut self, delta: i16) {
-        self.ratio = (self.ratio as i16 + delta).clamp(30, 90) as u16;
+        // Safe: ratio is 30–90 (fits i16); result is clamped to 30–90 (fits u16).
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        {
+            self.ratio = (self.ratio as i16 + delta).clamp(30, 90) as u16;
+        }
     }
 
     /// Returns current ratio.

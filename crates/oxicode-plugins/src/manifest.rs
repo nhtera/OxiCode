@@ -113,24 +113,30 @@ impl PluginManifest {
             return Err(OxiError::Config("Plugin name cannot be empty".into()));
         }
         // Prevent path traversal: only allow alphanumeric, hyphens, underscores.
-        if !self.name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        if !self
+            .name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
             return Err(OxiError::Config(format!(
                 "Plugin name '{}' contains invalid characters (only [a-zA-Z0-9_-] allowed)",
                 self.name
             )));
         }
         if self.command.is_empty() {
-            return Err(OxiError::Config(
-                format!("Plugin '{}' has no command", self.name),
-            ));
+            return Err(OxiError::Config(format!(
+                "Plugin '{}' has no command",
+                self.name
+            )));
         }
         // Ensure tool names are unique within the plugin.
         let mut seen = std::collections::HashSet::new();
         for tool in &self.tools {
             if !seen.insert(&tool.name) {
-                return Err(OxiError::Config(
-                    format!("Plugin '{}' has duplicate tool '{}'", self.name, tool.name),
-                ));
+                return Err(OxiError::Config(format!(
+                    "Plugin '{}' has duplicate tool '{}'",
+                    self.name, tool.name
+                )));
             }
         }
         Ok(())

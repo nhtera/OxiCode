@@ -104,7 +104,9 @@ impl Widget for PagerView<'_> {
         let total = self.pager.lines.len();
         let offset = self.pager.scroll;
 
-        let visible_lines: Vec<Line> = self.pager.lines
+        let visible_lines: Vec<Line> = self
+            .pager
+            .lines
             .iter()
             .skip(offset)
             .take(visible_height)
@@ -130,7 +132,9 @@ impl Widget for PagerView<'_> {
                 Span::styled(progress, Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     " q:quit j/k:scroll g/G:top/bottom ",
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::DIM),
                 ),
             ]))
             .borders(Borders::ALL)

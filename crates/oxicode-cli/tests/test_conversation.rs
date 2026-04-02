@@ -26,7 +26,10 @@ fn test_conversation_multi_turn_flow() {
     let api_msgs = conv.api_messages();
     assert_eq!(api_msgs.len(), 3);
     assert_eq!(api_msgs[0].text(), "What is Rust?");
-    assert_eq!(api_msgs[1].text(), "Rust is a systems programming language.");
+    assert_eq!(
+        api_msgs[1].text(),
+        "Rust is a systems programming language."
+    );
     assert_eq!(api_msgs[2].text(), "How does ownership work?");
 }
 

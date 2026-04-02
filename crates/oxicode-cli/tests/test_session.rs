@@ -28,11 +28,9 @@ fn test_session_save_and_load_roundtrip() {
     session.push_message(Message::user("What is Rust?"));
 
     let mut assistant = Message::assistant();
-    assistant
-        .content
-        .push(oxicode_common::ContentBlock::Text {
-            text: "Rust is a systems language.".to_string(),
-        });
+    assistant.content.push(oxicode_common::ContentBlock::Text {
+        text: "Rust is a systems language.".to_string(),
+    });
     session.push_message(assistant);
 
     oxicode_session::save_session(&session, Some(&config_dir)).unwrap();

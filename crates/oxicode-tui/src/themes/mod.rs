@@ -133,11 +133,11 @@ pub fn catppuccin() -> ThemePalette {
         name: "catppuccin",
         bg: Color::Rgb(30, 30, 46),
         fg: Color::Rgb(205, 214, 244),
-        accent: Color::Rgb(137, 180, 250),     // blue
-        accent_dim: Color::Rgb(88, 91, 112),   // surface2
-        status_bg: Color::Rgb(49, 50, 68),     // surface0
+        accent: Color::Rgb(137, 180, 250),   // blue
+        accent_dim: Color::Rgb(88, 91, 112), // surface2
+        status_bg: Color::Rgb(49, 50, 68),   // surface0
         status_fg: Color::Rgb(205, 214, 244),
-        user_msg: Color::Rgb(166, 227, 161),    // green
+        user_msg: Color::Rgb(166, 227, 161), // green
         assistant_msg: Color::Rgb(205, 214, 244),
         tool_output: Color::Rgb(249, 226, 175), // yellow
         error: Color::Rgb(243, 139, 168),       // red
@@ -154,18 +154,18 @@ pub fn dracula() -> ThemePalette {
         name: "dracula",
         bg: Color::Rgb(40, 42, 54),
         fg: Color::Rgb(248, 248, 242),
-        accent: Color::Rgb(189, 147, 249),   // purple
-        accent_dim: Color::Rgb(68, 71, 90),  // selection
+        accent: Color::Rgb(189, 147, 249),  // purple
+        accent_dim: Color::Rgb(68, 71, 90), // selection
         status_bg: Color::Rgb(68, 71, 90),
         status_fg: Color::Rgb(248, 248, 242),
-        user_msg: Color::Rgb(80, 250, 123),   // green
+        user_msg: Color::Rgb(80, 250, 123), // green
         assistant_msg: Color::Rgb(248, 248, 242),
         tool_output: Color::Rgb(241, 250, 140), // yellow
-        error: Color::Rgb(255, 85, 85),        // red
+        error: Color::Rgb(255, 85, 85),         // red
         success: Color::Rgb(80, 250, 123),
-        warning: Color::Rgb(255, 184, 108),    // orange
+        warning: Color::Rgb(255, 184, 108), // orange
         code_bg: Color::Rgb(33, 34, 44),
-        muted: Color::Rgb(98, 114, 164),      // comment
+        muted: Color::Rgb(98, 114, 164), // comment
     }
 }
 
@@ -175,18 +175,18 @@ pub fn solarized() -> ThemePalette {
         name: "solarized",
         bg: Color::Rgb(0, 43, 54),
         fg: Color::Rgb(131, 148, 150),
-        accent: Color::Rgb(38, 139, 210),    // blue
-        accent_dim: Color::Rgb(7, 54, 66),   // base02
+        accent: Color::Rgb(38, 139, 210),  // blue
+        accent_dim: Color::Rgb(7, 54, 66), // base02
         status_bg: Color::Rgb(7, 54, 66),
         status_fg: Color::Rgb(147, 161, 161),
-        user_msg: Color::Rgb(133, 153, 0),    // green
+        user_msg: Color::Rgb(133, 153, 0), // green
         assistant_msg: Color::Rgb(131, 148, 150),
         tool_output: Color::Rgb(181, 137, 0), // yellow
         error: Color::Rgb(220, 50, 47),       // red
         success: Color::Rgb(133, 153, 0),
-        warning: Color::Rgb(203, 75, 22),     // orange
+        warning: Color::Rgb(203, 75, 22), // orange
         code_bg: Color::Rgb(0, 36, 45),
-        muted: Color::Rgb(88, 110, 117),      // base01
+        muted: Color::Rgb(88, 110, 117), // base01
     }
 }
 

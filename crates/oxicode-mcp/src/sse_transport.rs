@@ -51,9 +51,7 @@ impl SseTransport {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(OxiError::Other(format!(
-                "MCP SSE error {status}: {body}"
-            )));
+            return Err(OxiError::Other(format!("MCP SSE error {status}: {body}")));
         }
 
         let resp: JsonRpcResponse = response

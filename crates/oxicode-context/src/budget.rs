@@ -4,12 +4,9 @@ use oxicode_api::LlmProvider;
 use oxicode_common::{Message, OxiResult};
 
 use crate::{
-    auto_compact::AutoCompactor,
-    context_collapse::ContextCollapse,
-    microcompact::microcompact_messages,
-    reactive_compact::ReactiveCompactor,
-    token_counter::TokenCounter,
-    truncation::truncate_messages,
+    auto_compact::AutoCompactor, context_collapse::ContextCollapse,
+    microcompact::microcompact_messages, reactive_compact::ReactiveCompactor,
+    token_counter::TokenCounter, truncation::truncate_messages,
 };
 
 /// Context budget thresholds (fraction of model max tokens).
@@ -94,7 +91,8 @@ impl BudgetManager {
         provider: &dyn LlmProvider,
         model: &str,
     ) -> OxiResult<Vec<Message>> {
-        self.apply_defense_with_dir(messages, provider, model, Path::new(".")).await
+        self.apply_defense_with_dir(messages, provider, model, Path::new("."))
+            .await
     }
 
     /// Same as `apply_defense` but accepts an explicit `working_dir` for L5

@@ -150,8 +150,6 @@ mod tests {
         ];
         microcompact_messages(&mut msgs);
         assert_eq!(msgs[0].content.len(), 1);
-        assert!(
-            matches!(&msgs[0].content[0], ContentBlock::Text { text } if text == "foo bar")
-        );
+        assert!(matches!(&msgs[0].content[0], ContentBlock::Text { text } if text == "foo bar"));
     }
 }

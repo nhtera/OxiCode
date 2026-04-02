@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use oxicode_common::{OxiError, OxiResult};
 use tracing::{info, warn};
 
-use crate::spawner::{AgentConfig, AgentResult, spawn_agent};
+use crate::spawner::{spawn_agent, AgentConfig, AgentResult};
 
 /// Outcome of a fork agent run.
 #[derive(Debug)]
@@ -36,10 +36,7 @@ pub struct ForkConfig {
 }
 
 /// Run a forked agent: create worktree → spawn agent → merge/discard.
-pub async fn run_fork_agent(
-    repo_path: &Path,
-    config: &ForkConfig,
-) -> OxiResult<ForkResult> {
+pub async fn run_fork_agent(repo_path: &Path, config: &ForkConfig) -> OxiResult<ForkResult> {
     let repo = git2::Repository::discover(repo_path)
         .map_err(|e| OxiError::Other(format!("Not a git repo: {e}")))?;
 
@@ -58,9 +55,11 @@ pub async fn run_fork_agent(
     }
 
     // Create branch at HEAD.
-    let head = repo.head()
+    let head = repo
+        .head()
         .map_err(|e| OxiError::Other(format!("Cannot read HEAD: {e}")))?;
-    let commit = head.peel_to_commit()
+    let commit = head
+        .peel_to_commit()
         .map_err(|e| OxiError::Other(format!("Cannot peel HEAD: {e}")))?;
 
     repo.branch(&config.branch, &commit, false)
@@ -68,7 +67,8 @@ pub async fn run_fork_agent(
 
     // Create worktree.
     let reference = format!("refs/heads/{}", config.branch);
-    let branch_ref = repo.find_reference(&reference)
+    let branch_ref = repo
+        .find_reference(&reference)
         .map_err(|e| OxiError::Other(format!("Cannot find ref: {e}")))?;
 
     repo.worktree(

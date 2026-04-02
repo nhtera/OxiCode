@@ -7,12 +7,11 @@ use std::sync::Arc;
 
 use oxicode_common::OxiResult;
 
+use crate::openai_compatible::{
+    azure_openai_provider, deepseek_provider, ollama_provider, openai_provider, openrouter_provider,
+};
 use crate::provider::LlmProvider;
 use crate::AnthropicProvider;
-use crate::openai_compatible::{
-    azure_openai_provider, deepseek_provider, ollama_provider, openai_provider,
-    openrouter_provider,
-};
 
 /// Resolved provider with its target model name.
 pub struct ResolvedProvider {
@@ -33,7 +32,10 @@ impl ProviderRouter {
 
         // Anthropic (always first priority).
         if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            providers.push(("anthropic".to_string(), Arc::new(AnthropicProvider::new(key))));
+            providers.push((
+                "anthropic".to_string(),
+                Arc::new(AnthropicProvider::new(key)),
+            ));
         }
 
         // OpenAI.
@@ -117,7 +119,10 @@ impl ProviderRouter {
 
     /// List available provider names.
     pub fn available_providers(&self) -> Vec<&str> {
-        self.providers.iter().map(|(name, _)| name.as_str()).collect()
+        self.providers
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect()
     }
 
     /// Get a provider by name.
@@ -136,7 +141,8 @@ fn detect_provider_from_model(model: &str) -> Option<String> {
     if m.starts_with("claude-") || m.starts_with("anthropic/") {
         return Some("anthropic".to_string());
     }
-    if m.starts_with("gpt-") || m.starts_with("o1-") || m.starts_with("o3-") || m.starts_with("o4-") {
+    if m.starts_with("gpt-") || m.starts_with("o1-") || m.starts_with("o3-") || m.starts_with("o4-")
+    {
         return Some("openai".to_string());
     }
     if m.starts_with("deepseek-") || m.starts_with("deepseek/") {
@@ -146,7 +152,12 @@ fn detect_provider_from_model(model: &str) -> Option<String> {
         // Models with org/name format are likely OpenRouter.
         return Some("openrouter".to_string());
     }
-    if m.starts_with("llama") || m.starts_with("mistral") || m.starts_with("phi") || m.starts_with("qwen") || m.starts_with("gemma") {
+    if m.starts_with("llama")
+        || m.starts_with("mistral")
+        || m.starts_with("phi")
+        || m.starts_with("qwen")
+        || m.starts_with("gemma")
+    {
         return Some("ollama".to_string());
     }
 

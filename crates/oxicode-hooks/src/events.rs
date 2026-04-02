@@ -162,7 +162,6 @@ pub enum HookResponse {
     Abort { reason: String },
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

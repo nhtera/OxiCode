@@ -4,8 +4,12 @@ use super::{CommandContext, CommandOutput, SlashCommand};
 
 pub struct ThemeCommand;
 impl SlashCommand for ThemeCommand {
-    fn name(&self) -> &str { "theme" }
-    fn description(&self) -> &str { "Switch TUI color theme" }
+    fn name(&self) -> &str {
+        "theme"
+    }
+    fn description(&self) -> &str {
+        "Switch TUI color theme"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Message(
@@ -19,15 +23,19 @@ impl SlashCommand for ThemeCommand {
         ["dark", "light", "catppuccin", "dracula", "solarized"]
             .iter()
             .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_string())
             .collect()
     }
 }
 
 pub struct ShortcutsCommand;
 impl SlashCommand for ShortcutsCommand {
-    fn name(&self) -> &str { "shortcuts" }
-    fn description(&self) -> &str { "Show keyboard shortcuts" }
+    fn name(&self) -> &str {
+        "shortcuts"
+    }
+    fn description(&self) -> &str {
+        "Show keyboard shortcuts"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(
             "Keyboard shortcuts:\n\
@@ -45,8 +53,12 @@ impl SlashCommand for ShortcutsCommand {
 
 pub struct AboutCommand;
 impl SlashCommand for AboutCommand {
-    fn name(&self) -> &str { "about" }
-    fn description(&self) -> &str { "Show about information" }
+    fn name(&self) -> &str {
+        "about"
+    }
+    fn description(&self) -> &str {
+        "Show about information"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(format!(
             "{} v{}\nA production Rust CLI agent\nRepository: https://github.com/nicktien007/oxicode",
@@ -58,8 +70,12 @@ impl SlashCommand for AboutCommand {
 
 pub struct ToolsCommand;
 impl SlashCommand for ToolsCommand {
-    fn name(&self) -> &str { "tools" }
-    fn description(&self) -> &str { "List all available tools" }
+    fn name(&self) -> &str {
+        "tools"
+    }
+    fn description(&self) -> &str {
+        "List all available tools"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         let registry = oxicode_tools::default_registry();
         let mut names = registry.names();
@@ -74,8 +90,12 @@ impl SlashCommand for ToolsCommand {
 
 pub struct FastCommand;
 impl SlashCommand for FastCommand {
-    fn name(&self) -> &str { "fast" }
-    fn description(&self) -> &str { "Toggle fast output mode" }
+    fn name(&self) -> &str {
+        "fast"
+    }
+    fn description(&self) -> &str {
+        "Toggle fast output mode"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Fast mode toggled.".into())
     }
@@ -83,8 +103,12 @@ impl SlashCommand for FastCommand {
 
 pub struct VerboseCommand;
 impl SlashCommand for VerboseCommand {
-    fn name(&self) -> &str { "verbose" }
-    fn description(&self) -> &str { "Toggle verbose output" }
+    fn name(&self) -> &str {
+        "verbose"
+    }
+    fn description(&self) -> &str {
+        "Toggle verbose output"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Verbose mode toggled.".into())
     }
@@ -92,8 +116,12 @@ impl SlashCommand for VerboseCommand {
 
 pub struct HistoryCommand;
 impl SlashCommand for HistoryCommand {
-    fn name(&self) -> &str { "history" }
-    fn description(&self) -> &str { "Show conversation history summary" }
+    fn name(&self) -> &str {
+        "history"
+    }
+    fn description(&self) -> &str {
+        "Show conversation history summary"
+    }
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         let state = ctx.state_store.current();
         let count = state.messages.len();
@@ -103,8 +131,12 @@ impl SlashCommand for HistoryCommand {
 
 pub struct ReviewCommand;
 impl SlashCommand for ReviewCommand {
-    fn name(&self) -> &str { "review" }
-    fn description(&self) -> &str { "Review recent changes" }
+    fn name(&self) -> &str {
+        "review"
+    }
+    fn description(&self) -> &str {
+        "Review recent changes"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Reviewing recent file changes...".into())
     }
@@ -112,17 +144,28 @@ impl SlashCommand for ReviewCommand {
 
 pub struct LoginCommand;
 impl SlashCommand for LoginCommand {
-    fn name(&self) -> &str { "login" }
-    fn description(&self) -> &str { "Authenticate with API provider" }
+    fn name(&self) -> &str {
+        "login"
+    }
+    fn description(&self) -> &str {
+        "Authenticate with API provider"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Use environment variables to set API keys:\n  ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.".into())
+        CommandOutput::Message(
+            "Use environment variables to set API keys:\n  ANTHROPIC_API_KEY, OPENAI_API_KEY, etc."
+                .into(),
+        )
     }
 }
 
 pub struct LogoutCommand;
 impl SlashCommand for LogoutCommand {
-    fn name(&self) -> &str { "logout" }
-    fn description(&self) -> &str { "Clear stored credentials" }
+    fn name(&self) -> &str {
+        "logout"
+    }
+    fn description(&self) -> &str {
+        "Clear stored credentials"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Credentials cleared.".into())
     }
@@ -130,8 +173,12 @@ impl SlashCommand for LogoutCommand {
 
 pub struct ResumeCommand;
 impl SlashCommand for ResumeCommand {
-    fn name(&self) -> &str { "resume" }
-    fn description(&self) -> &str { "Resume last session" }
+    fn name(&self) -> &str {
+        "resume"
+    }
+    fn description(&self) -> &str {
+        "Resume last session"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Resuming last session...".into())
     }
@@ -139,8 +186,12 @@ impl SlashCommand for ResumeCommand {
 
 pub struct SkillCommand;
 impl SlashCommand for SkillCommand {
-    fn name(&self) -> &str { "skill" }
-    fn description(&self) -> &str { "Install or manage skills" }
+    fn name(&self) -> &str {
+        "skill"
+    }
+    fn description(&self) -> &str {
+        "Install or manage skills"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
         match sub {
@@ -153,8 +204,12 @@ impl SlashCommand for SkillCommand {
 
 pub struct CronCommand;
 impl SlashCommand for CronCommand {
-    fn name(&self) -> &str { "cron" }
-    fn description(&self) -> &str { "Manage cron schedules" }
+    fn name(&self) -> &str {
+        "cron"
+    }
+    fn description(&self) -> &str {
+        "Manage cron schedules"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         match args {
             "list" | "" => CommandOutput::Message("Schedules: (none)".into()),
@@ -165,8 +220,12 @@ impl SlashCommand for CronCommand {
 
 pub struct ScheduleCommand;
 impl SlashCommand for ScheduleCommand {
-    fn name(&self) -> &str { "schedule" }
-    fn description(&self) -> &str { "Schedule a recurring remote agent" }
+    fn name(&self) -> &str {
+        "schedule"
+    }
+    fn description(&self) -> &str {
+        "Schedule a recurring remote agent"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Message("Usage: /schedule <cron-expr> <prompt>".into())
@@ -178,8 +237,12 @@ impl SlashCommand for ScheduleCommand {
 
 pub struct WorktreeCommand;
 impl SlashCommand for WorktreeCommand {
-    fn name(&self) -> &str { "worktree" }
-    fn description(&self) -> &str { "Manage git worktrees" }
+    fn name(&self) -> &str {
+        "worktree"
+    }
+    fn description(&self) -> &str {
+        "Manage git worktrees"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
         match sub {
@@ -194,8 +257,12 @@ impl SlashCommand for WorktreeCommand {
 
 pub struct ProviderCommand;
 impl SlashCommand for ProviderCommand {
-    fn name(&self) -> &str { "provider" }
-    fn description(&self) -> &str { "Show or switch LLM provider" }
+    fn name(&self) -> &str {
+        "provider"
+    }
+    fn description(&self) -> &str {
+        "Show or switch LLM provider"
+    }
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Message(format!("Current provider: {}", ctx.provider_name))
@@ -207,17 +274,28 @@ impl SlashCommand for ProviderCommand {
 
 pub struct ContextWindowCommand;
 impl SlashCommand for ContextWindowCommand {
-    fn name(&self) -> &str { "context-window" }
-    fn description(&self) -> &str { "Show context window details" }
+    fn name(&self) -> &str {
+        "context-window"
+    }
+    fn description(&self) -> &str {
+        "Show context window details"
+    }
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message(format!("Model: {}\nContext: check /tokens for details", ctx.model))
+        CommandOutput::Message(format!(
+            "Model: {}\nContext: check /tokens for details",
+            ctx.model
+        ))
     }
 }
 
 pub struct EditConfigCommand;
 impl SlashCommand for EditConfigCommand {
-    fn name(&self) -> &str { "edit-config" }
-    fn description(&self) -> &str { "Open config file in editor" }
+    fn name(&self) -> &str {
+        "edit-config"
+    }
+    fn description(&self) -> &str {
+        "Open config file in editor"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Open ~/.oxicode/config.toml in your editor.".into())
     }
@@ -225,8 +303,12 @@ impl SlashCommand for EditConfigCommand {
 
 pub struct ResetCommand;
 impl SlashCommand for ResetCommand {
-    fn name(&self) -> &str { "reset" }
-    fn description(&self) -> &str { "Reset session state" }
+    fn name(&self) -> &str {
+        "reset"
+    }
+    fn description(&self) -> &str {
+        "Reset session state"
+    }
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         ctx.state_store.clear_messages();
         CommandOutput::Message("Session state reset.".into())
@@ -235,8 +317,12 @@ impl SlashCommand for ResetCommand {
 
 pub struct RetryCommand;
 impl SlashCommand for RetryCommand {
-    fn name(&self) -> &str { "retry" }
-    fn description(&self) -> &str { "Retry the last query" }
+    fn name(&self) -> &str {
+        "retry"
+    }
+    fn description(&self) -> &str {
+        "Retry the last query"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Retrying last query...".into())
     }
@@ -244,8 +330,12 @@ impl SlashCommand for RetryCommand {
 
 pub struct ForkCommand;
 impl SlashCommand for ForkCommand {
-    fn name(&self) -> &str { "fork" }
-    fn description(&self) -> &str { "Fork an agent in an isolated worktree" }
+    fn name(&self) -> &str {
+        "fork"
+    }
+    fn description(&self) -> &str {
+        "Fork an agent in an isolated worktree"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Error("Usage: /fork <branch-name> <task-prompt>".into())
@@ -257,8 +347,12 @@ impl SlashCommand for ForkCommand {
 
 pub struct SystemPromptCommand;
 impl SlashCommand for SystemPromptCommand {
-    fn name(&self) -> &str { "system-prompt" }
-    fn description(&self) -> &str { "View or modify the system prompt" }
+    fn name(&self) -> &str {
+        "system-prompt"
+    }
+    fn description(&self) -> &str {
+        "View or modify the system prompt"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("System prompt: (configured via CLAUDE.md / OXICODE.md)".into())
     }
@@ -266,8 +360,12 @@ impl SlashCommand for SystemPromptCommand {
 
 pub struct ApproveCommand;
 impl SlashCommand for ApproveCommand {
-    fn name(&self) -> &str { "approve" }
-    fn description(&self) -> &str { "Approve pending plan or action" }
+    fn name(&self) -> &str {
+        "approve"
+    }
+    fn description(&self) -> &str {
+        "Approve pending plan or action"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("No pending approvals.".into())
     }
@@ -275,8 +373,12 @@ impl SlashCommand for ApproveCommand {
 
 pub struct RejectCommand;
 impl SlashCommand for RejectCommand {
-    fn name(&self) -> &str { "reject" }
-    fn description(&self) -> &str { "Reject pending plan or action" }
+    fn name(&self) -> &str {
+        "reject"
+    }
+    fn description(&self) -> &str {
+        "Reject pending plan or action"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("No pending items to reject.".into())
     }
@@ -284,8 +386,12 @@ impl SlashCommand for RejectCommand {
 
 pub struct FileCommand;
 impl SlashCommand for FileCommand {
-    fn name(&self) -> &str { "file" }
-    fn description(&self) -> &str { "Quick file operations (read/write/edit)" }
+    fn name(&self) -> &str {
+        "file"
+    }
+    fn description(&self) -> &str {
+        "Quick file operations (read/write/edit)"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Message("Usage: /file <read|write|edit> <path>".into())
@@ -297,8 +403,12 @@ impl SlashCommand for FileCommand {
 
 pub struct SearchCommand;
 impl SlashCommand for SearchCommand {
-    fn name(&self) -> &str { "search" }
-    fn description(&self) -> &str { "Search codebase for a pattern" }
+    fn name(&self) -> &str {
+        "search"
+    }
+    fn description(&self) -> &str {
+        "Search codebase for a pattern"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Error("Usage: /search <pattern>".into())
@@ -310,8 +420,12 @@ impl SlashCommand for SearchCommand {
 
 pub struct RunCommand;
 impl SlashCommand for RunCommand {
-    fn name(&self) -> &str { "run" }
-    fn description(&self) -> &str { "Run a shell command" }
+    fn name(&self) -> &str {
+        "run"
+    }
+    fn description(&self) -> &str {
+        "Run a shell command"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Error("Usage: /run <command>".into())
@@ -323,8 +437,12 @@ impl SlashCommand for RunCommand {
 
 pub struct TestCommand;
 impl SlashCommand for TestCommand {
-    fn name(&self) -> &str { "test" }
-    fn description(&self) -> &str { "Run project tests" }
+    fn name(&self) -> &str {
+        "test"
+    }
+    fn description(&self) -> &str {
+        "Run project tests"
+    }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         if args.is_empty() {
             CommandOutput::Message("Running all tests...".into())
@@ -336,8 +454,12 @@ impl SlashCommand for TestCommand {
 
 pub struct LintCommand;
 impl SlashCommand for LintCommand {
-    fn name(&self) -> &str { "lint" }
-    fn description(&self) -> &str { "Run linter on project" }
+    fn name(&self) -> &str {
+        "lint"
+    }
+    fn description(&self) -> &str {
+        "Run linter on project"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Running linter...".into())
     }
@@ -345,8 +467,12 @@ impl SlashCommand for LintCommand {
 
 pub struct FormatCommand;
 impl SlashCommand for FormatCommand {
-    fn name(&self) -> &str { "format" }
-    fn description(&self) -> &str { "Format code" }
+    fn name(&self) -> &str {
+        "format"
+    }
+    fn description(&self) -> &str {
+        "Format code"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Formatting code...".into())
     }
@@ -354,8 +480,12 @@ impl SlashCommand for FormatCommand {
 
 pub struct BuildCommand;
 impl SlashCommand for BuildCommand {
-    fn name(&self) -> &str { "build" }
-    fn description(&self) -> &str { "Build the project" }
+    fn name(&self) -> &str {
+        "build"
+    }
+    fn description(&self) -> &str {
+        "Build the project"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Building project...".into())
     }
@@ -363,8 +493,12 @@ impl SlashCommand for BuildCommand {
 
 pub struct DeployCommand;
 impl SlashCommand for DeployCommand {
-    fn name(&self) -> &str { "deploy" }
-    fn description(&self) -> &str { "Deploy the project" }
+    fn name(&self) -> &str {
+        "deploy"
+    }
+    fn description(&self) -> &str {
+        "Deploy the project"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Deploy: configure deployment target first.".into())
     }
@@ -372,8 +506,12 @@ impl SlashCommand for DeployCommand {
 
 pub struct ChatCommand;
 impl SlashCommand for ChatCommand {
-    fn name(&self) -> &str { "chat" }
-    fn description(&self) -> &str { "Switch to chat mode (no tools)" }
+    fn name(&self) -> &str {
+        "chat"
+    }
+    fn description(&self) -> &str {
+        "Switch to chat mode (no tools)"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Chat mode: tools disabled.".into())
     }
@@ -381,8 +519,12 @@ impl SlashCommand for ChatCommand {
 
 pub struct CodeCommand;
 impl SlashCommand for CodeCommand {
-    fn name(&self) -> &str { "code" }
-    fn description(&self) -> &str { "Switch to code mode (tools enabled)" }
+    fn name(&self) -> &str {
+        "code"
+    }
+    fn description(&self) -> &str {
+        "Switch to code mode (tools enabled)"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Code mode: tools enabled.".into())
     }
@@ -390,8 +532,12 @@ impl SlashCommand for CodeCommand {
 
 pub struct ShareCommand;
 impl SlashCommand for ShareCommand {
-    fn name(&self) -> &str { "share" }
-    fn description(&self) -> &str { "Share conversation as link or file" }
+    fn name(&self) -> &str {
+        "share"
+    }
+    fn description(&self) -> &str {
+        "Share conversation as link or file"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Sharing: export conversation to file first with /export.".into())
     }
@@ -399,17 +545,27 @@ impl SlashCommand for ShareCommand {
 
 pub struct FeedbackCommand;
 impl SlashCommand for FeedbackCommand {
-    fn name(&self) -> &str { "feedback" }
-    fn description(&self) -> &str { "Send feedback" }
+    fn name(&self) -> &str {
+        "feedback"
+    }
+    fn description(&self) -> &str {
+        "Send feedback"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Report issues: https://github.com/nicktien007/oxicode/issues".into())
+        CommandOutput::Message(
+            "Report issues: https://github.com/nicktien007/oxicode/issues".into(),
+        )
     }
 }
 
 pub struct DocsCommand;
 impl SlashCommand for DocsCommand {
-    fn name(&self) -> &str { "docs" }
-    fn description(&self) -> &str { "Open documentation" }
+    fn name(&self) -> &str {
+        "docs"
+    }
+    fn description(&self) -> &str {
+        "Open documentation"
+    }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message("Docs: https://github.com/nicktien007/oxicode".into())
     }

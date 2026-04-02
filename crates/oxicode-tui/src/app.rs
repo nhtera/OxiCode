@@ -177,8 +177,7 @@ impl App {
 
             // Notification toast overlay (drawn on top of content area)
             if !self.notifications.is_empty() {
-                let notif_widget =
-                    NotificationWidget::new(&self.notifications).with_max_visible(3);
+                let notif_widget = NotificationWidget::new(&self.notifications).with_max_visible(3);
                 frame.render_widget(notif_widget, content_area);
             }
 

@@ -143,9 +143,7 @@ mod tests {
             None,
         )
         .await;
-        assert!(
-            matches!(response, HookResponse::ModifyPrompt { text } if text == "injected")
-        );
+        assert!(matches!(response, HookResponse::ModifyPrompt { text } if text == "injected"));
     }
 
     #[tokio::test]

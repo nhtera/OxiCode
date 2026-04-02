@@ -238,9 +238,7 @@ fn strip_value(s: &str) -> String {
 /// Remove surrounding single or double quotes.
 fn strip_quotes(s: &str) -> String {
     let s = s.trim();
-    if (s.starts_with('"') && s.ends_with('"'))
-        || (s.starts_with('\'') && s.ends_with('\''))
-    {
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()
@@ -249,9 +247,7 @@ fn strip_quotes(s: &str) -> String {
 
 /// Parse an inline YAML list `["a", "b", c]` into a `Vec<String>`.
 fn parse_inline_list(s: &str) -> Vec<String> {
-    let inner = s
-        .trim_start_matches('[')
-        .trim_end_matches(']');
+    let inner = s.trim_start_matches('[').trim_end_matches(']');
     inner
         .split(',')
         .map(|item| strip_quotes(item.trim()))
@@ -322,7 +318,10 @@ Prompt body.
         );
         let skill = parse_skill(content, skill_path()).unwrap();
         assert_eq!(skill.metadata.inject, InjectMode::User);
-        assert_eq!(skill.metadata.activation.paths, vec!["*.ts", "tsconfig.json"]);
+        assert_eq!(
+            skill.metadata.activation.paths,
+            vec!["*.ts", "tsconfig.json"]
+        );
         assert_eq!(skill.metadata.activation.keywords, vec!["typescript", "ts"]);
     }
 

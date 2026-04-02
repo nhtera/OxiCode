@@ -66,9 +66,7 @@ pub fn collect_notifications(manager: &TaskManager) -> Vec<TaskNotification> {
     manager
         .list_tasks()
         .into_iter()
-        .filter_map(|entry| {
-            terminal_notification(&entry.id, &entry.task_type, &entry.status)
-        })
+        .filter_map(|entry| terminal_notification(&entry.id, &entry.task_type, &entry.status))
         .collect()
 }
 
@@ -92,14 +90,8 @@ impl NotificationCollector {
             if self.notified.contains(&entry.id) {
                 continue;
             }
-            if let Some(notif) =
-                terminal_notification(&entry.id, &entry.task_type, &entry.status)
-            {
-                tracing::info!(
-                    "notification task={} status={}",
-                    entry.id,
-                    notif.status
-                );
+            if let Some(notif) = terminal_notification(&entry.id, &entry.task_type, &entry.status) {
+                tracing::info!("notification task={} status={}", entry.id, notif.status);
                 self.notified.insert(entry.id.clone());
                 new_notifications.push(notif);
             }

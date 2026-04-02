@@ -41,9 +41,7 @@ pub struct OpenAiToolCall {
 }
 
 /// Convert OpenAI `finish_reason` string to our `StopReason`.
-pub fn openai_finish_reason_to_stop_reason(
-    reason: &str,
-) -> oxicode_common::StopReason {
+pub fn openai_finish_reason_to_stop_reason(reason: &str) -> oxicode_common::StopReason {
     match reason {
         "tool_calls" => oxicode_common::StopReason::ToolUse,
         "length" => oxicode_common::StopReason::MaxTokens,

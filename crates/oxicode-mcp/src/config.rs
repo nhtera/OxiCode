@@ -75,7 +75,9 @@ impl McpConfig {
 
         // 3. Environment variable: OXICODE_MCP_SERVERS (JSON)
         if let Ok(env_val) = std::env::var("OXICODE_MCP_SERVERS") {
-            if let Ok(env_servers) = serde_json::from_str::<HashMap<String, McpServerConfig>>(&env_val) {
+            if let Ok(env_servers) =
+                serde_json::from_str::<HashMap<String, McpServerConfig>>(&env_val)
+            {
                 config.servers.extend(env_servers);
             } else {
                 tracing::warn!("Failed to parse OXICODE_MCP_SERVERS env var");
@@ -87,9 +89,8 @@ impl McpConfig {
 
     /// Merge servers from a TOML file.
     fn merge_from_file(&mut self, path: &PathBuf) {
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => return,
+        let Ok(content) = std::fs::read_to_string(path) else {
+            return;
         };
 
         let parsed: toml::Value = match content.parse() {
@@ -111,9 +112,8 @@ impl McpConfig {
                 if name == "servers" {
                     continue;
                 }
-                let toml_str = match toml::to_string(value) {
-                    Ok(s) => s,
-                    Err(_) => continue,
+                let Ok(toml_str) = toml::to_string(value) else {
+                    continue;
                 };
                 match toml::from_str::<McpServerConfig>(&toml_str) {
                     Ok(server_config) => {

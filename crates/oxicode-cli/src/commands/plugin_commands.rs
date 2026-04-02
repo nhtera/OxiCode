@@ -5,8 +5,12 @@ use super::{CommandContext, CommandOutput, SlashCommand};
 pub struct PluginCommand;
 
 impl SlashCommand for PluginCommand {
-    fn name(&self) -> &str { "plugin" }
-    fn description(&self) -> &str { "Manage plugins (install/list/remove)" }
+    fn name(&self) -> &str {
+        "plugin"
+    }
+    fn description(&self) -> &str {
+        "Manage plugins (install/list/remove)"
+    }
 
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
@@ -25,9 +29,7 @@ impl SlashCommand for PluginCommand {
                     CommandOutput::Message(format!("Removing plugin: {rest}"))
                 }
             }
-            "list" | "" => {
-                CommandOutput::Message("Installed plugins: (none loaded)".into())
-            }
+            "list" | "" => CommandOutput::Message("Installed plugins: (none loaded)".into()),
             _ => CommandOutput::Error(format!("Unknown subcommand: /plugin {sub}")),
         }
     }
@@ -36,7 +38,7 @@ impl SlashCommand for PluginCommand {
         ["install", "list", "remove"]
             .iter()
             .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_string())
             .collect()
     }
 }

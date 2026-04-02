@@ -153,7 +153,11 @@ mod tests {
 
     #[test]
     fn test_request_serialization() {
-        let req = JsonRpcRequest::new(1, "initialize", Some(serde_json::json!({"capabilities": {}})));
+        let req = JsonRpcRequest::new(
+            1,
+            "initialize",
+            Some(serde_json::json!({"capabilities": {}})),
+        );
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"jsonrpc\":\"2.0\""));
         assert!(json.contains("\"id\":1"));
@@ -171,7 +175,8 @@ mod tests {
 
     #[test]
     fn test_tool_def_deserialization() {
-        let json = r#"{"name":"read_file","description":"Read a file","inputSchema":{"type":"object"}}"#;
+        let json =
+            r#"{"name":"read_file","description":"Read a file","inputSchema":{"type":"object"}}"#;
         let tool: McpToolDef = serde_json::from_str(json).unwrap();
         assert_eq!(tool.name, "read_file");
         assert!(tool.input_schema.is_some());

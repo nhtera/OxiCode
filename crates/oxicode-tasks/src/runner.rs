@@ -24,11 +24,7 @@ fn open_output_file(tasks_dir: &Path, task_id: &str) -> OxiResult<std::fs::File>
 }
 
 /// Append one JSON line to the output file.
-fn write_line(
-    file: &mut std::fs::File,
-    stream: &str,
-    line: &str,
-) -> OxiResult<()> {
+fn write_line(file: &mut std::fs::File, stream: &str, line: &str) -> OxiResult<()> {
     let record = json!({
         "ts": Utc::now().to_rfc3339(),
         "stream": stream,
@@ -39,11 +35,7 @@ fn write_line(
 }
 
 /// Spawn `sh -c <command>`, stream output to disk, detect stalls, return final status.
-pub async fn run_bash(
-    task_id: &str,
-    command: &str,
-    tasks_dir: &Path,
-) -> OxiResult<TaskStatus> {
+pub async fn run_bash(task_id: &str, command: &str, tasks_dir: &Path) -> OxiResult<TaskStatus> {
     tracing::info!("run_bash task={} cmd={:?}", task_id, command);
 
     let mut child = Command::new("sh")
@@ -139,8 +131,7 @@ pub async fn run_agent(
 ) -> OxiResult<TaskStatus> {
     tracing::info!("run_agent task={} model={}", task_id, model);
 
-    let exe = std::env::current_exe()
-        .map_err(|e| OxiError::Other(format!("current_exe: {e}")))?;
+    let exe = std::env::current_exe().map_err(|e| OxiError::Other(format!("current_exe: {e}")))?;
 
     let mut child = Command::new(&exe)
         .args(["--task-mode", "--model", model])

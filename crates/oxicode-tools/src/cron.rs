@@ -33,8 +33,12 @@ pub struct CronCreateTool;
 
 #[async_trait]
 impl Tool for CronCreateTool {
-    fn name(&self) -> &str { "cron_create" }
-    fn description(&self) -> &str { "Create a scheduled recurring task with a cron expression." }
+    fn name(&self) -> &str {
+        "cron_create"
+    }
+    fn description(&self) -> &str {
+        "Create a scheduled recurring task with a cron expression."
+    }
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: self.name().into(),
@@ -50,17 +54,20 @@ impl Tool for CronCreateTool {
             }),
         }
     }
-    fn permission_level(&self) -> PermissionLevel { PermissionLevel::System }
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::System
+    }
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let cron = match input.get("cron").and_then(|v| v.as_str()) {
-            Some(c) => c,
-            None => return Ok(ToolResult::error("cron expression required")),
+        let Some(cron) = input.get("cron").and_then(|v| v.as_str()) else {
+            return Ok(ToolResult::error("cron expression required"));
         };
-        let command = match input.get("command").and_then(|v| v.as_str()) {
-            Some(c) => c,
-            None => return Ok(ToolResult::error("command required")),
+        let Some(command) = input.get("command").and_then(|v| v.as_str()) else {
+            return Ok(ToolResult::error("command required"));
         };
-        let description = input.get("description").and_then(|v| v.as_str()).unwrap_or("");
+        let description = input
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         let id = uuid::Uuid::new_v4().to_string();
         let entry = ScheduleEntry {
@@ -78,7 +85,9 @@ impl Tool for CronCreateTool {
             .map_err(|e| oxicode_common::OxiError::Other(format!("Serialize failed: {e}")))?;
         std::fs::write(&path, json)?;
 
-        Ok(ToolResult::success(format!("Schedule created: {id} ({cron})")))
+        Ok(ToolResult::success(format!(
+            "Schedule created: {id} ({cron})"
+        )))
     }
 }
 
@@ -87,8 +96,12 @@ pub struct CronDeleteTool;
 
 #[async_trait]
 impl Tool for CronDeleteTool {
-    fn name(&self) -> &str { "cron_delete" }
-    fn description(&self) -> &str { "Delete a scheduled task by ID." }
+    fn name(&self) -> &str {
+        "cron_delete"
+    }
+    fn description(&self) -> &str {
+        "Delete a scheduled task by ID."
+    }
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: self.name().into(),
@@ -102,16 +115,19 @@ impl Tool for CronDeleteTool {
             }),
         }
     }
-    fn permission_level(&self) -> PermissionLevel { PermissionLevel::System }
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::System
+    }
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let id = match input.get("id").and_then(|v| v.as_str()) {
-            Some(i) => i,
-            None => return Ok(ToolResult::error("id required")),
+        let Some(id) = input.get("id").and_then(|v| v.as_str()) else {
+            return Ok(ToolResult::error("id required"));
         };
 
         // Prevent path traversal: only allow UUID-safe characters.
         if !id.chars().all(|c| c.is_alphanumeric() || c == '-') {
-            return Ok(ToolResult::error("Invalid schedule ID (must be UUID format)"));
+            return Ok(ToolResult::error(
+                "Invalid schedule ID (must be UUID format)",
+            ));
         }
 
         let path = schedules_dir().join(format!("{id}.json"));
@@ -129,8 +145,12 @@ pub struct CronListTool;
 
 #[async_trait]
 impl Tool for CronListTool {
-    fn name(&self) -> &str { "cron_list" }
-    fn description(&self) -> &str { "List all scheduled tasks." }
+    fn name(&self) -> &str {
+        "cron_list"
+    }
+    fn description(&self) -> &str {
+        "List all scheduled tasks."
+    }
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: self.name().into(),
@@ -138,8 +158,14 @@ impl Tool for CronListTool {
             input_schema: serde_json::json!({ "type": "object", "properties": {} }),
         }
     }
-    fn permission_level(&self) -> PermissionLevel { PermissionLevel::ReadOnly }
-    async fn execute(&self, _input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
+    fn permission_level(&self) -> PermissionLevel {
+        PermissionLevel::ReadOnly
+    }
+    async fn execute(
+        &self,
+        _input: serde_json::Value,
+        _ctx: &ToolContext,
+    ) -> OxiResult<ToolResult> {
         let dir = schedules_dir();
         let mut entries = Vec::new();
 

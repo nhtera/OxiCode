@@ -12,7 +12,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 use oxicode_common::{OxiError, OxiResult};
 
@@ -39,9 +39,9 @@ pub struct WebSocketTransport {
 impl WebSocketTransport {
     /// Connect to a WebSocket MCP server.
     pub async fn connect(url: &str) -> OxiResult<Self> {
-        let (ws_stream, _) = connect_async(url).await.map_err(|e| {
-            OxiError::Other(format!("WebSocket connect to '{url}' failed: {e}"))
-        })?;
+        let (ws_stream, _) = connect_async(url)
+            .await
+            .map_err(|e| OxiError::Other(format!("WebSocket connect to '{url}' failed: {e}")))?;
 
         let (sink, stream) = ws_stream.split();
 
@@ -70,9 +70,9 @@ impl WebSocketTransport {
             // Send request.
             {
                 let mut sink = self.sink.lock().await;
-                sink.send(Message::Text(request_json)).await.map_err(|e| {
-                    OxiError::Other(format!("WebSocket send failed: {e}"))
-                })?;
+                sink.send(Message::Text(request_json))
+                    .await
+                    .map_err(|e| OxiError::Other(format!("WebSocket send failed: {e}")))?;
             }
 
             // Read responses until matching id.
@@ -90,7 +90,7 @@ impl WebSocketTransport {
                     Some(Ok(Message::Close(_))) => {
                         return Err(OxiError::Other("WebSocket closed by server".into()));
                     }
-                    Some(Ok(_)) => continue, // Ping/Pong/Binary — skip.
+                    Some(Ok(_)) => {} // Ping/Pong/Binary — skip.
                     Some(Err(e)) => {
                         return Err(OxiError::Other(format!("WebSocket read error: {e}")));
                     }

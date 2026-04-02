@@ -1,12 +1,15 @@
 //! Integration tests for tool registry and tool schemas.
 
-use oxicode_tools::{ToolRegistry, default_registry};
+use oxicode_tools::{default_registry, ToolRegistry};
 
 #[test]
 fn test_default_registry_has_tools() {
     let registry = default_registry();
     assert!(!registry.is_empty(), "Default registry should have tools");
-    assert!(registry.len() >= 10, "Should have at least 10 built-in tools");
+    assert!(
+        registry.len() >= 10,
+        "Should have at least 10 built-in tools"
+    );
 }
 
 #[test]
@@ -14,7 +17,14 @@ fn test_registry_contains_core_tools() {
     let registry = default_registry();
     let names = registry.names();
 
-    let expected = ["bash", "file_read", "file_write", "glob", "grep", "file_edit"];
+    let expected = [
+        "bash",
+        "file_read",
+        "file_write",
+        "glob",
+        "grep",
+        "file_edit",
+    ];
     for tool in &expected {
         assert!(
             names.iter().any(|n| n == tool),

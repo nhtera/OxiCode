@@ -23,9 +23,8 @@ pub struct InstalledPlugin {
 pub fn discover_plugins(plugins_dir: &Path) -> Vec<InstalledPlugin> {
     let mut plugins = Vec::new();
 
-    let entries = match std::fs::read_dir(plugins_dir) {
-        Ok(e) => e,
-        Err(_) => return plugins,
+    let Ok(entries) = std::fs::read_dir(plugins_dir) else {
+        return plugins;
     };
 
     for entry in entries.flatten() {
@@ -50,7 +49,10 @@ pub fn discover_plugins(plugins_dir: &Path) -> Vec<InstalledPlugin> {
                 });
             }
             Err(e) => {
-                tracing::warn!("Skipping invalid plugin at {}: {e}", manifest_path.display());
+                tracing::warn!(
+                    "Skipping invalid plugin at {}: {e}",
+                    manifest_path.display()
+                );
             }
         }
     }
@@ -86,19 +88,16 @@ pub fn install_plugin(source_dir: &Path, target_plugins_dir: &Path) -> OxiResult
 
 /// Uninstall a plugin by removing its directory.
 pub fn uninstall_plugin(plugins_dir: &Path, plugin_name: &str) -> OxiResult<()> {
-    let plugin_dir = plugins_dir.join(plugin_name);
-    if !plugin_dir.exists() {
+    let target_dir = plugins_dir.join(plugin_name);
+    if !target_dir.exists() {
         return Err(OxiError::Config(format!(
             "Plugin '{plugin_name}' not found in {}",
             plugins_dir.display()
         )));
     }
 
-    std::fs::remove_dir_all(&plugin_dir).map_err(|e| {
-        OxiError::Other(format!(
-            "Failed to remove plugin '{plugin_name}': {e}"
-        ))
-    })
+    std::fs::remove_dir_all(&target_dir)
+        .map_err(|e| OxiError::Other(format!("Failed to remove plugin '{plugin_name}': {e}")))
 }
 
 /// Recursively copy a directory.

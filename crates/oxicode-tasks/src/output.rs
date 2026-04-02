@@ -60,9 +60,7 @@ impl OutputReader {
     }
 
     fn output_path(&self) -> PathBuf {
-        self.tasks_dir
-            .join(&self.task_id)
-            .join("output.jsonl")
+        self.tasks_dir.join(&self.task_id).join("output.jsonl")
     }
 
     /// Return any lines written since the last call, advancing the internal offset.

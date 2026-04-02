@@ -1,19 +1,25 @@
 //! General slash commands: /help, /version, /clear, /status, /config, /compact, /init, /quit.
 
+use std::fmt::Write as _;
+
 use super::{CommandContext, CommandOutput, SlashCommand};
 
 /// /help — list available commands.
 pub struct HelpCommand;
 
 impl SlashCommand for HelpCommand {
-    fn name(&self) -> &str { "help" }
-    fn description(&self) -> &str { "Show available commands" }
+    fn name(&self) -> &str {
+        "help"
+    }
+    fn description(&self) -> &str {
+        "Show available commands"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         let registry = super::default_registry();
         let mut output = String::from("Available commands:\n");
         for (name, desc) in registry.all_commands() {
-            output.push_str(&format!("  /{name:<16} {desc}\n"));
+            let _ = writeln!(output, "  /{name:<16} {desc}");
         }
         CommandOutput::Message(output)
     }
@@ -23,8 +29,12 @@ impl SlashCommand for HelpCommand {
 pub struct VersionCommand;
 
 impl SlashCommand for VersionCommand {
-    fn name(&self) -> &str { "version" }
-    fn description(&self) -> &str { "Show OxiCode version" }
+    fn name(&self) -> &str {
+        "version"
+    }
+    fn description(&self) -> &str {
+        "Show OxiCode version"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(format!(
@@ -39,8 +49,12 @@ impl SlashCommand for VersionCommand {
 pub struct ClearCommand;
 
 impl SlashCommand for ClearCommand {
-    fn name(&self) -> &str { "clear" }
-    fn description(&self) -> &str { "Clear conversation history" }
+    fn name(&self) -> &str {
+        "clear"
+    }
+    fn description(&self) -> &str {
+        "Clear conversation history"
+    }
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         ctx.state_store.clear_messages();
@@ -52,8 +66,12 @@ impl SlashCommand for ClearCommand {
 pub struct StatusCommand;
 
 impl SlashCommand for StatusCommand {
-    fn name(&self) -> &str { "status" }
-    fn description(&self) -> &str { "Show session status" }
+    fn name(&self) -> &str {
+        "status"
+    }
+    fn description(&self) -> &str {
+        "Show session status"
+    }
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         let state = ctx.state_store.current();
@@ -62,11 +80,7 @@ impl SlashCommand for StatusCommand {
 
         CommandOutput::Message(format!(
             "Model: {}\nProvider: {}\nSession: {}\nMessages: {msg_count}\nTokens: {}in / {}out",
-            ctx.model,
-            ctx.provider_name,
-            ctx.session_id,
-            usage.input_tokens,
-            usage.output_tokens,
+            ctx.model, ctx.provider_name, ctx.session_id, usage.input_tokens, usage.output_tokens,
         ))
     }
 }
@@ -75,8 +89,12 @@ impl SlashCommand for StatusCommand {
 pub struct ConfigCommand;
 
 impl SlashCommand for ConfigCommand {
-    fn name(&self) -> &str { "config" }
-    fn description(&self) -> &str { "Show current configuration" }
+    fn name(&self) -> &str {
+        "config"
+    }
+    fn description(&self) -> &str {
+        "Show current configuration"
+    }
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(format!(
@@ -90,8 +108,12 @@ impl SlashCommand for ConfigCommand {
 pub struct CompactCommand;
 
 impl SlashCommand for CompactCommand {
-    fn name(&self) -> &str { "compact" }
-    fn description(&self) -> &str { "Compact conversation context" }
+    fn name(&self) -> &str {
+        "compact"
+    }
+    fn description(&self) -> &str {
+        "Compact conversation context"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         // TODO: Implement actual context compaction in Phase 4.
@@ -103,8 +125,12 @@ impl SlashCommand for CompactCommand {
 pub struct InitCommand;
 
 impl SlashCommand for InitCommand {
-    fn name(&self) -> &str { "init" }
-    fn description(&self) -> &str { "Initialize .oxicode config in current directory" }
+    fn name(&self) -> &str {
+        "init"
+    }
+    fn description(&self) -> &str {
+        "Initialize .oxicode config in current directory"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         let dir = std::path::Path::new(".oxicode");
@@ -125,8 +151,12 @@ impl SlashCommand for InitCommand {
 pub struct QuitCommand;
 
 impl SlashCommand for QuitCommand {
-    fn name(&self) -> &str { "quit" }
-    fn description(&self) -> &str { "Exit OxiCode" }
+    fn name(&self) -> &str {
+        "quit"
+    }
+    fn description(&self) -> &str {
+        "Exit OxiCode"
+    }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Quit

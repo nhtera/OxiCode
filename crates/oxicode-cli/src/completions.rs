@@ -7,7 +7,7 @@ use std::io;
 use std::path::Path;
 
 use clap::CommandFactory;
-use clap_complete::{Shell, generate};
+use clap_complete::{generate, Shell};
 
 use crate::Cli;
 
@@ -18,6 +18,8 @@ pub fn generate_completions(shell: Shell, buf: &mut impl io::Write) {
 }
 
 /// Generate shell completions and write to a file.
+// Planned CLI feature
+#[allow(dead_code)]
 pub fn generate_completions_to_file(shell: Shell, out_dir: &Path) -> io::Result<()> {
     let mut cmd = Cli::command();
     let path = clap_complete::generate_to(shell, &mut cmd, "oxicode", out_dir)?;
@@ -33,6 +35,8 @@ pub fn generate_man_page(buf: &mut impl io::Write) -> io::Result<()> {
 }
 
 /// Generate man page to a file in the given directory.
+// Planned CLI feature
+#[allow(dead_code)]
 pub fn generate_man_page_to_file(out_dir: &Path) -> io::Result<()> {
     let path = out_dir.join("oxicode.1");
     let mut file = std::fs::File::create(&path)?;
@@ -50,7 +54,10 @@ mod tests {
         let mut buf = Vec::new();
         generate_completions(Shell::Bash, &mut buf);
         let output = String::from_utf8(buf).unwrap();
-        assert!(output.contains("oxicode"), "Bash completions should reference 'oxicode'");
+        assert!(
+            output.contains("oxicode"),
+            "Bash completions should reference 'oxicode'"
+        );
     }
 
     #[test]
@@ -82,6 +89,9 @@ mod tests {
         let mut buf = Vec::new();
         generate_man_page(&mut buf).unwrap();
         let output = String::from_utf8(buf).unwrap();
-        assert!(output.contains("oxicode"), "Man page should reference 'oxicode'");
+        assert!(
+            output.contains("oxicode"),
+            "Man page should reference 'oxicode'"
+        );
     }
 }

@@ -70,7 +70,10 @@ impl SearchOverlay {
 
     pub fn prev_match(&mut self) {
         if self.match_count > 0 {
-            self.current_match = self.current_match.checked_sub(1).unwrap_or(self.match_count - 1);
+            self.current_match = self
+                .current_match
+                .checked_sub(1)
+                .unwrap_or(self.match_count - 1);
         }
     }
 
@@ -115,7 +118,12 @@ impl Widget for SearchBar<'_> {
 
         let line = Line::from(vec![
             Span::styled("Search: ", Style::default().fg(Color::Yellow)),
-            Span::styled(&self.overlay.query, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                &self.overlay.query,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("_", Style::default().fg(Color::Gray)),
             Span::styled(status, Style::default().fg(Color::DarkGray)),
         ]);

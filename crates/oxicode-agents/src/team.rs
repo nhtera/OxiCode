@@ -8,7 +8,7 @@ use oxicode_common::{OxiError, OxiResult};
 
 use crate::communication::MessageBus;
 use crate::coordinator::CoordinatorState;
-use crate::spawner::{AgentConfig, AgentHandle, spawn_agent_handle};
+use crate::spawner::{spawn_agent_handle, AgentConfig, AgentHandle};
 
 /// A named group of agents that share a `MessageBus`.
 pub struct Team {
@@ -122,9 +122,9 @@ impl TeamManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spawner::AgentConfig;
     use std::path::PathBuf;
     use std::time::Duration;
-    use crate::spawner::AgentConfig;
 
     #[allow(dead_code)]
     fn dummy_config(name: &str) -> AgentConfig {

@@ -45,9 +45,8 @@ pub struct HooksConfig {
 impl HooksConfig {
     /// Load hooks from a TOML table value (the `[hooks]` section of settings).
     pub fn from_toml_value(value: &toml::Value) -> Self {
-        let table = match value.as_table() {
-            Some(t) => t,
-            None => return Self::default(),
+        let Some(table) = value.as_table() else {
+            return Self::default();
         };
 
         let mut hooks = HashMap::new();
@@ -79,19 +78,17 @@ impl HooksConfig {
 
     /// Get the hook definition for a specific event, if configured and enabled.
     pub fn get(&self, event: HookEvent) -> Option<&HookDef> {
-        self.hooks
-            .get(event.as_str())
-            .filter(|def| def.enabled)
+        self.hooks.get(event.as_str()).filter(|def| def.enabled)
     }
 
     /// Load hooks config from the user settings file.
     pub fn load_from_settings_dir() -> Self {
-        let config_dir = dirs::home_dir().map_or_else(|| PathBuf::from(".oxicode"), |h| h.join(".oxicode"));
+        let config_dir =
+            dirs::home_dir().map_or_else(|| PathBuf::from(".oxicode"), |h| h.join(".oxicode"));
 
         let settings_path = config_dir.join("settings.toml");
-        let content = match std::fs::read_to_string(&settings_path) {
-            Ok(c) => c,
-            Err(_) => return Self::default(),
+        let Ok(content) = std::fs::read_to_string(&settings_path) else {
+            return Self::default();
         };
 
         let parsed: toml::Value = match content.parse() {

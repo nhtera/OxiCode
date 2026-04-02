@@ -67,7 +67,7 @@ pub struct PluginSubprocess {
 
 impl PluginSubprocess {
     /// Spawn a plugin subprocess.
-    pub async fn spawn(
+    pub fn spawn(
         plugin_name: &str,
         command: &str,
         args: &[String],
@@ -84,7 +84,9 @@ impl PluginSubprocess {
         }
 
         let mut child = cmd.spawn().map_err(|e| {
-            OxiError::Other(format!("Failed to spawn plugin '{plugin_name}' ({command}): {e}"))
+            OxiError::Other(format!(
+                "Failed to spawn plugin '{plugin_name}' ({command}): {e}"
+            ))
         })?;
 
         let stdin = child.stdin.take().ok_or_else(|| {
@@ -128,14 +130,20 @@ impl PluginSubprocess {
             let mut io = self.io.lock().await;
 
             // Write request.
-            let stdin = io.stdin.as_mut().ok_or_else(|| {
-                OxiError::Other(format!("Plugin '{name}' stdin already closed"))
-            })?;
-            stdin.write_all(req_json.as_bytes()).await
+            let stdin = io
+                .stdin
+                .as_mut()
+                .ok_or_else(|| OxiError::Other(format!("Plugin '{name}' stdin already closed")))?;
+            stdin
+                .write_all(req_json.as_bytes())
+                .await
                 .map_err(|e| OxiError::Other(format!("Plugin '{name}' write failed: {e}")))?;
-            stdin.write_all(b"\n").await
-                .map_err(|e| OxiError::Other(format!("Plugin '{name}' write newline failed: {e}")))?;
-            stdin.flush().await
+            stdin.write_all(b"\n").await.map_err(|e| {
+                OxiError::Other(format!("Plugin '{name}' write newline failed: {e}"))
+            })?;
+            stdin
+                .flush()
+                .await
                 .map_err(|e| OxiError::Other(format!("Plugin '{name}' flush failed: {e}")))?;
 
             // Read response lines until matching id.
@@ -150,7 +158,10 @@ impl PluginSubprocess {
                             if resp.id == Some(id) {
                                 return Ok(resp);
                             }
-                            tracing::debug!("Plugin '{name}': skipping response with id {:?}", resp.id);
+                            tracing::debug!(
+                                "Plugin '{name}': skipping response with id {:?}",
+                                resp.id
+                            );
                         }
                     }
                     Ok(None) => {
@@ -164,25 +175,31 @@ impl PluginSubprocess {
         })
         .await;
 
-        let response = match result {
-            Ok(r) => r?,
-            Err(_) => {
-                tracing::warn!("Plugin '{}' request '{method}' timed out, killing", self.plugin_name);
-                let mut ch = child.lock().await;
-                let _ = ch.kill().await;
-                return Err(OxiError::Other(
-                    format!("Plugin '{}' request '{method}' timed out", self.plugin_name),
-                ));
-            }
+        let response = if let Ok(r) = result {
+            r?
+        } else {
+            tracing::warn!(
+                "Plugin '{}' request '{method}' timed out, killing",
+                self.plugin_name
+            );
+            let mut ch = child.lock().await;
+            let _ = ch.kill().await;
+            return Err(OxiError::Other(format!(
+                "Plugin '{}' request '{method}' timed out",
+                self.plugin_name
+            )));
         };
 
         if let Some(error) = response.error {
-            return Err(OxiError::Other(format!("Plugin '{}': {error}", self.plugin_name)));
+            return Err(OxiError::Other(format!(
+                "Plugin '{}': {error}",
+                self.plugin_name
+            )));
         }
 
-        response
-            .result
-            .ok_or_else(|| OxiError::Other(format!("Plugin '{}' returned no result", self.plugin_name)))
+        response.result.ok_or_else(|| {
+            OxiError::Other(format!("Plugin '{}' returned no result", self.plugin_name))
+        })
     }
 
     /// Call a tool on the plugin.
@@ -234,7 +251,10 @@ impl PluginSubprocess {
         let mut child = self.child.lock().await;
         let timeout = tokio::time::timeout(Duration::from_secs(3), child.wait()).await;
         if timeout.is_err() {
-            tracing::warn!("Plugin '{}' did not exit cleanly, killing", self.plugin_name);
+            tracing::warn!(
+                "Plugin '{}' did not exit cleanly, killing",
+                self.plugin_name
+            );
             let _ = child.kill().await;
         }
     }

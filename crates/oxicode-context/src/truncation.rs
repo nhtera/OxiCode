@@ -87,7 +87,10 @@ mod tests {
         // Force truncation by using a tight budget
         let budget = total / 2;
         let result = truncate_messages(&msgs, budget, &mut counter);
-        assert!(result.len() < msgs.len(), "should have removed some messages");
+        assert!(
+            result.len() < msgs.len(),
+            "should have removed some messages"
+        );
         // First message always kept
         assert_eq!(result[0].id, msgs[0].id);
         // Last DEFAULT_KEEP_LAST messages kept

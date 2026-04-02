@@ -47,8 +47,14 @@ impl Tool for BriefTool {
     }
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
         let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("");
-        let max_length = input.get("max_length").and_then(|v| v.as_u64()).unwrap_or(200);
-        let format = input.get("format").and_then(|v| v.as_str()).unwrap_or("bullets");
+        let max_length = input
+            .get("max_length")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(200);
+        let format = input
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("bullets");
 
         // The core engine intercepts this result and makes a summarization LLM call.
         // We return the request parameters for the engine to process.

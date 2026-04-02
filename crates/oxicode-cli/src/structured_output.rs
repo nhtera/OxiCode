@@ -61,7 +61,7 @@ impl NdjsonWriter {
 
     /// Write a single event as a JSON line to stdout.
     pub fn emit(&mut self, event: &NdjsonEvent) -> io::Result<()> {
-        let json = serde_json::to_string(event).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string(event).map_err(io::Error::other)?;
         let mut lock = self.writer.lock();
         lock.write_all(json.as_bytes())?;
         lock.write_all(b"\n")?;

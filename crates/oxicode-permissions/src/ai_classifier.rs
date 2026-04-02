@@ -42,12 +42,37 @@ impl AiPermissionClassifier {
     pub fn new() -> Self {
         Self {
             safe_command_prefixes: vec![
-                "echo ", "cat ", "ls ", "pwd", "whoami", "date", "uname",
-                "head ", "tail ", "wc ", "sort ", "uniq ", "grep ", "rg ",
-                "which ", "env", "printenv", "id", "hostname",
-                "cargo check", "cargo test", "cargo clippy", "cargo fmt",
-                "git status", "git log", "git diff", "git branch",
-                "npm test", "npm run lint", "yarn test", "pnpm test",
+                "echo ",
+                "cat ",
+                "ls ",
+                "pwd",
+                "whoami",
+                "date",
+                "uname",
+                "head ",
+                "tail ",
+                "wc ",
+                "sort ",
+                "uniq ",
+                "grep ",
+                "rg ",
+                "which ",
+                "env",
+                "printenv",
+                "id",
+                "hostname",
+                "cargo check",
+                "cargo test",
+                "cargo clippy",
+                "cargo fmt",
+                "git status",
+                "git log",
+                "git diff",
+                "git branch",
+                "npm test",
+                "npm run lint",
+                "yarn test",
+                "pnpm test",
                 "rustc --version",
             ],
             dangerous_patterns: vec![
@@ -73,9 +98,23 @@ impl AiPermissionClassifier {
                 ("git reset --hard", "discards uncommitted changes"),
             ],
             dangerous_paths: vec![
-                "/", "/etc", "/usr", "/bin", "/sbin", "/boot", "/sys", "/proc",
-                "/var", "/root", "~/.ssh", "~/.gnupg", "~/.aws", "~/.config",
-                ".env", ".env.local", ".env.production",
+                "/",
+                "/etc",
+                "/usr",
+                "/bin",
+                "/sbin",
+                "/boot",
+                "/sys",
+                "/proc",
+                "/var",
+                "/root",
+                "~/.ssh",
+                "~/.gnupg",
+                "~/.aws",
+                "~/.config",
+                ".env",
+                ".env.local",
+                ".env.production",
             ],
         }
     }
@@ -108,7 +147,11 @@ impl AiPermissionClassifier {
         }
 
         // Check for pipe chains (moderate risk, case-insensitive)
-        if cmd_lower.contains('|') && (cmd_lower.contains("sh") || cmd_lower.contains("bash") || cmd_lower.contains("eval")) {
+        if cmd_lower.contains('|')
+            && (cmd_lower.contains("sh")
+                || cmd_lower.contains("bash")
+                || cmd_lower.contains("eval"))
+        {
             return ClassificationResult {
                 rating: SafetyRating::Suspicious,
                 confidence: 0.7,
@@ -179,10 +222,7 @@ impl AiPermissionClassifier {
     ) -> ClassificationResult {
         match tool_name {
             "bash" => {
-                let cmd = input
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
                 self.classify_command(cmd)
             }
             "file_write" | "file_edit" | "notebook_edit" => {
@@ -224,7 +264,13 @@ mod tests {
     #[test]
     fn test_safe_commands() {
         let c = classifier();
-        let safe = ["echo hello", "ls -la", "cargo test", "git status", "cat file.txt"];
+        let safe = [
+            "echo hello",
+            "ls -la",
+            "cargo test",
+            "git status",
+            "cat file.txt",
+        ];
         for cmd in &safe {
             let result = c.classify_command(cmd);
             assert_eq!(result.rating, SafetyRating::Safe, "Should be safe: {cmd}");
@@ -238,7 +284,11 @@ mod tests {
         let dangerous = ["rm -rf /", "sudo rm -rf ~", "mkfs.ext4 /dev/sda1"];
         for cmd in &dangerous {
             let result = c.classify_command(cmd);
-            assert_eq!(result.rating, SafetyRating::Dangerous, "Should be dangerous: {cmd}");
+            assert_eq!(
+                result.rating,
+                SafetyRating::Dangerous,
+                "Should be dangerous: {cmd}"
+            );
         }
     }
 
@@ -318,7 +368,11 @@ mod tests {
         let c = classifier();
         // C1 FIX: case-insensitive matching
         let result = c.classify_command("RM -RF /");
-        assert_eq!(result.rating, SafetyRating::Dangerous, "Uppercase should still be caught");
+        assert_eq!(
+            result.rating,
+            SafetyRating::Dangerous,
+            "Uppercase should still be caught"
+        );
 
         let result = c.classify_command("DROP TABLE users");
         assert_eq!(result.rating, SafetyRating::Dangerous);

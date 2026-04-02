@@ -43,9 +43,8 @@ impl Tool for RemoteTriggerTool {
         PermissionLevel::System
     }
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let url = match input.get("url").and_then(|v| v.as_str()) {
-            Some(u) => u,
-            None => return Ok(ToolResult::error("url is required")),
+        let Some(url) = input.get("url").and_then(|v| v.as_str()) else {
+            return Ok(ToolResult::error("url is required"));
         };
 
         // SSRF protection: block private/loopback/link-local/metadata URLs.
@@ -53,7 +52,10 @@ impl Tool for RemoteTriggerTool {
             return Ok(ToolResult::error(format!("Blocked URL: {reason}")));
         }
 
-        let payload = input.get("payload").cloned().unwrap_or(serde_json::json!({}));
+        let payload = input
+            .get("payload")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
 
         let client = reqwest::Client::new();
         let mut req = client.post(url).json(&payload);

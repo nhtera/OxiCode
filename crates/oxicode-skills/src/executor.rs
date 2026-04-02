@@ -60,18 +60,13 @@ impl SkillExecutor {
             return None;
         }
 
-        let combined = active
-            .iter()
-            .fold(String::new(), |mut acc, s| {
-                use std::fmt::Write;
-                let _ = writeln!(acc, "\n# Skill: {}\n\n{}\n", s.name(), s.prompt);
-                acc
-            });
+        let combined = active.iter().fold(String::new(), |mut acc, s| {
+            use std::fmt::Write;
+            let _ = writeln!(acc, "\n# Skill: {}\n\n{}\n", s.name(), s.prompt);
+            acc
+        });
 
-        tracing::debug!(
-            "Built skills prompt from {} active skill(s)",
-            active.len()
-        );
+        tracing::debug!("Built skills prompt from {} active skill(s)", active.len());
 
         Some(combined)
     }
@@ -130,7 +125,12 @@ mod tests {
 
     #[test]
     fn test_active_skill_builds_prompt() {
-        let skills = vec![make_skill("rust", vec!["*.rs"], vec![], "Be a Rust expert.")];
+        let skills = vec![make_skill(
+            "rust",
+            vec!["*.rs"],
+            vec![],
+            "Be a Rust expert.",
+        )];
         let executor = SkillExecutor::new(skills);
         let ctx = ActivationContext {
             current_file: Some("main.rs".to_string()),
@@ -166,8 +166,19 @@ mod tests {
         let executor = SkillExecutor::new(skills);
         let list = executor.list_skills();
         assert_eq!(list.len(), 2);
-        assert!(list.iter().find(|i| i.name == "static-skill").unwrap().is_static);
-        assert!(!list.iter().find(|i| i.name == "conditional").unwrap().is_static);
+        assert!(
+            list.iter()
+                .find(|i| i.name == "static-skill")
+                .unwrap()
+                .is_static
+        );
+        assert!(
+            !list
+                .iter()
+                .find(|i| i.name == "conditional")
+                .unwrap()
+                .is_static
+        );
     }
 
     #[test]

@@ -37,11 +37,7 @@ pub struct StdioTransport {
 
 impl StdioTransport {
     /// Spawn an MCP server process.
-    pub async fn spawn(
-        command: &str,
-        args: &[String],
-        env: &[(String, String)],
-    ) -> OxiResult<Self> {
+    pub fn spawn(command: &str, args: &[String], env: &[(String, String)]) -> OxiResult<Self> {
         let mut cmd = Command::new(command);
         cmd.args(args)
             .stdin(Stdio::piped())
@@ -99,14 +95,21 @@ impl StdioTransport {
             let mut io = self.io.lock().await;
 
             // Write request.
-            let stdin = io.stdin.as_mut().ok_or_else(|| {
-                OxiError::Other("MCP transport stdin already closed".to_string())
-            })?;
-            stdin.write_all(request_json.as_bytes()).await
+            let stdin = io
+                .stdin
+                .as_mut()
+                .ok_or_else(|| OxiError::Other("MCP transport stdin already closed".to_string()))?;
+            stdin
+                .write_all(request_json.as_bytes())
+                .await
                 .map_err(|e| OxiError::Other(format!("Failed to write to MCP server: {e}")))?;
-            stdin.write_all(b"\n").await
+            stdin
+                .write_all(b"\n")
+                .await
                 .map_err(|e| OxiError::Other(format!("Failed to write newline: {e}")))?;
-            stdin.flush().await
+            stdin
+                .flush()
+                .await
                 .map_err(|e| OxiError::Other(format!("Failed to flush stdin: {e}")))?;
 
             // Read response lines until we find one with our id.
@@ -129,22 +132,23 @@ impl StdioTransport {
                         return Err(OxiError::Other("MCP server stdout closed".to_string()));
                     }
                     Err(e) => {
-                        return Err(OxiError::Other(format!("Failed to read from MCP server: {e}")));
+                        return Err(OxiError::Other(format!(
+                            "Failed to read from MCP server: {e}"
+                        )));
                     }
                 }
             }
         })
         .await;
 
-        let response = match result {
-            Ok(r) => r?,
-            Err(_) => {
-                // Timeout: kill the child to prevent zombie (C2 fix).
-                tracing::warn!("MCP request '{method}' timed out, killing server");
-                let mut ch = child.lock().await;
-                let _ = ch.kill().await;
-                return Err(OxiError::Other(format!("MCP request '{method}' timed out")));
-            }
+        let response = if let Ok(r) = result {
+            r?
+        } else {
+            // Timeout: kill the child to prevent zombie (C2 fix).
+            tracing::warn!("MCP request '{method}' timed out, killing server");
+            let mut ch = child.lock().await;
+            let _ = ch.kill().await;
+            return Err(OxiError::Other(format!("MCP request '{method}' timed out")));
         };
 
         if let Some(error) = response.error {
@@ -157,24 +161,27 @@ impl StdioTransport {
     }
 
     /// Send a notification (no response expected).
-    pub async fn notify(
-        &self,
-        method: &str,
-        params: Option<serde_json::Value>,
-    ) -> OxiResult<()> {
+    pub async fn notify(&self, method: &str, params: Option<serde_json::Value>) -> OxiResult<()> {
         let notification = crate::protocol::JsonRpcNotification::new(method, params);
         let json = serde_json::to_string(&notification)
             .map_err(|e| OxiError::Other(format!("Failed to serialize notification: {e}")))?;
 
         let mut io = self.io.lock().await;
-        let stdin = io.stdin.as_mut().ok_or_else(|| {
-            OxiError::Other("MCP transport stdin already closed".to_string())
-        })?;
-        stdin.write_all(json.as_bytes()).await
+        let stdin = io
+            .stdin
+            .as_mut()
+            .ok_or_else(|| OxiError::Other("MCP transport stdin already closed".to_string()))?;
+        stdin
+            .write_all(json.as_bytes())
+            .await
             .map_err(|e| OxiError::Other(format!("Failed to write notification: {e}")))?;
-        stdin.write_all(b"\n").await
+        stdin
+            .write_all(b"\n")
+            .await
             .map_err(|e| OxiError::Other(format!("Failed to write newline: {e}")))?;
-        stdin.flush().await
+        stdin
+            .flush()
+            .await
             .map_err(|e| OxiError::Other(format!("Failed to flush: {e}")))?;
         Ok(())
     }

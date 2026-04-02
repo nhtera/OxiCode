@@ -61,10 +61,7 @@ fn test_approval_mode_asks_for_non_readonly() {
 #[test]
 fn test_dangerous_commands_caught() {
     let pipeline = PermissionPipeline::new(PermissionMode::Default, vec![]);
-    let dangerous = [
-        r#"{"command": "rm -rf /"}"#,
-        r#"{"command": "rm -rf ~"}"#,
-    ];
+    let dangerous = [r#"{"command": "rm -rf /"}"#, r#"{"command": "rm -rf ~"}"#];
 
     for cmd_json in &dangerous {
         let input: serde_json::Value = serde_json::from_str(cmd_json).unwrap();

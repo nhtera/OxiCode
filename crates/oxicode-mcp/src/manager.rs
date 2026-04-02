@@ -61,14 +61,17 @@ impl McpServerManager {
         for (name, server_config) in config.enabled_servers() {
             let transport = match &server_config.transport {
                 McpTransportType::Stdio => {
-                    let command = if let Some(cmd) = &server_config.command { cmd } else {
+                    let Some(command) = &server_config.command else {
                         tracing::warn!("MCP server '{name}' has no command");
                         continue;
                     };
-                    let env: Vec<(String, String)> =
-                        server_config.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                    let env: Vec<(String, String)> = server_config
+                        .env
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
 
-                    match StdioTransport::spawn(command, &server_config.args, &env).await {
+                    match StdioTransport::spawn(command, &server_config.args, &env) {
                         Ok(t) => ActiveTransport::Stdio(t),
                         Err(e) => {
                             tracing::error!("Failed to start MCP server '{name}': {e}");
@@ -77,14 +80,14 @@ impl McpServerManager {
                     }
                 }
                 McpTransportType::Sse => {
-                    let url = if let Some(u) = &server_config.url { u } else {
+                    let Some(url) = &server_config.url else {
                         tracing::warn!("MCP server '{name}' has no URL");
                         continue;
                     };
                     ActiveTransport::Sse(SseTransport::new(url))
                 }
                 McpTransportType::WebSocket => {
-                    let url = if let Some(u) = &server_config.url { u } else {
+                    let Some(url) = &server_config.url else {
                         tracing::warn!("MCP server '{name}' has no WebSocket URL");
                         continue;
                     };
@@ -109,11 +112,7 @@ impl McpServerManager {
     }
 
     /// Initialize a server: send initialize, list tools.
-    async fn initialize_server(
-        &mut self,
-        name: &str,
-        transport: ActiveTransport,
-    ) -> OxiResult<()> {
+    async fn initialize_server(&mut self, name: &str, transport: ActiveTransport) -> OxiResult<()> {
         let init_params = serde_json::json!({
             "protocolVersion": "2024-11-05",
             "capabilities": {},
@@ -150,10 +149,7 @@ impl McpServerManager {
             Vec::new()
         };
 
-        tracing::info!(
-            "MCP server '{name}' initialized with {} tools",
-            tools.len()
-        );
+        tracing::info!("MCP server '{name}' initialized with {} tools", tools.len());
 
         self.servers.insert(
             name.to_string(),

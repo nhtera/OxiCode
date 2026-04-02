@@ -49,11 +49,11 @@ impl<'a> StatusBar<'a> {
 /// Map provider name to a color for visual distinction.
 fn provider_color(provider: &str) -> Color {
     match provider {
-        "anthropic" => Color::Rgb(217, 119, 62),  // Orange (Claude brand)
-        "openai" => Color::Rgb(116, 170, 156),    // Teal
-        "ollama" => Color::Rgb(150, 150, 150),    // Gray (local)
-        "deepseek" => Color::Rgb(100, 149, 237),  // Cornflower blue
-        "azure" => Color::Rgb(0, 120, 212),       // Azure blue
+        "anthropic" => Color::Rgb(217, 119, 62), // Orange (Claude brand)
+        "openai" => Color::Rgb(116, 170, 156),   // Teal
+        "ollama" => Color::Rgb(150, 150, 150),   // Gray (local)
+        "deepseek" => Color::Rgb(100, 149, 237), // Cornflower blue
+        "azure" => Color::Rgb(0, 120, 212),      // Azure blue
         "openrouter" => Color::Rgb(168, 85, 247), // Purple
         _ => Color::White,
     }
@@ -104,10 +104,7 @@ impl Widget for StatusBar<'_> {
         // Cost estimate (rough, based on Claude Sonnet pricing).
         let cost = f64::from(self.usage.input_tokens) * 3.0 / 1_000_000.0
             + f64::from(self.usage.output_tokens) * 15.0 / 1_000_000.0;
-        let cost_span = Span::styled(
-            format!(" ${cost:.4} "),
-            Style::default().fg(Color::Cyan),
-        );
+        let cost_span = Span::styled(format!(" ${cost:.4} "), Style::default().fg(Color::Cyan));
 
         // MCP indicator.
         let mcp_span = if self.mcp_server_count > 0 {
@@ -124,10 +121,7 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         } else {
             let short: String = self.session_name.chars().take(8).collect();
-            Span::styled(
-                format!(" [{short}] "),
-                Style::default().fg(Color::DarkGray),
-            )
+            Span::styled(format!(" [{short}] "), Style::default().fg(Color::DarkGray))
         };
 
         let line = Line::from(vec![

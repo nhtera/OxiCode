@@ -2,9 +2,7 @@ use oxicode_api::LlmProvider;
 use oxicode_common::{Message, OxiResult};
 
 use crate::{
-    auto_compact::AutoCompactor,
-    microcompact::microcompact_messages,
-    token_counter::TokenCounter,
+    auto_compact::AutoCompactor, microcompact::microcompact_messages, token_counter::TokenCounter,
     truncation::truncate_messages,
 };
 
@@ -44,10 +42,7 @@ impl ReactiveCompactor {
         model: &str,
     ) -> OxiResult<(Vec<Message>, String)> {
         let old_count = messages.len();
-        tracing::warn!(
-            old_count,
-            "L4: reactive compact triggered mid-turn"
-        );
+        tracing::warn!(old_count, "L4: reactive compact triggered mid-turn");
 
         // L1: truncate oldest middle messages.
         // Use a tight budget (80 % of a large window); reactive compact is
@@ -71,9 +66,8 @@ impl ReactiveCompactor {
         }
 
         let new_count = result.len();
-        let notification = format!(
-            "Context compacted mid-turn: {old_count} messages → {new_count}"
-        );
+        let notification =
+            format!("Context compacted mid-turn: {old_count} messages → {new_count}");
 
         tracing::info!(%notification, "L4: reactive compact complete");
         Ok((result, notification))

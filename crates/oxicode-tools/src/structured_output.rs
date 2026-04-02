@@ -40,13 +40,11 @@ impl Tool for StructuredOutputTool {
         PermissionLevel::ReadOnly
     }
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let data = match input.get("data") {
-            Some(d) => d,
-            None => return Ok(ToolResult::error("data field is required")),
+        let Some(data) = input.get("data") else {
+            return Ok(ToolResult::error("data field is required"));
         };
 
-        let output = serde_json::to_string_pretty(data)
-            .unwrap_or_else(|_| data.to_string());
+        let output = serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string());
 
         Ok(ToolResult::success(output))
     }

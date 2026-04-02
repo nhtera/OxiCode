@@ -36,4 +36,4 @@ pub mod parser;
 pub use activation::{ActivationContext, SkillActivator};
 pub use discovery::SkillDiscovery;
 pub use executor::{SkillExecutor, SkillInfo};
-pub use parser::{ActivationRule, InjectMode, Skill, SkillMetadata, parse_skill};
+pub use parser::{parse_skill, ActivationRule, InjectMode, Skill, SkillMetadata};
