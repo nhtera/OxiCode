@@ -16,6 +16,7 @@ members = [
     "crates/oxicode-agents",
     "crates/oxicode-skills",
     "crates/oxicode-tasks",
+    "crates/oxicode-plugins",
 ]
 resolver = "2"
 
@@ -90,6 +91,9 @@ git2 = "0.19"
 pulldown-cmark = "0.12"
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 
+# WebSocket
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
 # Futures / streams
 futures = "0.3"
 tokio-stream = "0.1"
@@ -119,3 +123,4 @@ oxicode-context = { path = "crates/oxicode-context" }
 oxicode-agents = { path = "crates/oxicode-agents" }
 oxicode-skills = { path = "crates/oxicode-skills" }
 oxicode-tasks = { path = "crates/oxicode-tasks" }
+oxicode-plugins = { path = "crates/oxicode-plugins" }
