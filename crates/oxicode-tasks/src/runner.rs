@@ -42,6 +42,7 @@ pub async fn run_bash(task_id: &str, command: &str, tasks_dir: &Path) -> OxiResu
         .args(["-c", command])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| OxiError::Other(format!("spawn failed: {e}")))?;
 
@@ -139,6 +140,7 @@ pub async fn run_agent(
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| OxiError::Other(format!("agent spawn failed: {e}")))?;
 

@@ -144,6 +144,8 @@ async fn main() -> Result<()> {
     let tool_context = ToolContext {
         working_dir: cwd.clone(),
         file_state: std::sync::Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default()),
+        task_manager: std::sync::Arc::new(std::sync::Mutex::new(oxicode_tasks::TaskManager::default())),
+        task_abort_handles: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     let engine = Arc::new(QueryEngine::new(

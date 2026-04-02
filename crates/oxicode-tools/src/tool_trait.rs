@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
+use oxicode_tasks::TaskManager;
 use serde::{Deserialize, Serialize};
 
 use crate::file_state_tracker::FileStateTracker;
@@ -39,6 +41,10 @@ pub struct ToolContext {
     pub working_dir: PathBuf,
     /// Tracks file modification times to detect stale edits.
     pub file_state: Arc<FileStateTracker>,
+    /// Background task manager.
+    pub task_manager: Arc<Mutex<TaskManager>>,
+    /// Abort handles for running background tasks (for TaskStop).
+    pub task_abort_handles: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
 }
 
 impl Default for ToolContext {
@@ -46,6 +52,8 @@ impl Default for ToolContext {
         Self {
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
             file_state: Arc::new(FileStateTracker::default()),
+            task_manager: Arc::new(Mutex::new(TaskManager::default())),
+            task_abort_handles: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

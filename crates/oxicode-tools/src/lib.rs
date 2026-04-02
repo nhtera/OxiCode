@@ -19,6 +19,9 @@ pub mod send_message;
 pub mod stub_tools;
 pub mod tool_search;
 
+// Task tools
+pub mod task_tools;
+
 // Phase 5: New tools
 pub mod brief;
 pub mod cron;
@@ -64,5 +67,13 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(cron::CronCreateTool));
     reg.register(Box::new(cron::CronDeleteTool));
     reg.register(Box::new(cron::CronListTool));
+
+    // Task tools
+    reg.register(Box::new(task_tools::TaskCreateTool));
+    reg.register(Box::new(task_tools::TaskGetTool));
+    reg.register(Box::new(task_tools::TaskListTool));
+    reg.register(Box::new(task_tools::TaskUpdateTool));
+    reg.register(Box::new(task_tools::TaskStopTool));
+    reg.register(Box::new(task_tools::TaskOutputTool));
     reg
 }
