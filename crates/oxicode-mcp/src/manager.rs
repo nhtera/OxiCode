@@ -10,11 +10,13 @@ use crate::config::{McpConfig, McpTransportType};
 use crate::protocol::{McpToolDef, McpToolResult, ServerCapabilities};
 use crate::sse_transport::SseTransport;
 use crate::stdio_transport::StdioTransport;
+use crate::websocket_transport::WebSocketTransport;
 
 /// Active transport for a running MCP server.
 enum ActiveTransport {
     Stdio(StdioTransport),
     Sse(SseTransport),
+    WebSocket(WebSocketTransport),
 }
 
 impl ActiveTransport {
@@ -26,6 +28,7 @@ impl ActiveTransport {
         match self {
             Self::Stdio(t) => t.request(method, params).await,
             Self::Sse(t) => t.request(method, params).await,
+            Self::WebSocket(t) => t.request(method, params).await,
         }
     }
 }
@@ -79,6 +82,19 @@ impl McpServerManager {
                         continue;
                     };
                     ActiveTransport::Sse(SseTransport::new(url))
+                }
+                McpTransportType::WebSocket => {
+                    let url = if let Some(u) = &server_config.url { u } else {
+                        tracing::warn!("MCP server '{name}' has no WebSocket URL");
+                        continue;
+                    };
+                    match WebSocketTransport::connect(url).await {
+                        Ok(t) => ActiveTransport::WebSocket(t),
+                        Err(e) => {
+                            tracing::error!("Failed to connect WebSocket MCP server '{name}': {e}");
+                            continue;
+                        }
+                    }
                 }
             };
 
@@ -205,8 +221,10 @@ impl McpServerManager {
     pub async fn shutdown_all(&self) {
         for (name, server) in &self.servers {
             tracing::info!("Shutting down MCP server '{name}'");
-            if let ActiveTransport::Stdio(ref stdio) = server.transport {
-                stdio.shutdown().await;
+            match &server.transport {
+                ActiveTransport::Stdio(stdio) => stdio.shutdown().await,
+                ActiveTransport::WebSocket(ws) => ws.close().await,
+                ActiveTransport::Sse(_) => {} // SSE has no shutdown protocol.
             }
         }
     }

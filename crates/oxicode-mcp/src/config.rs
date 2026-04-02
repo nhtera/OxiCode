@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 pub enum McpTransportType {
     Stdio,
     Sse,
+    #[serde(alias = "ws", alias = "websocket")]
+    WebSocket,
 }
 
 /// Configuration for a single MCP server.
