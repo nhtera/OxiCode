@@ -1,9 +1,10 @@
 use async_trait::async_trait;
+use oxicode_agents::spawner::{AgentConfig, spawn_agent};
 use oxicode_common::OxiResult;
 
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
-/// Stub: Agent tool for multi-agent orchestration (Phase 4).
+/// Spawns a subagent process to handle complex tasks autonomously.
 pub struct AgentTool;
 
 #[async_trait]
@@ -12,7 +13,7 @@ impl Tool for AgentTool {
         "agent"
     }
     fn description(&self) -> &str {
-        "Launch a subagent to handle complex tasks (not yet implemented)."
+        "Launch a subagent to handle complex tasks autonomously."
     }
     fn schema(&self) -> ToolSchema {
         ToolSchema {
@@ -21,7 +22,26 @@ impl Tool for AgentTool {
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "prompt": {"type": "string", "description": "Task for the subagent"}
+                    "prompt": {
+                        "type": "string",
+                        "description": "The task prompt for the subagent."
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Model to use (default: claude-sonnet-4-20250514)."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Human-readable name for the subagent."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Brief description of the subagent's role."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default: 300)."
+                    }
                 },
                 "required": ["prompt"]
             }),
@@ -32,12 +52,46 @@ impl Tool for AgentTool {
     }
     async fn execute(
         &self,
-        _input: serde_json::Value,
-        _ctx: &ToolContext,
+        input: serde_json::Value,
+        ctx: &ToolContext,
     ) -> OxiResult<ToolResult> {
-        Ok(ToolResult::error(
-            "Agent tool not yet implemented (Phase 4)",
-        ))
+        let prompt = match input.get("prompt").and_then(|v| v.as_str()) {
+            Some(p) => p.to_string(),
+            None => return Ok(ToolResult::error("agent tool requires 'prompt' field")),
+        };
+
+        let model = input
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("claude-sonnet-4-20250514")
+            .to_string();
+
+        let name = input
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("subagent")
+            .to_string();
+
+        let timeout_secs = input
+            .get("timeout")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(300);
+
+        let config = AgentConfig {
+            name,
+            prompt,
+            model,
+            working_dir: ctx.working_dir.clone(),
+            permission_mode: "default".to_string(),
+            timeout: std::time::Duration::from_secs(timeout_secs),
+            inherit_env: true,
+        };
+
+        match spawn_agent(&config).await {
+            Ok(result) if result.is_error => Ok(ToolResult::error(result.output)),
+            Ok(result) => Ok(ToolResult::success(result.output)),
+            Err(e) => Ok(ToolResult::error(format!("agent spawn failed: {e}"))),
+        }
     }
 }
 

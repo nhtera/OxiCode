@@ -79,7 +79,7 @@ impl OpenAiCompatibleProvider {
 
         for msg in &request.messages {
             match msg.role {
-                oxicode_common::Role::System => continue,
+                oxicode_common::Role::System => {},
                 oxicode_common::Role::User => {
                     // Check if this message contains tool results.
                     let has_tool_results = msg.content.iter().any(|b| {
@@ -253,6 +253,7 @@ fn parse_openai_sse_chunk(data: &str) -> Option<Vec<StreamEvent>> {
 
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiCompatibleProvider {
+    #[allow(clippy::too_many_lines)]
     async fn stream_message(&self, request: MessageRequest) -> OxiResult<EventStream> {
         let client = self.client.clone();
         let api_key = self.api_key.clone();

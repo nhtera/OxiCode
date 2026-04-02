@@ -28,4 +28,9 @@ impl Conversation {
     pub fn len(&self) -> usize {
         self.messages.len()
     }
+
+    /// Replace all messages (used after context compaction).
+    pub fn replace_messages(&mut self, messages: Vec<Message>) {
+        self.messages = messages;
+    }
 }

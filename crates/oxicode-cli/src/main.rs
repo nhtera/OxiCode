@@ -75,6 +75,7 @@ async fn main() -> Result<()> {
     let system_prompt = oxicode_core::system_prompt::assemble_system_prompt(
         global_md.as_deref(),
         project_md.as_deref(),
+        None, // skills injected at session layer when skill discovery is wired
     );
 
     let provider = Arc::new(AnthropicProvider::new(api_key));

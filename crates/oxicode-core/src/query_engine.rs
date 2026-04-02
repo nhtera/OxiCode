@@ -3,14 +3,19 @@ use std::sync::Arc;
 use futures::StreamExt;
 use oxicode_api::{LlmProvider, MessageRequest, StreamEvent};
 use oxicode_common::{ContentBlock, Message, OxiError, OxiResult, Role, StopReason};
+use oxicode_context::BudgetManager;
 use oxicode_permissions::{PermissionDecision, PermissionPipeline};
 use oxicode_state::StateStore;
 use oxicode_tools::{PermissionLevel, ToolContext, ToolRegistry};
+use tokio::sync::Mutex;
 
 use crate::conversation::Conversation;
 
 /// Maximum number of tool-use turns before forcing a stop.
 const MAX_TOOL_TURNS: usize = 50;
+
+/// Typical Claude model context window (used as default budget ceiling).
+const DEFAULT_MODEL_MAX_TOKENS: usize = 200_000;
 
 /// Multi-turn query engine with tool execution support.
 pub struct QueryEngine {
@@ -22,6 +27,8 @@ pub struct QueryEngine {
     model: String,
     max_tokens: u32,
     system_prompt: String,
+    /// Context budget manager — wrapped in Mutex because check_budget needs &mut self.
+    budget_manager: Mutex<BudgetManager>,
 }
 
 impl QueryEngine {
@@ -45,6 +52,7 @@ impl QueryEngine {
             model,
             max_tokens,
             system_prompt,
+            budget_manager: Mutex::new(BudgetManager::new(DEFAULT_MODEL_MAX_TOKENS)),
         }
     }
 
@@ -75,6 +83,28 @@ impl QueryEngine {
             if turn_count > MAX_TOOL_TURNS {
                 tracing::warn!("Max tool turns ({MAX_TOOL_TURNS}) reached, stopping");
                 break;
+            }
+
+            // Context defense: apply budget management before API call.
+            {
+                let mut mgr = self.budget_manager.lock().await;
+                let defended = mgr
+                    .apply_defense_with_dir(
+                        conversation.api_messages(),
+                        self.provider.as_ref(),
+                        &self.model,
+                        &self.tool_context.working_dir,
+                    )
+                    .await?;
+                // Only replace when messages were actually compacted.
+                if defended.len() < conversation.len() {
+                    tracing::info!(
+                        before = conversation.len(),
+                        after = defended.len(),
+                        "context compacted before API call"
+                    );
+                    conversation.replace_messages(defended);
+                }
             }
 
             let assistant_msg = self.stream_one_turn(conversation).await?;

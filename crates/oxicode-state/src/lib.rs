@@ -3,6 +3,28 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use uuid::Uuid;
 
+/// Snapshot of a managed subagent, serialisation-friendly.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentEntry {
+    pub name: String,
+    /// "running" | "completed" | "failed" | "killed"
+    pub status: String,
+    /// ISO-8601 timestamp string.
+    pub started_at: String,
+}
+
+/// Snapshot of a background task, serialisation-friendly.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TaskEntry {
+    pub id: String,
+    /// "bash" | "agent" | "monitor"
+    pub task_type: String,
+    /// "pending" | "running" | "completed" | "failed"
+    pub status: String,
+    /// First ~30 chars of the command / prompt.
+    pub command_preview: String,
+}
+
 /// Centralized application state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppState {
@@ -11,6 +33,12 @@ pub struct AppState {
     pub is_streaming: bool,
     pub current_model: String,
     pub total_usage: Usage,
+    /// Active subagents tracked by coordinator mode.
+    pub active_agents: Vec<AgentEntry>,
+    /// Skills currently active for this session.
+    pub active_skills: Vec<String>,
+    /// Background tasks registered in the task manager.
+    pub background_tasks: Vec<TaskEntry>,
 }
 
 impl Default for AppState {
@@ -21,6 +49,9 @@ impl Default for AppState {
             is_streaming: false,
             current_model: oxicode_common::constants::DEFAULT_MODEL.to_string(),
             total_usage: Usage::default(),
+            active_agents: Vec::new(),
+            active_skills: Vec::new(),
+            background_tasks: Vec::new(),
         }
     }
 }
@@ -83,6 +114,27 @@ impl StateStore {
             state.total_usage.output_tokens += usage.output_tokens;
         });
     }
+
+    /// Replace the active skills list.
+    pub fn set_active_skills(&self, skills: Vec<String>) {
+        self.update(|state| {
+            state.active_skills = skills;
+        });
+    }
+
+    /// Replace the active agents snapshot.
+    pub fn update_agents(&self, agents: Vec<AgentEntry>) {
+        self.update(|state| {
+            state.active_agents = agents;
+        });
+    }
+
+    /// Replace the background tasks snapshot.
+    pub fn update_tasks(&self, tasks: Vec<TaskEntry>) {
+        self.update(|state| {
+            state.background_tasks = tasks;
+        });
+    }
 }
 
 impl Default for StateStore {
@@ -127,5 +179,49 @@ mod tests {
         store.add_usage(&usage);
         assert_eq!(store.current().total_usage.input_tokens, 100);
         assert_eq!(store.current().total_usage.output_tokens, 50);
+    }
+
+    #[test]
+    fn test_appstate_default_new_fields_empty() {
+        let state = AppState::default();
+        assert!(state.active_agents.is_empty());
+        assert!(state.background_tasks.is_empty());
+        assert!(state.active_skills.is_empty());
+    }
+
+    #[test]
+    fn test_set_active_skills() {
+        let store = StateStore::default();
+        assert!(store.current().active_skills.is_empty());
+        store.set_active_skills(vec!["sequential-thinking".to_string()]);
+        assert_eq!(store.current().active_skills.len(), 1);
+        assert_eq!(store.current().active_skills[0], "sequential-thinking");
+    }
+
+    #[test]
+    fn test_update_agents() {
+        let store = StateStore::default();
+        let agent = AgentEntry {
+            name: "researcher".to_string(),
+            status: "running".to_string(),
+            started_at: "2026-04-02T00:00:00Z".to_string(),
+        };
+        store.update_agents(vec![agent]);
+        assert_eq!(store.current().active_agents.len(), 1);
+        assert_eq!(store.current().active_agents[0].name, "researcher");
+    }
+
+    #[test]
+    fn test_update_tasks() {
+        let store = StateStore::default();
+        let task = TaskEntry {
+            id: "t1".to_string(),
+            task_type: "bash".to_string(),
+            status: "pending".to_string(),
+            command_preview: "cargo build".to_string(),
+        };
+        store.update_tasks(vec![task]);
+        assert_eq!(store.current().background_tasks.len(), 1);
+        assert_eq!(store.current().background_tasks[0].id, "t1");
     }
 }

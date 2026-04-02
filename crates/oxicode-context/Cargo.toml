@@ -1,26 +1,25 @@
 [package]
-name = "oxicode-tools"
+name = "oxicode-context"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-[lints]
-workspace = true
-
 [dependencies]
 oxicode-common = { workspace = true }
-oxicode-agents = { workspace = true }
-async-trait = { workspace = true }
+oxicode-api = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-glob = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
 regex = { workspace = true }
-walkdir = { workspace = true }
-ignore = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { workspace = true, features = ["test-util", "macros"] }
+
+[lints]
+workspace = true

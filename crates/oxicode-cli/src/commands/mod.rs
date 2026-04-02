@@ -2,6 +2,7 @@
 //!
 //! Commands are invoked with `/name [args]` in the TUI input.
 
+pub mod agent_commands;
 pub mod general;
 pub mod provider;
 pub mod session_commands;
@@ -152,6 +153,11 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(session_commands::UndoCommand));
     reg.register(Box::new(session_commands::BugCommand));
     reg.register(Box::new(session_commands::DoctorCommand));
+
+    // Agent / skill / task introspection commands
+    reg.register(Box::new(agent_commands::AgentCommand));
+    reg.register(Box::new(agent_commands::SkillsCommand));
+    reg.register(Box::new(agent_commands::TasksCommand));
 
     reg
 }

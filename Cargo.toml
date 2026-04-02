@@ -12,6 +12,10 @@ members = [
     "crates/oxicode-hooks",
     "crates/oxicode-mcp",
     "crates/oxicode-cli",
+    "crates/oxicode-context",
+    "crates/oxicode-agents",
+    "crates/oxicode-skills",
+    "crates/oxicode-tasks",
 ]
 resolver = "2"
 
@@ -111,3 +115,7 @@ oxicode-permissions = { path = "crates/oxicode-permissions" }
 oxicode-tui = { path = "crates/oxicode-tui" }
 oxicode-hooks = { path = "crates/oxicode-hooks" }
 oxicode-mcp = { path = "crates/oxicode-mcp" }
+oxicode-context = { path = "crates/oxicode-context" }
+oxicode-agents = { path = "crates/oxicode-agents" }
+oxicode-skills = { path = "crates/oxicode-skills" }
+oxicode-tasks = { path = "crates/oxicode-tasks" }

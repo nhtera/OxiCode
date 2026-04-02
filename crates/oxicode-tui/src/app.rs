@@ -12,7 +12,10 @@ use ratatui::Terminal;
 use tokio::sync::{mpsc, watch};
 
 use crate::events::{CoreEvent, UiEvent};
-use crate::widgets::{InputBox, MessageView, StatusBar};
+use crate::widgets::{
+    AgentInfo, AgentPanel, InputBox, MessageView, Notification, NotificationWidget, SplitPane,
+    StatusBar, TaskInfo, TaskPanel,
+};
 
 /// Main TUI application.
 pub struct App {
@@ -25,6 +28,10 @@ pub struct App {
     scroll_offset: u16,
     streaming_text: String,
     should_quit: bool,
+    /// Manages left/right split layout and ratio.
+    split_pane: SplitPane,
+    /// Toast notifications rendered as an overlay.
+    notifications: Vec<Notification>,
 }
 
 impl App {
@@ -42,6 +49,8 @@ impl App {
             scroll_offset: 0,
             streaming_text: String::new(),
             should_quit: false,
+            split_pane: SplitPane::new(),
+            notifications: Vec::new(),
         }
     }
 
@@ -120,14 +129,58 @@ impl App {
                 StatusBar::new(&state.current_model, &state.total_usage, state.is_streaming);
             frame.render_widget(status_bar, chunks[0]);
 
-            // Message view
+            // Content area — optionally split into left (messages) + right (agents/tasks)
+            let content_area = chunks[1];
+            let (left_area, right_area) = self.split_pane.split(content_area);
+
+            // Message view (left pane, or full area when right pane is hidden)
             let streaming = if state.is_streaming && !self.streaming_text.is_empty() {
                 Some(self.streaming_text.as_str())
             } else {
                 None
             };
             let message_view = MessageView::new(&state.messages, streaming, self.scroll_offset);
-            frame.render_widget(message_view, chunks[1]);
+            frame.render_widget(message_view, left_area);
+
+            // Right pane: agent panel (top) + task panel (bottom)
+            if let Some(right) = right_area {
+                let agent_infos: Vec<AgentInfo> = state
+                    .active_agents
+                    .iter()
+                    .map(|a| AgentInfo {
+                        name: a.name.clone(),
+                        status: a.status.clone(),
+                        started_at: a.started_at.clone(),
+                        duration: String::new(),
+                    })
+                    .collect();
+
+                let task_infos: Vec<TaskInfo> = state
+                    .background_tasks
+                    .iter()
+                    .map(|t| TaskInfo {
+                        id: t.id.clone(),
+                        task_type: t.task_type.clone(),
+                        status: t.status.clone(),
+                        command_preview: t.command_preview.clone(),
+                    })
+                    .collect();
+
+                let right_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(right);
+
+                frame.render_widget(AgentPanel::new(&agent_infos), right_chunks[0]);
+                frame.render_widget(TaskPanel::new(&task_infos), right_chunks[1]);
+            }
+
+            // Notification toast overlay (drawn on top of content area)
+            if !self.notifications.is_empty() {
+                let notif_widget =
+                    NotificationWidget::new(&self.notifications).with_max_visible(3);
+                frame.render_widget(notif_widget, content_area);
+            }
 
             // Input box — convert char cursor to byte offset for widget
             let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
@@ -164,6 +217,14 @@ impl App {
                     self.input_text.remove(byte_idx);
                 }
             }
+            // Ctrl+Left / Ctrl+Right adjust the split ratio by ±5 %.
+            // Must come before the wildcard (_, KeyCode::Left/Right) arms.
+            (KeyModifiers::CONTROL, KeyCode::Left) => {
+                self.split_pane.adjust_ratio(-5);
+            }
+            (KeyModifiers::CONTROL, KeyCode::Right) => {
+                self.split_pane.adjust_ratio(5);
+            }
             (_, KeyCode::Left) => {
                 self.input_cursor = self.input_cursor.saturating_sub(1);
             }
@@ -184,6 +245,10 @@ impl App {
             }
             (_, KeyCode::End) => {
                 self.input_cursor = self.input_text.chars().count();
+            }
+            // Tab toggles the right split pane (agents + tasks panel).
+            (_, KeyCode::Tab) => {
+                self.split_pane.toggle_right();
             }
             _ => {}
         }

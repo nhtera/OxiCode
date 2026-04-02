@@ -45,10 +45,8 @@ pub fn openai_finish_reason_to_stop_reason(
     reason: &str,
 ) -> oxicode_common::StopReason {
     match reason {
-        "stop" => oxicode_common::StopReason::EndTurn,
         "tool_calls" => oxicode_common::StopReason::ToolUse,
         "length" => oxicode_common::StopReason::MaxTokens,
-        "content_filter" => oxicode_common::StopReason::EndTurn,
         _ => oxicode_common::StopReason::EndTurn,
     }
 }

@@ -23,6 +23,10 @@ oxicode-tools = { workspace = true }
 oxicode-permissions = { workspace = true }
 oxicode-hooks = { workspace = true }
 oxicode-mcp = { workspace = true }
+oxicode-agents = { workspace = true }
+oxicode-skills = { workspace = true }
+oxicode-tasks = { workspace = true }
+oxicode-context = { workspace = true }
 clap = { workspace = true }
 dirs = { workspace = true }
 tokio = { workspace = true }

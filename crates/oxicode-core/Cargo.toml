@@ -14,6 +14,8 @@ oxicode-api = { workspace = true }
 oxicode-state = { workspace = true }
 oxicode-tools = { workspace = true }
 oxicode-permissions = { workspace = true }
+oxicode-context = { workspace = true }
+oxicode-skills = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
