@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
+use oxicode_mcp::McpServerManager;
 use oxicode_tasks::TaskManager;
 use serde::{Deserialize, Serialize};
 
@@ -35,7 +37,7 @@ impl ToolResult {
 }
 
 /// Context provided to tools during execution.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ToolContext {
     /// Working directory for file operations and command execution.
     pub working_dir: PathBuf,
@@ -45,6 +47,16 @@ pub struct ToolContext {
     pub task_manager: Arc<Mutex<TaskManager>>,
     /// Abort handles for running background tasks (for TaskStop).
     pub task_abort_handles: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    /// MCP server manager for executing MCP tools.
+    pub mcp_manager: Arc<McpServerManager>,
+}
+
+impl fmt::Debug for ToolContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ToolContext")
+            .field("working_dir", &self.working_dir)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for ToolContext {
@@ -54,6 +66,7 @@ impl Default for ToolContext {
             file_state: Arc::new(FileStateTracker::default()),
             task_manager: Arc::new(Mutex::new(TaskManager::default())),
             task_abort_handles: Arc::new(Mutex::new(HashMap::new())),
+            mcp_manager: Arc::new(McpServerManager::default()),
         }
     }
 }

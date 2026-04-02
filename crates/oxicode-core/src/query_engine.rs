@@ -159,7 +159,12 @@ impl QueryEngine {
 
     /// Stream a single LLM turn, collecting the full assistant message.
     async fn stream_one_turn(&self, conversation: &mut Conversation) -> OxiResult<Message> {
-        let tool_schemas = self.tool_registry.schemas_json();
+        let mut tool_schemas = self.tool_registry.schemas_json();
+
+        // Append MCP tool schemas so the LLM knows about connected MCP servers.
+        for (server_name, server_tools) in self.mcp_tool_schemas() {
+            tool_schemas.extend(oxicode_mcp::mcp_tools_to_schemas(&server_name, &server_tools));
+        }
 
         let mut request = MessageRequest::new(&self.model, conversation.api_messages().to_vec())
             .with_system(&self.system_prompt)
@@ -251,6 +256,65 @@ impl QueryEngine {
         Ok(assistant_msg)
     }
 
+    /// Collect MCP tool definitions grouped by server name.
+    fn mcp_tool_schemas(&self) -> Vec<(String, Vec<oxicode_mcp::McpToolDef>)> {
+        let mut by_server: std::collections::HashMap<String, Vec<oxicode_mcp::McpToolDef>> =
+            std::collections::HashMap::new();
+        for (server_name, server) in self.tool_context.mcp_manager.all_tools() {
+            // Extract actual server name from prefix (e.g., "myserver__tool" -> "myserver").
+            let sn = server_name
+                .split("__")
+                .next()
+                .unwrap_or(&server_name)
+                .to_string();
+            by_server.entry(sn).or_default().push(server.clone());
+        }
+        by_server.into_iter().collect()
+    }
+
+    /// Try executing an MCP tool by its prefixed name (server__tool).
+    async fn try_mcp_tool(
+        &self,
+        tool_name: &str,
+        input: &serde_json::Value,
+    ) -> Option<oxicode_tools::ToolResult> {
+        let (server, tool) = oxicode_mcp::McpServerManager::resolve_tool_name(tool_name)?;
+        match self
+            .tool_context
+            .mcp_manager
+            .call_tool(server, tool, input.clone())
+            .await
+        {
+            Ok(result) => {
+                let text: String = result
+                    .content
+                    .iter()
+                    .filter_map(|c| c.as_text())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let has_non_text = result.content.iter().any(|c| c.as_text().is_none());
+                let mut output = if text.is_empty() {
+                    "(no text content returned)".to_string()
+                } else {
+                    text
+                };
+                if has_non_text {
+                    output.push_str(
+                        "\n[Note: non-text content (images/resources) was returned but omitted]",
+                    );
+                }
+                if result.is_error {
+                    Some(oxicode_tools::ToolResult::error(output))
+                } else {
+                    Some(oxicode_tools::ToolResult::success(output))
+                }
+            }
+            Err(e) => Some(oxicode_tools::ToolResult::error(format!(
+                "MCP tool call failed: {e}"
+            ))),
+        }
+    }
+
     /// Execute a single tool, checking permissions first.
     async fn execute_tool(
         &self,
@@ -282,12 +346,21 @@ impl QueryEngine {
 
         match decision {
             PermissionDecision::Allow => {
-                // Execute the tool.
-                match self
-                    .tool_registry
-                    .execute(tool_name, input.clone(), &self.tool_context)
-                    .await
-                {
+                // Try built-in registry first, then MCP tools.
+                let result = if self.tool_registry.get(tool_name).is_some() {
+                    self.tool_registry
+                        .execute(tool_name, input.clone(), &self.tool_context)
+                        .await
+                } else if let Some(mcp_result) = self.try_mcp_tool(tool_name, input).await {
+                    Ok(mcp_result)
+                } else {
+                    Err(OxiError::Tool {
+                        name: tool_name.to_string(),
+                        message: format!("Tool '{tool_name}' not found"),
+                    })
+                };
+
+                match result {
                     Ok(result) => ContentBlock::ToolResult {
                         tool_use_id: tool_use_id.to_string(),
                         content: result.content,

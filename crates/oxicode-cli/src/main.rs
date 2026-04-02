@@ -141,11 +141,22 @@ async fn main() -> Result<()> {
     let tool_registry = Arc::new(oxicode_tools::default_registry());
     let permission_mode = PermissionMode::parse(&settings.permission_mode);
     let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
+
+    // Initialize MCP servers from config.
+    let mut mcp_manager = oxicode_mcp::McpServerManager::new();
+    let mcp_config = oxicode_mcp::McpConfig::load();
+    let started = mcp_manager.start_from_config(&mcp_config).await;
+    if !started.is_empty() {
+        tracing::info!("MCP servers started: {}", started.join(", "));
+    }
+
+    let mcp_ref = std::sync::Arc::new(mcp_manager);
     let tool_context = ToolContext {
         working_dir: cwd.clone(),
         file_state: std::sync::Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default()),
         task_manager: std::sync::Arc::new(std::sync::Mutex::new(oxicode_tasks::TaskManager::default())),
         task_abort_handles: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        mcp_manager: mcp_ref.clone(),
     };
 
     let engine = Arc::new(QueryEngine::new(
@@ -160,19 +171,23 @@ async fn main() -> Result<()> {
     ));
 
     if let Some(prompt) = cli.prompt {
-        return match cli.output {
+        let result = match cli.output {
             OutputFormat::Json => {
                 run_single_prompt_json(engine, &mut session, &prompt, &settings.model).await
             }
             OutputFormat::Text => run_single_prompt(engine, &mut session, &prompt).await,
         };
+        mcp_ref.shutdown_all().await;
+        return result;
     }
 
     if matches!(cli.output, OutputFormat::Json) {
         eprintln!("Warning: --output json is only supported with --prompt (non-interactive mode).");
     }
 
-    run_tui(engine, state_store, &mut session, &settings).await
+    let result = run_tui(engine, state_store, &mut session, &settings).await;
+    mcp_ref.shutdown_all().await;
+    result
 }
 
 /// Run a single prompt and exit.

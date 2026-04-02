@@ -91,7 +91,7 @@ impl Tool for AgentTool {
     }
 }
 
-/// Stub: MCP tool for Model Context Protocol (Phase 3).
+/// Execute a tool on a connected MCP server.
 pub struct McpTool;
 
 #[async_trait]
@@ -100,7 +100,7 @@ impl Tool for McpTool {
         "mcp"
     }
     fn description(&self) -> &str {
-        "Execute an MCP server tool (not yet implemented)."
+        "Execute a tool on a connected MCP server."
     }
     fn schema(&self) -> ToolSchema {
         ToolSchema {
@@ -109,23 +109,69 @@ impl Tool for McpTool {
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "server": {"type": "string"},
-                    "tool": {"type": "string"},
-                    "input": {"type": "object"}
+                    "server_name": {
+                        "type": "string",
+                        "description": "Name of the MCP server (or use prefixed tool name: server__tool)"
+                    },
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Tool name to execute on the server"
+                    },
+                    "input": {
+                        "type": "object",
+                        "description": "Arguments to pass to the MCP tool"
+                    }
                 },
-                "required": ["server", "tool"]
+                "required": ["server_name", "tool_name"]
             }),
         }
     }
     fn permission_level(&self) -> PermissionLevel {
         PermissionLevel::System
     }
-    async fn execute(
-        &self,
-        _input: serde_json::Value,
-        _ctx: &ToolContext,
-    ) -> OxiResult<ToolResult> {
-        Ok(ToolResult::error("MCP tool not yet implemented (Phase 3)"))
+    async fn execute(&self, input: serde_json::Value, ctx: &ToolContext) -> OxiResult<ToolResult> {
+        let Some(server_name) = input["server_name"].as_str() else {
+            return Ok(ToolResult::error("'server_name' is required"));
+        };
+        let Some(tool_name) = input["tool_name"].as_str() else {
+            return Ok(ToolResult::error("'tool_name' is required"));
+        };
+        let arguments = input.get("input").cloned().unwrap_or(serde_json::json!({}));
+
+        if ctx.mcp_manager.server_count() == 0 {
+            return Ok(ToolResult::error(
+                "No MCP servers connected. Configure servers in ~/.oxicode/mcp.toml",
+            ));
+        }
+
+        match ctx.mcp_manager.call_tool(server_name, tool_name, arguments).await {
+            Ok(result) => {
+                // Concatenate text content blocks.
+                let text: String = result
+                    .content
+                    .iter()
+                    .filter_map(|c| c.as_text())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let has_non_text = result.content.iter().any(|c| c.as_text().is_none());
+
+                let mut output = if text.is_empty() {
+                    "(no text content returned)".to_string()
+                } else {
+                    text
+                };
+                if has_non_text {
+                    output.push_str("\n[Note: non-text content (images/resources) omitted]");
+                }
+
+                if result.is_error {
+                    Ok(ToolResult::error(output))
+                } else {
+                    Ok(ToolResult::success(output))
+                }
+            }
+            Err(e) => Ok(ToolResult::error(format!("MCP tool call failed: {e}"))),
+        }
     }
 }
 
