@@ -18,6 +18,15 @@ pub mod send_message;
 pub mod stub_tools;
 pub mod tool_search;
 
+// Phase 5: New tools
+pub mod brief;
+pub mod cron;
+pub mod plan_mode;
+pub mod remote_trigger;
+pub mod sleep;
+pub mod structured_output;
+pub mod worktree;
+
 // Re-exports
 pub use registry::ToolRegistry;
 pub use tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
@@ -25,6 +34,7 @@ pub use tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema}
 /// Create a registry pre-loaded with all built-in tools.
 pub fn default_registry() -> ToolRegistry {
     let mut reg = ToolRegistry::new();
+    // Core tools
     reg.register(Box::new(file_read::FileReadTool));
     reg.register(Box::new(file_write::FileWriteTool));
     reg.register(Box::new(file_edit::FileEditTool));
@@ -38,6 +48,20 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(tool_search::ToolSearchTool));
     reg.register(Box::new(stub_tools::AgentTool));
     reg.register(Box::new(stub_tools::McpTool));
-    reg.register(Box::new(stub_tools::WorktreeTool));
+
+    // Phase 5: Workflow tools
+    reg.register(Box::new(plan_mode::EnterPlanModeTool));
+    reg.register(Box::new(plan_mode::ExitPlanModeTool));
+    reg.register(Box::new(worktree::EnterWorktreeTool));
+    reg.register(Box::new(worktree::ExitWorktreeTool));
+
+    // Phase 5: Agent + Dev tools
+    reg.register(Box::new(sleep::SleepTool));
+    reg.register(Box::new(remote_trigger::RemoteTriggerTool));
+    reg.register(Box::new(brief::BriefTool));
+    reg.register(Box::new(structured_output::StructuredOutputTool));
+    reg.register(Box::new(cron::CronCreateTool));
+    reg.register(Box::new(cron::CronDeleteTool));
+    reg.register(Box::new(cron::CronListTool));
     reg
 }
