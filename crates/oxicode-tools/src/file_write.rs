@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
 
-use crate::path_utils::{check_path_safety, resolve_path};
+use crate::path_utils::{check_path_safety, check_workspace_boundary, resolve_path};
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
 /// Write content to a file (create or overwrite).
@@ -56,6 +56,9 @@ impl Tool for FileWriteTool {
         if let Some(err) = check_path_safety(&path) {
             return Ok(err);
         }
+        if let Some(err) = check_workspace_boundary(&path, &ctx.working_dir) {
+            return Ok(err);
+        }
 
         let content = input["content"]
             .as_str()
@@ -81,12 +84,31 @@ impl Tool for FileWriteTool {
             })?;
         }
 
-        tokio::fs::write(&path, content)
+        // Atomic write via temp file + rename to prevent partial writes on crash.
+        // Append suffix to full filename (not with_extension, which replaces it).
+        let tmp_path = path.with_file_name(format!(
+            "{}.oxicode-tmp",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        ));
+        tokio::fs::write(&tmp_path, content)
             .await
             .map_err(|e| oxicode_common::OxiError::Tool {
                 name: self.name().into(),
-                message: format!("Failed to write {}: {e}", path.display()),
+                message: format!("Failed to write temp file: {e}"),
             })?;
+        // Preserve original file permissions (e.g., execute bits on scripts).
+        if path.exists() {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                let _ = std::fs::set_permissions(&tmp_path, meta.permissions());
+            }
+        }
+        tokio::fs::rename(&tmp_path, &path).await.map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            oxicode_common::OxiError::Tool {
+                name: self.name().into(),
+                message: format!("Failed to write {}: {e}", path.display()),
+            }
+        })?;
 
         // Record mtime after successful write
         ctx.file_state.record(&path);

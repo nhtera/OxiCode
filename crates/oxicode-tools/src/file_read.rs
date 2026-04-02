@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::path_utils::{check_path_safety, resolve_path};
+use crate::path_utils::{check_path_safety, check_workspace_boundary, resolve_path};
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
 /// Read a file from the filesystem with optional line range.
@@ -62,6 +63,9 @@ impl Tool for FileReadTool {
         if let Some(err) = check_path_safety(&path) {
             return Ok(err);
         }
+        if let Some(err) = check_workspace_boundary(&path, &ctx.working_dir) {
+            return Ok(err);
+        }
 
         if !path.exists() {
             return Ok(ToolResult::error(format!(
@@ -74,29 +78,40 @@ impl Tool for FileReadTool {
             return Ok(ToolResult::error(format!("Not a file: {}", path.display())));
         }
 
-        let content =
-            tokio::fs::read_to_string(&path)
-                .await
-                .map_err(|e| oxicode_common::OxiError::Tool {
-                    name: self.name().into(),
-                    message: format!("Failed to read {}: {e}", path.display()),
-                })?;
-
         let offset = input["offset"].as_u64().unwrap_or(0) as usize;
         let limit = input["limit"].as_u64().unwrap_or(2000) as usize;
 
-        let lines: Vec<&str> = content.lines().collect();
-        let total = lines.len();
+        // Stream line-by-line to avoid loading entire file into memory (OOM risk
+        // for large files like logs). Only collect lines in [offset, offset+limit).
+        let file = tokio::fs::File::open(&path)
+            .await
+            .map_err(|e| oxicode_common::OxiError::Tool {
+                name: self.name().into(),
+                message: format!("Failed to open {}: {e}", path.display()),
+            })?;
 
-        let start = offset.min(total);
-        let end = (start + limit).min(total);
+        let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut line_num = 0usize;
+        let mut output_lines = Vec::with_capacity(limit.min(2000));
 
-        let numbered: String = lines[start..end]
-            .iter()
-            .enumerate()
-            .map(|(i, line)| format!("{}\t{}", start + i + 1, line))
-            .collect::<Vec<_>>()
-            .join("\n");
+        while let Some(line) = lines.next_line().await.map_err(|e| {
+            oxicode_common::OxiError::Tool {
+                name: self.name().into(),
+                message: format!("Failed to read {}: {e}", path.display()),
+            }
+        })? {
+            if line_num >= offset && output_lines.len() < limit {
+                output_lines.push(format!("{}\t{}", line_num + 1, line));
+            }
+            line_num += 1;
+            // Stop early once we have enough lines past the offset range
+            if output_lines.len() >= limit && line_num > offset + limit {
+                break;
+            }
+        }
+
+        let numbered = output_lines.join("\n");
 
         // Record mtime so FileEditTool/FileWriteTool can detect external changes
         ctx.file_state.record(&path);
@@ -153,8 +168,33 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_nonexistent() {
+        let dir = tempfile::TempDir::new().unwrap();
         let tool = FileReadTool;
-        let ctx = ToolContext::default();
+        let ctx = ToolContext {
+            working_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let missing = dir.path().join("nonexistent.txt");
+        let result = tool
+            .execute(
+                serde_json::json!({"file_path": missing.to_str().unwrap()}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result.content.contains("does not exist"));
+    }
+
+    #[tokio::test]
+    async fn test_read_outside_workspace_blocked() {
+        let tool = FileReadTool;
+        let dir = tempfile::TempDir::new().unwrap();
+        let ctx = ToolContext {
+            working_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
         let result = tool
             .execute(
                 serde_json::json!({"file_path": "/nonexistent/file.txt"}),
@@ -164,6 +204,6 @@ mod tests {
             .unwrap();
 
         assert!(result.is_error);
-        assert!(result.content.contains("does not exist"));
+        assert!(result.content.contains("Access denied"));
     }
 }

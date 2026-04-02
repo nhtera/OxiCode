@@ -252,7 +252,16 @@ impl App {
                 if !self.input_text.is_empty() {
                     let text = std::mem::take(&mut self.input_text);
                     self.input_cursor = 0;
-                    let _ = self.ui_tx.send(UiEvent::UserInput(text)).await;
+                    if let Some(trimmed) = text.strip_prefix('/') {
+                        let trimmed = trimmed.trim();
+                        let (name, args) = match trimmed.split_once(char::is_whitespace) {
+                            Some((n, a)) => (n.to_string(), a.trim().to_string()),
+                            None => (trimmed.to_string(), String::new()),
+                        };
+                        let _ = self.ui_tx.send(UiEvent::SlashCommand { name, args }).await;
+                    } else {
+                        let _ = self.ui_tx.send(UiEvent::UserInput(text)).await;
+                    }
                 }
             }
             // H3 FIX: cursor operates on char count, insert at byte offset

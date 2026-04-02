@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
@@ -99,13 +100,16 @@ impl Tool for BashTool {
     }
 }
 
+/// Maximum stdout output size in bytes (10 MB).
+const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
+
 async fn run_command(
     command: &str,
     working_dir: &Path,
 ) -> Result<(String, String, i32), std::io::Error> {
-    // C1 FIX: kill_on_drop ensures child process is killed when the future
-    // is dropped (e.g., on timeout), preventing orphaned processes.
-    let child = Command::new("bash")
+    // kill_on_drop ensures child process is killed when the future is dropped
+    // (e.g., on timeout), preventing orphaned processes.
+    let mut child = Command::new("bash")
         .arg("-c")
         .arg(command)
         .current_dir(working_dir)
@@ -114,12 +118,65 @@ async fn run_command(
         .kill_on_drop(true)
         .spawn()?;
 
-    let output = child.wait_with_output().await?;
+    let mut stdout_pipe = child.stdout.take().expect("stdout piped");
+    let mut stderr_pipe = child.stderr.take().expect("stderr piped");
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let code = output.status.code().unwrap_or(-1);
+    // Read stdout with size cap to prevent OOM from runaway output.
+    let stdout_handle = tokio::spawn(async move {
+        let mut buf = Vec::with_capacity(8192);
+        let mut tmp = [0u8; 8192];
+        loop {
+            match stdout_pipe.read(&mut tmp).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let remaining = MAX_OUTPUT_BYTES.saturating_sub(buf.len());
+                    let take = n.min(remaining);
+                    buf.extend_from_slice(&tmp[..take]);
+                    if buf.len() >= MAX_OUTPUT_BYTES {
+                        break;
+                    }
+                }
+            }
+        }
+        buf
+    });
 
+    // Read stderr with size cap (2.5 MB).
+    let stderr_cap = MAX_OUTPUT_BYTES / 4;
+    let stderr_handle = tokio::spawn(async move {
+        let mut buf = Vec::with_capacity(4096);
+        let mut tmp = [0u8; 4096];
+        loop {
+            match stderr_pipe.read(&mut tmp).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let remaining = stderr_cap.saturating_sub(buf.len());
+                    let take = n.min(remaining);
+                    buf.extend_from_slice(&tmp[..take]);
+                    if buf.len() >= stderr_cap {
+                        break;
+                    }
+                }
+            }
+        }
+        buf
+    });
+
+    let stdout_bytes = stdout_handle.await.unwrap_or_default();
+    let stderr_bytes = stderr_handle.await.unwrap_or_default();
+    let status = child.wait().await?;
+
+    let mut stdout = String::from_utf8_lossy(&stdout_bytes).to_string();
+    let mut stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
+
+    if stdout_bytes.len() >= MAX_OUTPUT_BYTES {
+        stdout.push_str("\n... (output truncated at 10 MB)");
+    }
+    if stderr_bytes.len() >= stderr_cap {
+        stderr.push_str("\n... (stderr truncated at 2.5 MB)");
+    }
+
+    let code = status.code().unwrap_or(-1);
     Ok((stdout, stderr, code))
 }
 

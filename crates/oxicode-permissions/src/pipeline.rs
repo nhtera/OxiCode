@@ -76,7 +76,26 @@ impl PermissionPipeline {
             return PermissionDecision::Allow;
         }
 
-        // Layer 2: Permission mode check.
+        // Layer 2: Command security (hard deny — ALWAYS checked, even in bypass).
+        if tool_level == ToolPermissionLevel::ShellExec {
+            if let Some(reason) = self.command_security.check(input) {
+                return PermissionDecision::Deny(reason);
+            }
+        }
+
+        // Layer 3: Dangerous pattern detection (ALWAYS checked, even in bypass).
+        if let Some(reason) = self.dangerous_detector.check(tool_name, input) {
+            // In bypass mode, log warning but allow (Ask becomes Allow).
+            if self.mode == PermissionMode::Bypass {
+                tracing::warn!(
+                    "Bypass mode: dangerous pattern detected for {tool_name}: {reason}"
+                );
+                return PermissionDecision::Allow;
+            }
+            return PermissionDecision::Ask(reason);
+        }
+
+        // Layer 4: Permission mode (only reached after security checks pass).
         match self.mode {
             PermissionMode::Bypass => return PermissionDecision::Allow,
             PermissionMode::ApprovalOnly => {
@@ -84,22 +103,7 @@ impl PermissionPipeline {
                     "Approval required for {tool_name} (approval-only mode)"
                 ));
             }
-            PermissionMode::Default => {} // proceed to next layers
-        }
-
-        // C3 FIX: Dangerous patterns and command security BEFORE user rules.
-        // Prevents user allow-rules from bypassing critical safety checks.
-
-        // Layer 3: Command security (shell-specific attacks — hard deny).
-        if tool_level == ToolPermissionLevel::ShellExec {
-            if let Some(reason) = self.command_security.check(input) {
-                return PermissionDecision::Deny(reason);
-            }
-        }
-
-        // Layer 4: Dangerous pattern detection (always checked).
-        if let Some(reason) = self.dangerous_detector.check(tool_name, input) {
-            return PermissionDecision::Ask(reason);
+            PermissionMode::Default => {}
         }
 
         // Layer 5: Rule matching from config (user rules only apply to safe inputs).
@@ -197,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_dangerous_overrides_allow_rule() {
-        // C3 FIX: Even with an allow-all rule, dangerous commands are still caught.
+        // Even with an allow-all rule, dangerous commands are still caught.
         let rules = vec![PermissionRule::allow("bash", None)];
         let pipeline = PermissionPipeline::new(PermissionMode::Default, rules);
         let decision = pipeline.check(
@@ -207,5 +211,41 @@ mod tests {
         );
         // Should be Ask (dangerous pattern), NOT Allow (rule).
         assert!(matches!(decision, PermissionDecision::Ask(_)));
+    }
+
+    #[test]
+    fn test_bypass_mode_still_blocks_command_security() {
+        // Bypass mode must NOT skip command security hard-denies.
+        let pipeline = PermissionPipeline::new(PermissionMode::Bypass, vec![]);
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "export LD_PRELOAD=/evil.so && ./app"}),
+        );
+        assert!(matches!(decision, PermissionDecision::Deny(_)));
+    }
+
+    #[test]
+    fn test_bypass_mode_allows_dangerous_with_warning() {
+        // Bypass mode logs warning for dangerous patterns but still allows.
+        let pipeline = PermissionPipeline::new(PermissionMode::Bypass, vec![]);
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "rm -rf /"}),
+        );
+        // Dangerous pattern detected, but bypass overrides Ask→Allow.
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn test_bypass_mode_allows_safe_commands() {
+        let pipeline = PermissionPipeline::new(PermissionMode::Bypass, vec![]);
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "echo hello"}),
+        );
+        assert_eq!(decision, PermissionDecision::Allow);
     }
 }

@@ -4,6 +4,11 @@ use oxicode_tasks::{TaskStatus, TaskType};
 
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
+/// Lock a mutex, recovering from poison (the data is still usable).
+fn lock_mutex<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Truncate a string to at most `max_bytes` bytes, appending "..." if truncated.
 /// Always cuts at a valid UTF-8 char boundary to avoid panics on multi-byte input.
 fn truncate_desc(s: &str, max_bytes: usize) -> String {
@@ -98,7 +103,7 @@ impl Tool for TaskCreateTool {
 
         // Create entry in manager.
         let (task_id, tasks_dir) = {
-            let mut mgr = ctx.task_manager.lock().unwrap();
+            let mut mgr = lock_mutex(&ctx.task_manager);
             let id = mgr.create_task(task_type.clone());
             mgr.update_status(&id, TaskStatus::Running);
             (id, mgr.tasks_dir.clone())
@@ -129,16 +134,22 @@ impl Tool for TaskCreateTool {
                     error: "monitor tasks not yet supported".into(),
                 },
             };
-            // Update final status.
-            mgr_ref.lock().unwrap().update_status(&tid, status);
+            // Update final status (recover from poison — inside spawn, can't propagate).
+            if let Ok(mut mgr) = mgr_ref.lock() {
+                mgr.update_status(&tid, status);
+            } else {
+                tracing::error!("Task manager lock poisoned, cannot update task {tid}");
+            }
             // Remove abort handle (task finished naturally).
-            abort_map.lock().unwrap().remove(&tid);
+            if let Ok(mut handles) = abort_map.lock() {
+                handles.remove(&tid);
+            } else {
+                tracing::error!("Abort handles lock poisoned for task {tid}");
+            }
         });
 
         // Store abort handle for TaskStop.
-        ctx.task_abort_handles
-            .lock()
-            .unwrap()
+        lock_mutex(&ctx.task_abort_handles)
             .insert(task_id.clone(), handle.abort_handle());
 
         Ok(ToolResult::success(format!(
@@ -187,7 +198,7 @@ impl Tool for TaskGetTool {
             return Ok(ToolResult::error("'task_id' is required"));
         };
 
-        let mgr = ctx.task_manager.lock().unwrap();
+        let mgr = lock_mutex(&ctx.task_manager);
         match mgr.get_task(task_id) {
             Some(entry) => {
                 let json = serde_json::to_string_pretty(entry).unwrap_or_default();
@@ -232,7 +243,7 @@ impl Tool for TaskListTool {
         _input: serde_json::Value,
         ctx: &ToolContext,
     ) -> OxiResult<ToolResult> {
-        let mgr = ctx.task_manager.lock().unwrap();
+        let mgr = lock_mutex(&ctx.task_manager);
         let tasks = mgr.list_tasks();
 
         if tasks.is_empty() {
@@ -305,7 +316,7 @@ impl Tool for TaskUpdateTool {
             }
         };
 
-        let mut mgr = ctx.task_manager.lock().unwrap();
+        let mut mgr = lock_mutex(&ctx.task_manager);
         if mgr.get_task(task_id).is_none() {
             return Ok(ToolResult::error(format!("Task '{task_id}' not found")));
         }
@@ -359,7 +370,7 @@ impl Tool for TaskStopTool {
 
         // Hold both locks to make check+abort+update atomic.
         // Lock ordering: task_manager first, then abort_handles (always).
-        let mut mgr = ctx.task_manager.lock().unwrap();
+        let mut mgr = lock_mutex(&ctx.task_manager);
         match mgr.get_task(task_id) {
             None => return Ok(ToolResult::error(format!("Task '{task_id}' not found"))),
             Some(entry) => {
@@ -372,10 +383,7 @@ impl Tool for TaskStopTool {
         }
 
         // Abort the background tokio task.
-        let aborted = ctx
-            .task_abort_handles
-            .lock()
-            .unwrap()
+        let aborted = lock_mutex(&ctx.task_abort_handles)
             .remove(task_id)
             .is_some_and(|h| {
                 h.abort();
@@ -442,7 +450,7 @@ impl Tool for TaskOutputTool {
 
         // Single lock: get tasks_dir and check existence.
         let tasks_dir = {
-            let mgr = ctx.task_manager.lock().unwrap();
+            let mgr = lock_mutex(&ctx.task_manager);
             if mgr.get_task(task_id).is_none() {
                 return Ok(ToolResult::error(format!("Task '{task_id}' not found")));
             }

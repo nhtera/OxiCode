@@ -48,9 +48,9 @@
 │  ┌──────────────────────────────────────────────────────┐ │
 │  │ Permission Pipeline (6 Layers)                       │ │
 │  │ 1. Safe allowlist (read-only) → auto-allow          │ │
-│  │ 2. Permission mode check (Bypass/ApprovalOnly)       │ │
-│  │ 3. Command security (hard deny patterns)             │ │
-│  │ 4. Pattern detection (suspicious ops)                │ │
+│  │ 2. Command security (hard deny — always checks)      │ │
+│  │ 3. Pattern detection (always checked, bypass warns)  │ │
+│  │ 4. Permission mode check (Bypass/ApprovalOnly)       │ │
 │  │ 5. Rule matching (user-configured)                   │ │
 │  │ 6. Default → Ask user                                │ │
 │  └──────────────────────────────────────────────────────┘ │

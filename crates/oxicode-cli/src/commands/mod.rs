@@ -1,7 +1,6 @@
 //! Slash command framework: registry, parsing, and command trait.
 //!
 //! Commands are invoked with `/name [args]` in the TUI input.
-#![allow(dead_code)] // Command framework defined but not yet wired to main app
 
 pub mod agent_commands;
 pub mod debug_commands;

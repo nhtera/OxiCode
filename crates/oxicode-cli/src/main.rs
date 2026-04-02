@@ -6,9 +6,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use oxicode_api::AnthropicProvider;
-use oxicode_common::constants;
-use oxicode_common::Message;
+use oxicode_api::ProviderRouter;
+use oxicode_common::{ContentBlock, Message, Role};
 use oxicode_config::Settings;
 use oxicode_core::{Conversation, QueryEngine};
 use oxicode_permissions::pipeline::{PermissionMode, PermissionPipeline};
@@ -62,11 +61,20 @@ struct Cli {
     /// Generate man page to stdout and exit.
     #[arg(long)]
     man_page: bool,
+
+    /// Run in agent mode (subagent receives config via stdin).
+    #[arg(long, value_name = "AGENT_ID", hide = true)]
+    agent_mode: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Fast-exit: agent mode (subagent spawned by parent)
+    if let Some(ref agent_id) = cli.agent_mode {
+        return run_agent_mode(agent_id).await;
+    }
 
     // Fast-exit: generate shell completions
     if let Some(shell) = cli.completions {
@@ -96,15 +104,16 @@ async fn main() -> Result<()> {
         settings.model = model;
     }
 
-    // Validate API key
-    let api_key = settings.api_key.as_deref().unwrap_or("").to_string();
-    if api_key.is_empty() {
-        eprintln!(
-            "Error: No API key found. Set {} env var or add api_key to ~/.oxicode/settings.toml",
-            constants::ENV_API_KEY
-        );
-        std::process::exit(1);
-    }
+    // Build provider router from environment
+    let router = ProviderRouter::from_env();
+    let resolved = match router.resolve(&settings.model) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+    let provider = resolved.provider;
 
     // Load CLAUDE.md / OXICODE.md
     let cwd = std::env::current_dir()?;
@@ -114,8 +123,6 @@ async fn main() -> Result<()> {
         project_md.as_deref(),
         None, // skills injected at session layer when skill discovery is wired
     );
-
-    let provider = Arc::new(AnthropicProvider::new(api_key));
 
     let state_store = Arc::new(StateStore::new(AppState {
         current_model: settings.model.clone(),
@@ -164,7 +171,7 @@ async fn main() -> Result<()> {
         tool_registry,
         permission_pipeline,
         tool_context,
-        settings.model.clone(),
+        resolved.model,
         settings.max_tokens,
         system_prompt,
     ));
@@ -348,6 +355,9 @@ async fn run_tui(
             conversation.push(msg.clone());
         }
 
+        // Build slash command registry inside the spawned block (not Send-required outside).
+        let command_registry = commands::default_registry();
+
         while let Some(event) = ui_rx.recv().await {
             match event {
                 UiEvent::UserInput(text) => {
@@ -389,6 +399,40 @@ async fn run_tui(
                         }
                     }
                 }
+                UiEvent::SlashCommand { name, args } => {
+                    let command_ctx = commands::CommandContext {
+                        state_store: state_store_clone.clone(),
+                        model: state_store_clone.current().current_model.clone(),
+                        provider_name: "auto".into(),
+                        session_id: String::new(),
+                    };
+                    let input_str = format!("/{name} {args}");
+                    match command_registry.execute(&input_str, &command_ctx) {
+                        Some(commands::CommandOutput::Message(msg)) => {
+                            let sys_msg = Message {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                role: Role::Assistant,
+                                content: vec![ContentBlock::Text { text: msg }],
+                                model: None,
+                                stop_reason: None,
+                                created_at: chrono::Utc::now(),
+                                usage: None,
+                            };
+                            state_store_clone.push_message(sys_msg);
+                            let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                        }
+                        Some(commands::CommandOutput::Quit) => break,
+                        Some(commands::CommandOutput::Error(msg)) => {
+                            let _ = core_tx_clone.send(CoreEvent::Error(msg)).await;
+                        }
+                        Some(commands::CommandOutput::Silent) => {}
+                        None => {
+                            let _ = core_tx_clone
+                                .send(CoreEvent::Error(format!("Unknown command: /{name}")))
+                                .await;
+                        }
+                    }
+                }
                 UiEvent::Quit => break,
                 _ => {}
             }
@@ -403,5 +447,84 @@ async fn run_tui(
 
     engine_handle.abort();
 
+    Ok(())
+}
+
+/// Run as a subagent: read AgentConfig from stdin, execute, write result to stdout.
+async fn run_agent_mode(agent_id: &str) -> Result<()> {
+    use std::io::Read;
+
+    let mut input = String::new();
+    std::io::stdin().read_to_string(&mut input)?;
+
+    let config: oxicode_agents::AgentConfig = serde_json::from_str(&input)
+        .map_err(|e| anyhow::anyhow!("Failed to parse agent config: {e}"))?;
+
+    tracing::info!(agent_id = %agent_id, name = %config.name, "agent mode started");
+
+    let settings = oxicode_config::load_settings(None);
+    let router = ProviderRouter::from_env();
+    let model = config.model.clone();
+    let resolved = match router.resolve(&model) {
+        Ok(r) => r,
+        Err(e) => {
+            let result = serde_json::json!({
+                "agent_id": agent_id,
+                "output": "",
+                "is_error": true,
+                "error": format!("Provider resolution failed: {e}")
+            });
+            println!("{result}");
+            return Ok(());
+        }
+    };
+
+    let cwd = config.working_dir.clone();
+    let (global_md, project_md) = oxicode_config::load_claude_md(&cwd);
+    let system_prompt = oxicode_core::system_prompt::assemble_system_prompt(
+        global_md.as_deref(),
+        project_md.as_deref(),
+        None,
+    );
+
+    let state_store = Arc::new(StateStore::new(AppState::default()));
+    let tool_registry = Arc::new(oxicode_tools::default_registry());
+    let permission_mode = PermissionMode::parse(&config.permission_mode);
+    let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
+    let tool_context = ToolContext {
+        working_dir: cwd,
+        file_state: Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default()),
+        task_manager: Arc::new(std::sync::Mutex::new(oxicode_tasks::TaskManager::default())),
+        task_abort_handles: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        mcp_manager: Arc::new(oxicode_mcp::McpServerManager::new()),
+    };
+
+    let engine = Arc::new(QueryEngine::new(
+        resolved.provider,
+        state_store,
+        tool_registry,
+        permission_pipeline,
+        tool_context,
+        resolved.model,
+        settings.max_tokens,
+        system_prompt,
+    ));
+
+    let started = std::time::Instant::now();
+    let mut conversation = Conversation::new();
+    conversation.push(Message::user(&config.prompt));
+
+    let (output, is_error) = match engine.execute_turn(&mut conversation, None).await {
+        Ok(msg) => (msg.text(), false),
+        Err(e) => (e.to_string(), true),
+    };
+
+    let result = serde_json::json!({
+        "agent_id": agent_id,
+        "output": output,
+        "is_error": is_error,
+        "duration_ms": started.elapsed().as_millis() as u64
+    });
+    println!("{result}");
     Ok(())
 }

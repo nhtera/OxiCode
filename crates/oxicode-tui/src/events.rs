@@ -3,6 +3,8 @@
 pub enum UiEvent {
     /// User submitted input text.
     UserInput(String),
+    /// Slash command parsed from user input.
+    SlashCommand { name: String, args: String },
     /// User requested quit.
     Quit,
     /// Terminal resized.
