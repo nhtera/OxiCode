@@ -180,6 +180,7 @@ mod tests {
         let tool = BashTool;
         let ctx = ToolContext {
             working_dir: dir.path().to_path_buf(),
+            ..Default::default()
         };
 
         let result = tool

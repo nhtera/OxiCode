@@ -226,7 +226,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn ctx(dir: &TempDir) -> ToolContext {
-        ToolContext { working_dir: dir.path().to_path_buf() }
+        ToolContext { working_dir: dir.path().to_path_buf(), ..Default::default() }
     }
 
     #[tokio::test]

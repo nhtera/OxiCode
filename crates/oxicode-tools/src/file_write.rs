@@ -64,6 +64,13 @@ impl Tool for FileWriteTool {
                 message: "content is required".into(),
             })?;
 
+        // Staleness check for existing files: reject if modified since last read
+        if path.exists() {
+            if let Err(msg) = ctx.file_state.check_staleness(&path) {
+                return Ok(ToolResult::error(msg));
+            }
+        }
+
         // Create parent directories
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
@@ -80,6 +87,9 @@ impl Tool for FileWriteTool {
                 name: self.name().into(),
                 message: format!("Failed to write {}: {e}", path.display()),
             })?;
+
+        // Record mtime after successful write
+        ctx.file_state.record(&path);
 
         Ok(ToolResult::success(format!(
             "Successfully wrote {} bytes to {}",
@@ -102,6 +112,7 @@ mod tests {
         let tool = FileWriteTool;
         let ctx = ToolContext {
             working_dir: dir.path().to_path_buf(),
+            ..Default::default()
         };
 
         let result = tool
@@ -124,6 +135,7 @@ mod tests {
         let tool = FileWriteTool;
         let ctx = ToolContext {
             working_dir: dir.path().to_path_buf(),
+            ..Default::default()
         };
 
         let result = tool

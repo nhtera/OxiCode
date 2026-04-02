@@ -143,6 +143,7 @@ async fn main() -> Result<()> {
     let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
     let tool_context = ToolContext {
         working_dir: cwd.clone(),
+        file_state: std::sync::Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default()),
     };
 
     let engine = Arc::new(QueryEngine::new(

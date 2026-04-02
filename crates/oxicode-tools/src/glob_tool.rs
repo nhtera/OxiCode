@@ -110,6 +110,7 @@ mod tests {
         let tool = GlobTool;
         let ctx = ToolContext {
             working_dir: dir.path().to_path_buf(),
+            ..Default::default()
         };
 
         let result = tool
@@ -130,6 +131,7 @@ mod tests {
         let tool = GlobTool;
         let ctx = ToolContext {
             working_dir: dir.path().to_path_buf(),
+            ..Default::default()
         };
 
         let result = tool

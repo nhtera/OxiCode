@@ -1,8 +1,11 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
 use serde::{Deserialize, Serialize};
+
+use crate::file_state_tracker::FileStateTracker;
 
 /// Result of a tool execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,12 +37,15 @@ impl ToolResult {
 pub struct ToolContext {
     /// Working directory for file operations and command execution.
     pub working_dir: PathBuf,
+    /// Tracks file modification times to detect stale edits.
+    pub file_state: Arc<FileStateTracker>,
 }
 
 impl Default for ToolContext {
     fn default() -> Self {
         Self {
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+            file_state: Arc::new(FileStateTracker::default()),
         }
     }
 }

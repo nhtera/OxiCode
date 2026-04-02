@@ -1,3 +1,4 @@
+pub mod file_state_tracker;
 pub mod path_utils;
 pub mod registry;
 pub mod tool_trait;

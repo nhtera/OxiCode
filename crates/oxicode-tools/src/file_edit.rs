@@ -91,6 +91,11 @@ impl Tool for FileEditTool {
             )));
         }
 
+        // Staleness check: reject if file was modified since last read
+        if let Err(msg) = ctx.file_state.check_staleness(&path) {
+            return Ok(ToolResult::error(msg));
+        }
+
         let content =
             tokio::fs::read_to_string(&path)
                 .await
@@ -127,6 +132,9 @@ impl Tool for FileEditTool {
                 message: format!("Failed to write {}: {e}", path.display()),
             }
         })?;
+
+        // Update tracked mtime after successful write
+        ctx.file_state.record(&path);
 
         Ok(ToolResult::success(format!(
             "Replaced {count} occurrence(s) in {}",

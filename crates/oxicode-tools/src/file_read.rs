@@ -98,6 +98,9 @@ impl Tool for FileReadTool {
             .collect::<Vec<_>>()
             .join("\n");
 
+        // Record mtime so FileEditTool/FileWriteTool can detect external changes
+        ctx.file_state.record(&path);
+
         Ok(ToolResult::success(numbered))
     }
 }
