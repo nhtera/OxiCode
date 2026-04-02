@@ -67,6 +67,11 @@ impl QueryEngine {
         &self.system_prompt
     }
 
+    /// Get the current model name.
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
     /// Get max tokens setting.
     pub fn max_tokens(&self) -> u32 {
         self.max_tokens

@@ -40,7 +40,8 @@
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐ │
 │  │ Tool Registry & Execution                            │ │
-│  │ - 31 built-in tools (file, bash, grep, agent, etc)  │ │
+│  │ - 33 built-in tools (file, bash, grep, agent, etc)  │ │
+│  │ - Phase 1: MCP resource tools, skill invocation      │ │
 │  │ - Permission checks via 6-layer pipeline             │ │
 │  │ - MCP bridging for external tools                    │ │
 │  └──────────────────────────────────────────────────────┘ │
@@ -231,6 +232,41 @@ If token_ratio < 1.0 && tool_result provided:
 else:
   render_message_complete() → StateStore update
 ```
+
+---
+
+---
+
+## Phase 1: New Tools & Features
+
+### MCP Resource Tools
+**Purpose:** Access resources exposed by connected MCP servers
+
+- `list_mcp_resources` — List all available resources from MCP servers (with optional server filter)
+- `read_mcp_resource` — Read content of a specific MCP resource by URI
+
+**Integration:** Implemented in `oxicode-tools/src/mcp_resource_tools.rs`, permission level: ReadOnly
+
+### Skill Tool
+**Purpose:** Invoke discovered skills by name within the conversation
+
+- `skill` — Execute a skill and inject its prompt content
+  - Input: skill name (e.g., "commit", "review-pr"), optional args
+  - Output: Skill prompt text or error if not found
+  - Trust model: Skills are user-installed from trusted discovery paths only
+
+**Integration:** Implemented in `oxicode-tools/src/skill_tool.rs`, permission level: ReadOnly
+
+### Enhanced /compact Command
+**Previous:** Stub command, showed "requires interactive mode"
+
+**Now:** Async LLM-assisted summarization
+- User runs `/compact` in TUI
+- Triggers async LLM task: "Summarize conversation into 1-2 sentences"
+- Returns control immediately to TUI (non-blocking)
+- Updates `StateStore` via `replace_messages()` when summarization completes
+
+**Implementation:** CompactCommand calls async task in main.rs, uses new `StateStore::replace_messages()` method
 
 ---
 

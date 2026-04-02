@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
 use oxicode_mcp::McpServerManager;
+use oxicode_skills::SkillExecutor;
 use oxicode_tasks::TaskManager;
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +50,8 @@ pub struct ToolContext {
     pub task_abort_handles: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
     /// MCP server manager for executing MCP tools.
     pub mcp_manager: Arc<McpServerManager>,
+    /// Skill executor for invoking discovered skills (None if not initialized).
+    pub skill_executor: Option<Arc<SkillExecutor>>,
 }
 
 impl fmt::Debug for ToolContext {
@@ -67,6 +70,7 @@ impl Default for ToolContext {
             task_manager: Arc::new(Mutex::new(TaskManager::default())),
             task_abort_handles: Arc::new(Mutex::new(HashMap::new())),
             mcp_manager: Arc::new(McpServerManager::default()),
+            skill_executor: None,
         }
     }
 }

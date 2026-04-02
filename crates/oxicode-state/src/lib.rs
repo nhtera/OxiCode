@@ -107,6 +107,13 @@ impl StateStore {
         });
     }
 
+    /// Replace all messages (used by /compact).
+    pub fn replace_messages(&self, messages: Vec<Message>) {
+        self.update(|state| {
+            state.messages = messages;
+        });
+    }
+
     /// Accumulate usage from a response.
     pub fn add_usage(&self, usage: &Usage) {
         self.update(|state| {

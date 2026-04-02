@@ -213,6 +213,54 @@ impl McpServerManager {
         self.servers.len()
     }
 
+    /// List resources from all connected servers that advertise resource capability.
+    ///
+    /// Returns `(server_name, Vec<McpResource>)` pairs.
+    pub async fn list_resources(&self) -> Vec<(String, Vec<crate::protocol::McpResource>)> {
+        let mut results = Vec::new();
+        for (name, server) in &self.servers {
+            if server.capabilities.resources.is_none() {
+                continue;
+            }
+            match server.transport.request("resources/list", None).await {
+                Ok(result) => {
+                    let arr = result.get("resources").cloned().unwrap_or_default();
+                    let resources: Vec<crate::protocol::McpResource> =
+                        serde_json::from_value(arr).unwrap_or_default();
+                    if !resources.is_empty() {
+                        results.push((name.clone(), resources));
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to list resources from MCP server '{name}': {e}");
+                }
+            }
+        }
+        results
+    }
+
+    /// Read a resource by URI from a specific server.
+    pub async fn read_resource(
+        &self,
+        server_name: &str,
+        uri: &str,
+    ) -> OxiResult<Vec<crate::protocol::McpContent>> {
+        let server = self
+            .servers
+            .get(server_name)
+            .ok_or_else(|| OxiError::Other(format!("MCP server '{server_name}' not found")))?;
+
+        let params = serde_json::json!({ "uri": uri });
+        let result = server
+            .transport
+            .request("resources/read", Some(params))
+            .await?;
+
+        let contents_arr = result.get("contents").cloned().unwrap_or_default();
+        serde_json::from_value(contents_arr)
+            .map_err(|e| OxiError::Other(format!("Failed to parse resource contents: {e}")))
+    }
+
     /// Shut down all servers gracefully.
     pub async fn shutdown_all(&self) {
         for (name, server) in &self.servers {

@@ -166,12 +166,14 @@ pub async fn execute_turn(&self, conversation: &mut Conversation) -> OxiResult<M
 - `Tool` async trait (name, description, schema, execute)
 - `ToolRegistry` (HashMap-based lookup + execution)
 - `ToolSchema`, `ToolInput`, `ToolResult`
-- 31 built-in tools (file_read, bash, grep, agent, mcp, etc)
+- 33 built-in tools (file_read, bash, grep, agent, mcp, list_mcp_resources, read_mcp_resource, skill, etc)
 
 **Files:**
-- tool_trait.rs (trait definition)
+- tool_trait.rs (trait definition, includes ToolContext with skill_executor field)
 - registry.rs (lookup + execute)
-- tools/ subdirectory with 31 implementations
+- tools/ subdirectory with 33 implementations
+- mcp_resource_tools.rs (Phase 1: list_mcp_resources, read_mcp_resource)
+- skill_tool.rs (Phase 1: invoke skills by name)
 
 **Key method:**
 ```rust
@@ -231,9 +233,10 @@ pub async fn execute(&self, tool_name: &str, input: Value, ctx: &ToolContext) ->
 pub fn current(&self) -> AppState;
 pub fn update<F>(&self, f: F) where F: FnOnce(&mut AppState);
 pub fn subscribe(&self) -> watch::Receiver<AppState>;
+pub fn replace_messages(&self, messages: Vec<Message>);  // Phase 1: used by /compact
 ```
 
-**Used by:** TUI (UI updates), Core (state mutations), CLI (status queries)
+**Used by:** TUI (UI updates), Core (state mutations), CLI (status queries), /compact command (message replacement)
 
 **Quality:** Thread-safe (Arc<Mutex>), efficient watch notifications
 

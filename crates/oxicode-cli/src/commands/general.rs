@@ -116,8 +116,9 @@ impl SlashCommand for CompactCommand {
     }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        // TODO: Implement actual context compaction in Phase 4.
-        CommandOutput::Message("Context compaction not yet implemented.".to_string())
+        // Actual compaction is handled async in the engine task (main.rs).
+        // This fallback only triggers in non-TUI contexts.
+        CommandOutput::Message("Compact requires interactive mode (TUI).".to_string())
     }
 }
 

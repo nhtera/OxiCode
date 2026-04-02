@@ -8,7 +8,7 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **LLM-driven code reasoning** (Claude API)
 - **Multi-provider support** (OpenAI, Anthropic, local via MCP)
 - **Context defense** (5-layer token budget system)
-- **Extensible tooling** (31+ built-in tools, custom tool trait)
+- **Extensible tooling** (33+ built-in tools, custom tool trait)
 - **Team collaboration** (multi-agent coordination, skill plugins, background tasks)
 - **TUI interface** (ratatui, real-time streaming, responsive design)
 
@@ -107,10 +107,12 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 5. Rule matching (user-configured allow/deny)
 6. Default ask behavior
 
-### 4. Tool System (31 Built-in + Custom)
-**Built-in:** file_read, file_write, file_edit, bash, grep_tool, glob_tool, notebook_edit, ask_user, send_message, config_tool, mcp_tool, agent_tool, etc.
+### 4. Tool System (33 Built-in + Custom)
+**Built-in:** file_read, file_write, file_edit, bash, grep_tool, glob_tool, notebook_edit, ask_user, send_message, config_tool, mcp_tool, agent_tool, list_mcp_resources, read_mcp_resource, skill, etc.
 
 **Custom:** Implement `Tool` trait, register via `ToolRegistry`.
+
+**Phase 1 additions:** MCP resource tools (access external MCP server resources), skill tool (invoke skills by name).
 
 ### 5. Skill System
 **Skills** are markdown files (`SKILL.md`) with YAML frontmatter that inject prompt snippets when activated.

@@ -26,6 +26,10 @@ pub mod task_tools;
 pub mod web_fetch;
 pub mod web_search;
 
+// MCP resource + Skill tools
+pub mod mcp_resource_tools;
+pub mod skill_tool;
+
 // Phase 5: New tools
 pub mod brief;
 pub mod cron;
@@ -82,5 +86,13 @@ pub fn default_registry() -> ToolRegistry {
     // Web tools
     reg.register(Box::new(web_fetch::WebFetchTool));
     reg.register(Box::new(web_search::WebSearchTool));
+
+    // MCP resource tools
+    reg.register(Box::new(mcp_resource_tools::ListMcpResourcesTool));
+    reg.register(Box::new(mcp_resource_tools::ReadMcpResourceTool));
+
+    // Skill tool
+    reg.register(Box::new(skill_tool::SkillTool));
+
     reg
 }

@@ -392,7 +392,7 @@ Located in `../plans/reports/`:
 - Multi-provider support (Anthropic, OpenAI, compatible)
 - Permission pipeline (6-layer access control)
 - TUI frontend (ratatui, streaming)
-- Tool system (31 built-in tools)
+- Tool system (33 built-in tools)
 
 ### Phase 2 (2026-02-01) ✓ Complete
 - Session persistence

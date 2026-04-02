@@ -118,10 +118,28 @@ async fn main() -> Result<()> {
     // Load CLAUDE.md / OXICODE.md
     let cwd = std::env::current_dir()?;
     let (global_md, project_md) = oxicode_config::load_claude_md(&cwd);
+
+    // Discover and initialize skills.
+    let user_skills_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".oxicode")
+        .join("skills");
+    let project_skills_dir = cwd.join(".oxicode").join("skills");
+    let skill_discovery = oxicode_skills::SkillDiscovery::new(user_skills_dir, project_skills_dir);
+    let discovered_skills = skill_discovery.discover();
+    let skill_executor = Arc::new(oxicode_skills::SkillExecutor::new(discovered_skills));
+
+    // Build skills prompt for system prompt injection.
+    let skill_activation_ctx = oxicode_skills::ActivationContext {
+        current_file: None,
+        user_input: None,
+    };
+    let skills_prompt = skill_executor.build_skills_prompt(&skill_activation_ctx);
+
     let system_prompt = oxicode_core::system_prompt::assemble_system_prompt(
         global_md.as_deref(),
         project_md.as_deref(),
-        None, // skills injected at session layer when skill discovery is wired
+        skills_prompt.as_deref(),
     );
 
     let state_store = Arc::new(StateStore::new(AppState {
@@ -163,6 +181,7 @@ async fn main() -> Result<()> {
         task_manager: std::sync::Arc::new(std::sync::Mutex::new(oxicode_tasks::TaskManager::default())),
         task_abort_handles: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         mcp_manager: mcp_ref.clone(),
+        skill_executor: Some(skill_executor),
     };
 
     let engine = Arc::new(QueryEngine::new(
@@ -400,6 +419,68 @@ async fn run_tui(
                     }
                 }
                 UiEvent::SlashCommand { name, args } => {
+                    // Handle /compact asynchronously (needs LLM provider).
+                    if name == "compact" {
+                        let msg_count_before = conversation.len();
+                        let messages = conversation.api_messages().to_vec();
+
+                        if messages.len() < 3 {
+                            let sys_msg = Message {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                role: Role::Assistant,
+                                content: vec![ContentBlock::Text {
+                                    text: "Not enough messages to compact.".to_string(),
+                                }],
+                                model: None,
+                                stop_reason: None,
+                                created_at: chrono::Utc::now(),
+                                usage: None,
+                            };
+                            state_store_clone.push_message(sys_msg);
+                            let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            continue;
+                        }
+
+                        let provider = engine_clone.provider_ref().clone();
+                        let model = engine_clone.model().to_string();
+
+                        match oxicode_context::AutoCompactor::compact(
+                            &messages,
+                            provider.as_ref(),
+                            &model,
+                        )
+                        .await
+                        {
+                            Ok(summary_msg) => {
+                                conversation.replace_messages(vec![summary_msg.clone()]);
+                                state_store_clone.replace_messages(vec![summary_msg]);
+
+                                let sys_msg = Message {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    role: Role::Assistant,
+                                    content: vec![ContentBlock::Text {
+                                        text: format!(
+                                            "Context compacted: {} messages → 1 summary.",
+                                            msg_count_before
+                                        ),
+                                    }],
+                                    model: None,
+                                    stop_reason: None,
+                                    created_at: chrono::Utc::now(),
+                                    usage: None,
+                                };
+                                state_store_clone.push_message(sys_msg);
+                                let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            }
+                            Err(e) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!("Compact failed: {e}")))
+                                    .await;
+                            }
+                        }
+                        continue;
+                    }
+
                     let command_ctx = commands::CommandContext {
                         state_store: state_store_clone.clone(),
                         model: state_store_clone.current().current_model.clone(),
@@ -497,6 +578,7 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
         task_manager: Arc::new(std::sync::Mutex::new(oxicode_tasks::TaskManager::default())),
         task_abort_handles: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         mcp_manager: Arc::new(oxicode_mcp::McpServerManager::new()),
+        skill_executor: None, // Agent mode doesn't initialize skills
     };
 
     let engine = Arc::new(QueryEngine::new(
