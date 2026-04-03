@@ -20,7 +20,13 @@ impl SlashCommand for LoginCommand {
             args.trim()
         };
 
-        // Check if key is already set in environment.
+        let mgr = crate::auth::AuthManager::new();
+        if mgr.is_authenticated(provider) {
+            return CommandOutput::Message(format!(
+                "Already authenticated with {provider}."
+            ));
+        }
+
         let env_key = match provider {
             "anthropic" => "ANTHROPIC_API_KEY",
             "openai" => "OPENAI_API_KEY",
@@ -33,20 +39,14 @@ impl SlashCommand for LoginCommand {
             }
         };
 
-        if std::env::var(env_key).is_ok() {
-            CommandOutput::Message(format!(
-                "Already authenticated with {provider} (via {env_key})."
-            ))
-        } else {
-            let config_path = dirs::home_dir()
-                .map(|h| h.join(".oxicode").join("credentials.toml"))
-                .unwrap_or_default();
-            CommandOutput::Message(format!(
-                "Not authenticated with {provider}.\n\
-                 Set {env_key} environment variable, or add to:\n  {}",
-                config_path.display()
-            ))
-        }
+        let config_path = dirs::home_dir()
+            .map(|h| h.join(".oxicode").join("credentials.toml"))
+            .unwrap_or_default();
+        CommandOutput::Message(format!(
+            "Not authenticated with {provider}.\n\
+             Set {env_key} environment variable, or add to:\n  {}",
+            config_path.display()
+        ))
     }
 }
 
@@ -58,28 +58,19 @@ impl SlashCommand for LogoutCommand {
     fn description(&self) -> &str {
         "Clear stored credentials"
     }
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        let cred_path = dirs::home_dir()
-            .map(|h| h.join(".oxicode").join("credentials.toml"))
-            .unwrap_or_default();
-
-        if cred_path.exists() {
-            match std::fs::remove_file(&cred_path) {
-                Ok(()) => CommandOutput::Message(format!(
-                    "Credentials file removed: {}\n\
-                     Environment variables (if set) are still active.",
-                    cred_path.display()
-                )),
-                Err(e) => CommandOutput::Error(format!(
-                    "Failed to remove credentials: {e}"
-                )),
-            }
+    fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
+        let provider = if args.trim().is_empty() {
+            &ctx.provider_name
         } else {
-            CommandOutput::Message(
-                "No stored credentials file found.\n\
-                 Unset environment variables (ANTHROPIC_API_KEY, etc.) to fully log out."
-                    .into(),
-            )
+            args.trim()
+        };
+        let mut mgr = crate::auth::AuthManager::new();
+        match mgr.clear_credential(provider) {
+            Ok(()) => CommandOutput::Message(format!(
+                "Credentials cleared for {provider}.\n\
+                 Environment variables (if set) are still active."
+            )),
+            Err(e) => CommandOutput::Error(format!("Logout failed: {e}")),
         }
     }
 }

@@ -4,6 +4,7 @@
 
 pub mod agent_commands;
 pub mod debug_commands;
+pub mod enterprise_commands;
 pub mod general;
 pub mod git_commands;
 pub mod git_helpers;
@@ -273,6 +274,12 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(new_commands::ThinkingCommand));
     reg.register(Box::new(new_commands::SandboxToggleCommand));
     reg.register(Box::new(new_commands::OutputStyleCommand));
+
+    // Phase 9: Enterprise commands (auth, telemetry, settings, managed)
+    reg.register(Box::new(enterprise_commands::TelemetryCommand));
+    reg.register(Box::new(enterprise_commands::SettingsCommand));
+    reg.register(Box::new(enterprise_commands::AuthCommand));
+    reg.register(Box::new(enterprise_commands::ManagedCommand));
 
     reg
 }

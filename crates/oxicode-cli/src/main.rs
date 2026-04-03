@@ -1,10 +1,13 @@
+pub mod auth;
 mod commands;
 mod completions;
+pub mod github_service;
 mod onboarding;
 mod server;
 mod server_handler;
 mod server_protocol;
 mod structured_output;
+pub mod telemetry;
 
 use std::sync::Arc;
 

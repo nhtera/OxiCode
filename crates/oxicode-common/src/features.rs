@@ -17,6 +17,8 @@ pub mod flag {
     pub const VOICE_INPUT: &str = "voice_input";
     pub const VIM_MODE: &str = "vim_mode";
     pub const LSP_INTEGRATION: &str = "lsp_integration";
+    pub const TELEMETRY: &str = "telemetry";
+    pub const ENTERPRISE: &str = "enterprise";
 }
 
 /// Runtime feature flags loaded from `settings.toml` `[features]` section.
@@ -33,6 +35,8 @@ pub struct FeatureFlags {
     pub voice_input: bool,
     pub vim_mode: bool,
     pub lsp_integration: bool,
+    pub telemetry: bool,
+    pub enterprise: bool,
     /// Catch-all for user-defined or future flags.
     #[serde(flatten)]
     pub extra: HashMap<String, bool>,
@@ -49,6 +53,8 @@ impl Default for FeatureFlags {
             voice_input: false,
             vim_mode: false,
             lsp_integration: false,
+            telemetry: false,
+            enterprise: false,
             extra: HashMap::new(),
         }
     }
@@ -66,6 +72,8 @@ impl FeatureFlags {
             flag::VOICE_INPUT => self.voice_input,
             flag::VIM_MODE => self.vim_mode,
             flag::LSP_INTEGRATION => self.lsp_integration,
+            flag::TELEMETRY => self.telemetry,
+            flag::ENTERPRISE => self.enterprise,
             other => self.extra.get(other).copied().unwrap_or(false),
         }
     }
@@ -81,6 +89,8 @@ impl FeatureFlags {
             flag::VOICE_INPUT => &mut self.voice_input,
             flag::VIM_MODE => &mut self.vim_mode,
             flag::LSP_INTEGRATION => &mut self.lsp_integration,
+            flag::TELEMETRY => &mut self.telemetry,
+            flag::ENTERPRISE => &mut self.enterprise,
             other => {
                 let entry = self.extra.entry(other.to_string()).or_insert(false);
                 *entry = !*entry;
@@ -102,6 +112,8 @@ impl FeatureFlags {
             flag::VOICE_INPUT => &mut self.voice_input,
             flag::VIM_MODE => &mut self.vim_mode,
             flag::LSP_INTEGRATION => &mut self.lsp_integration,
+            flag::TELEMETRY => &mut self.telemetry,
+            flag::ENTERPRISE => &mut self.enterprise,
             other => {
                 let entry = self.extra.entry(other.to_string()).or_insert(!value);
                 let changed = *entry != value;
@@ -125,6 +137,8 @@ impl FeatureFlags {
             (flag::VOICE_INPUT, self.voice_input),
             (flag::VIM_MODE, self.vim_mode),
             (flag::LSP_INTEGRATION, self.lsp_integration),
+            (flag::TELEMETRY, self.telemetry),
+            (flag::ENTERPRISE, self.enterprise),
         ];
         // Sort extra by name for stable output.
         let mut extra: Vec<_> = self.extra.iter().collect();

@@ -1,6 +1,8 @@
 pub mod claude_md;
 pub mod env;
+pub mod mdm;
 pub mod settings;
+pub mod sync;
 
 use std::path::{Path, PathBuf};
 
