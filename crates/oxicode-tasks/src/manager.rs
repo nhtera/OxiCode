@@ -11,6 +11,24 @@ pub enum TaskType {
     LocalBash { command: String },
     LocalAgent { prompt: String, model: String },
     Monitor { interval_secs: u64, command: String },
+    #[cfg(feature = "remote")]
+    RemoteAgent {
+        server_url: String,
+        prompt: String,
+        model: String,
+    },
+    #[cfg(feature = "teammate")]
+    InProcessTeammate {
+        name: String,
+        prompt: String,
+        owned_files: Vec<String>,
+    },
+    #[cfg(feature = "dream")]
+    Dream {
+        prompt: String,
+        model: String,
+        wake_interval_secs: u64,
+    },
 }
 
 /// Lifecycle status of a task.

@@ -1,3 +1,4 @@
+use oxicode_common::FeatureFlags;
 use serde::{Deserialize, Serialize};
 
 /// Application settings loaded from TOML, env vars, and defaults.
@@ -16,6 +17,8 @@ pub struct Settings {
     pub permission_mode: String,
     /// Custom config directory override.
     pub config_dir: Option<String>,
+    /// Runtime feature flags.
+    pub features: FeatureFlags,
 }
 
 impl Default for Settings {
@@ -27,6 +30,7 @@ impl Default for Settings {
             theme: "default".to_string(),
             permission_mode: "default".to_string(),
             config_dir: None,
+            features: FeatureFlags::default(),
         }
     }
 }

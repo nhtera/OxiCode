@@ -5,6 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+remote = ["reqwest"]
+dream = []
+teammate = []
+
 [dependencies]
 oxicode-common = { workspace = true }
 serde = { workspace = true }
@@ -14,6 +20,8 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 dirs = { workspace = true }
+glob = { workspace = true }
+reqwest = { workspace = true, optional = true }
 
 [lints]
 workspace = true

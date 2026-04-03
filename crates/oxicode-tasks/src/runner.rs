@@ -1,38 +1,14 @@
-use std::io::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::Utc;
 use oxicode_common::{OxiError, OxiResult};
-use serde_json::json;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 use crate::manager::TaskStatus;
+use crate::task_output_helpers::{open_output_file, write_line};
 
 const STALL_TIMEOUT_SECS: u64 = 45;
-
-/// Open (and optionally create) the output JSONL file for a task.
-fn open_output_file(tasks_dir: &Path, task_id: &str) -> OxiResult<std::fs::File> {
-    let dir = tasks_dir.join(task_id);
-    std::fs::create_dir_all(&dir)?;
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("output.jsonl"))?;
-    Ok(file)
-}
-
-/// Append one JSON line to the output file.
-fn write_line(file: &mut std::fs::File, stream: &str, line: &str) -> OxiResult<()> {
-    let record = json!({
-        "ts": Utc::now().to_rfc3339(),
-        "stream": stream,
-        "line": line,
-    });
-    writeln!(file, "{record}")?;
-    Ok(())
-}
 
 /// Spawn `sh -c <command>`, stream output to disk, detect stalls, return final status.
 pub async fn run_bash(task_id: &str, command: &str, tasks_dir: &Path) -> OxiResult<TaskStatus> {

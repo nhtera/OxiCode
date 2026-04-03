@@ -8,6 +8,13 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+remote = ["oxicode-tasks/remote"]
+dream = ["oxicode-tasks/dream"]
+teammate = ["oxicode-tasks/teammate"]
+all = ["remote", "dream", "teammate"]
+
 [dependencies]
 oxicode-common = { workspace = true }
 oxicode-agents = { workspace = true }

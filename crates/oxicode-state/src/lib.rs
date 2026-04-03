@@ -1,4 +1,4 @@
-use oxicode_common::{Message, Usage};
+use oxicode_common::{FeatureFlags, Message, Usage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -39,6 +39,8 @@ pub struct AppState {
     pub active_skills: Vec<String>,
     /// Background tasks registered in the task manager.
     pub background_tasks: Vec<TaskEntry>,
+    /// Runtime feature flags.
+    pub feature_flags: FeatureFlags,
 }
 
 impl Default for AppState {
@@ -52,6 +54,7 @@ impl Default for AppState {
             active_agents: Vec::new(),
             active_skills: Vec::new(),
             background_tasks: Vec::new(),
+            feature_flags: FeatureFlags::default(),
         }
     }
 }
@@ -142,6 +145,27 @@ impl StateStore {
             state.background_tasks = tasks;
         });
     }
+
+    /// Check if a runtime feature flag is enabled.
+    pub fn is_feature_enabled(&self, name: &str) -> bool {
+        self.rx.borrow().feature_flags.is_enabled(name)
+    }
+
+    /// Toggle a runtime feature flag. Returns the new value.
+    pub fn toggle_feature(&self, name: &str) -> Option<bool> {
+        let mut result = None;
+        self.update(|state| {
+            result = state.feature_flags.toggle(name);
+        });
+        result
+    }
+
+    /// Replace the entire feature flags set (e.g. from config reload).
+    pub fn set_feature_flags(&self, flags: FeatureFlags) {
+        self.update(|state| {
+            state.feature_flags = flags;
+        });
+    }
 }
 
 impl Default for StateStore {
@@ -230,5 +254,30 @@ mod tests {
         store.update_tasks(vec![task]);
         assert_eq!(store.current().background_tasks.len(), 1);
         assert_eq!(store.current().background_tasks[0].id, "t1");
+    }
+
+    #[test]
+    fn test_feature_flags_default_in_state() {
+        let store = StateStore::default();
+        assert!(store.is_feature_enabled("extended_thinking"));
+        assert!(!store.is_feature_enabled("proactive_agents"));
+    }
+
+    #[test]
+    fn test_toggle_feature() {
+        let store = StateStore::default();
+        assert!(!store.is_feature_enabled("proactive_agents"));
+        let new_val = store.toggle_feature("proactive_agents");
+        assert_eq!(new_val, Some(true));
+        assert!(store.is_feature_enabled("proactive_agents"));
+    }
+
+    #[test]
+    fn test_set_feature_flags() {
+        let store = StateStore::default();
+        let mut flags = FeatureFlags::default();
+        flags.set("vim_mode", true);
+        store.set_feature_flags(flags);
+        assert!(store.is_feature_enabled("vim_mode"));
     }
 }

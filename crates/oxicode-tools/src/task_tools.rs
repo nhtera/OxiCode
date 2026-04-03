@@ -133,6 +133,18 @@ impl Tool for TaskCreateTool {
                 TaskType::Monitor { .. } => TaskStatus::Failed {
                     error: "monitor tasks not yet supported".into(),
                 },
+                #[cfg(feature = "remote")]
+                TaskType::RemoteAgent { .. } => TaskStatus::Failed {
+                    error: "remote agent tasks: use run_remote_agent directly".into(),
+                },
+                #[cfg(feature = "teammate")]
+                TaskType::InProcessTeammate { .. } => TaskStatus::Failed {
+                    error: "teammate tasks: use run_teammate directly".into(),
+                },
+                #[cfg(feature = "dream")]
+                TaskType::Dream { .. } => TaskStatus::Failed {
+                    error: "dream tasks: use run_dream directly".into(),
+                },
             };
             // Update final status (recover from poison — inside spawn, can't propagate).
             if let Ok(mut mgr) = mgr_ref.lock() {

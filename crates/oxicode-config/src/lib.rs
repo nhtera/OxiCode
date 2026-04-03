@@ -73,6 +73,8 @@ fn merge_settings(target: &mut Settings, source: &Settings) {
     if source.permission_mode != defaults.permission_mode {
         target.permission_mode.clone_from(&source.permission_mode);
     }
+    // Always take features from TOML — they are fully deserialized with defaults.
+    target.features = source.features.clone();
 }
 
 /// Load all CLAUDE.md / OXICODE.md content for the given working directory.
@@ -117,5 +119,35 @@ max_tokens = 8192
         let settings = load_settings(Some(tmp.path().to_str().unwrap()));
         assert_eq!(settings.model, "claude-opus-4-20250514");
         assert_eq!(settings.max_tokens, 8192);
+    }
+
+    #[test]
+    fn test_load_settings_with_features() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+model = "claude-sonnet-4-20250514"
+
+[features]
+extended_thinking = false
+proactive_agents = true
+vim_mode = true
+custom_flag = true
+"#;
+        std::fs::write(tmp.path().join("settings.toml"), toml_content).unwrap();
+        let settings = load_settings(Some(tmp.path().to_str().unwrap()));
+        assert!(!settings.features.is_enabled("extended_thinking"));
+        assert!(settings.features.is_enabled("proactive_agents"));
+        assert!(settings.features.is_enabled("vim_mode"));
+        assert!(settings.features.is_enabled("custom_flag"));
+        // Default features not overridden should keep defaults.
+        assert!(settings.features.is_enabled("prompt_caching"));
+    }
+
+    #[test]
+    fn test_default_settings_have_default_features() {
+        let s = Settings::default();
+        assert!(s.features.is_enabled("extended_thinking"));
+        assert!(s.features.is_enabled("prompt_caching"));
+        assert!(!s.features.is_enabled("proactive_agents"));
     }
 }

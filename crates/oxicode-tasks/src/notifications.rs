@@ -27,6 +27,12 @@ fn task_type_label(task_type: &TaskType) -> &'static str {
         TaskType::LocalBash { .. } => "bash",
         TaskType::LocalAgent { .. } => "agent",
         TaskType::Monitor { .. } => "monitor",
+        #[cfg(feature = "remote")]
+        TaskType::RemoteAgent { .. } => "remote_agent",
+        #[cfg(feature = "teammate")]
+        TaskType::InProcessTeammate { .. } => "teammate",
+        #[cfg(feature = "dream")]
+        TaskType::Dream { .. } => "dream",
     }
 }
 
