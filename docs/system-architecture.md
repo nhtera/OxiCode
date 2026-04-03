@@ -1,6 +1,6 @@
 # OxiCode — System Architecture
 
-**Version:** 0.3.0 | **Last Updated:** 2026-04-03 | **Phase:** 8 (UX Polish Complete) | **Cumulative:** Phase 1-8 foundations + CLI completeness + IDE bridge + UX enhancements
+**Version:** 0.4.0 | **Last Updated:** 2026-04-04 | **Phase:** 5 (Plugin Marketplace & Enterprise Settings) | **Cumulative:** Phase 1-8 + Phase 5 plugin/enterprise subsystems
 
 ## Architecture Overview
 
@@ -970,6 +970,111 @@ pub struct InputState {
 - 9 config tests (settings, keybindings TOML parsing)
 - Zero clippy warnings in new code
 - Full workspace compilation passes
+
+---
+
+## Phase 5: Plugin Marketplace & Enterprise Settings
+
+### Plugin Registry Client (`oxicode-plugins`)
+
+**Purpose:** Remote index fetch/cache, search, version filtering, download for marketplace plugins
+
+**Architecture:**
+```
+PluginRegistry (client)
+  ├── fetch_index() → Remote registry (e.g., GitHub)
+  ├── cache_index() → ~/.oxicode/plugin-cache/{hash}
+  ├── search(query) → Filter by keywords, trust level
+  ├── filter_by_version(plugin, constraint) → Semver range
+  └── download_archive(url) → tar.gz → extract
+```
+
+**Key Types:**
+- `PluginEntry` — name, version, download_url, trust (verified/community/unverified), permissions, min_oxicode_version
+- `PluginManager` — Orchestrates lifecycle: discovery → validation → installation → loading
+- `TrustLevel` — Verified (signed, admin), Community (community voted), Unverified (default)
+
+**Features:**
+- **Hot-Reload:** `/reload-plugins` command triggers `manager.reload_plugins()`
+- **Install from Registry:** Downloads tar.gz, extracts, validates manifest, loads
+- **Permission Manifest:** Each plugin declares tools + hooks it needs
+- **Cache TTL:** 1-hour default, respects `OXICODE_PLUGIN_CACHE_DIR` env var
+
+**Files (oxicode-plugins crate, 2.1K LOC):**
+- `registry.rs` — Remote index client, caching, search/filter APIs
+- `manager.rs` — Plugin lifecycle, validation, hot-reload
+- `security.rs` — Trust assessment, permission validation
+- `manifest.rs` — Plugin.toml parsing (name, version, permissions)
+- `install.rs` — Download, extract, install flow
+- `lifecycle.rs` — Enable/disable state machine
+- `subprocess.rs` — Subprocess plugin spawning (sandboxing ready)
+
+**Commands (CLI integration):**
+```
+/plugin browse [--category TAG]        # List marketplace plugins
+/plugin search QUERY                   # Search by keywords
+/plugin info NAME [--version V]        # Details + trust level
+/plugin install NAME[@VERSION]         # Download + install
+/plugin update [NAME]                  # Update all or specific
+/plugin remove NAME                    # Uninstall
+/plugin list [--status]                # Local installed plugins
+/reload-plugins                        # Hot-reload running plugins
+```
+
+### Enterprise Managed Settings (`oxicode-config`)
+
+**Purpose:** Remote admin endpoint for enterprise settings, HMAC-validated, cloud sync-capable
+
+**Architecture:**
+```
+EnterpriseSettingsClient
+  ├── endpoint: String (OXICODE_ENTERPRISE_SETTINGS_URL)
+  ├── signing_key: Option<String> (env: OXICODE_ENTERPRISE_KEY)
+  ├── fetch() → HTTP GET + HMAC-SHA256 validation
+  ├── cache_dir: ~/.oxicode/enterprise-cache
+  └── TTL: 1 hour (configurable)
+```
+
+**Data Model:**
+```rust
+EnterpriseSettingsResponse {
+  settings: HashMap<String, String>,     // key-value pairs
+  locked: HashMap<String, bool>,         // Locked keys (immutable)
+  signature: String,                      // HMAC-SHA256 (hex)
+  version_ts: Option<String>,             // Admin version timestamp
+}
+```
+
+**Validation Flow:**
+1. Fetch settings from remote endpoint
+2. Extract signature from response
+3. Compute HMAC-SHA256(`signing_key`, JSON payload)
+4. Compare with response.signature (hex match)
+5. Cache locally if valid
+6. Return merged (enterprise + user local) on next request
+
+**Cloud Sync Integration:**
+- `push_settings()` — OAuth-protected upload of user settings to cloud
+- `pull_settings()` — Fetch remote user settings (with OAuth token)
+- `sync_status()` — Compare hashes, detect conflicts
+- **Conflict Resolution:** Latest-wins with logging of overridden keys
+
+**Files (oxicode-config):**
+- `enterprise_settings.rs` — Client, caching, signature validation
+- Updated `settings.rs` — Merge enterprise + local settings
+- `mdm.rs` — Platform MDM layer (existing, used by enterprise)
+
+**Environment Variables:**
+- `OXICODE_ENTERPRISE_SETTINGS_URL` — Admin endpoint (e.g., `https://admin.company.com/settings`)
+- `OXICODE_ENTERPRISE_KEY` — HMAC signing key (shared secret)
+- `OXICODE_ENTERPRISE_CACHE_TTL` — Cache staleness (seconds, default 3600)
+
+**New Dependencies:**
+- `flate2` — gzip compression for plugin archives
+- `tar` — Archive extraction
+- `hmac`, `sha2`, `hex` — Enterprise signature validation
+- `reqwest` (enhanced) — Plugin registry + enterprise endpoint fetches
+- `chrono` (enhanced) — Timestamp handling in cache/version tracking
 
 ---
 

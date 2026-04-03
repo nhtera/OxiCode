@@ -36,6 +36,7 @@ oxicode-agents = { workspace = true }
 oxicode-skills = { workspace = true }
 oxicode-tasks = { workspace = true }
 oxicode-context = { workspace = true }
+oxicode-plugins = { workspace = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 clap_mangen = { workspace = true }

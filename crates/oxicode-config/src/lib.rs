@@ -1,4 +1,5 @@
 pub mod claude_md;
+pub mod enterprise_settings;
 pub mod env;
 pub mod mdm;
 pub mod settings;

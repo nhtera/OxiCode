@@ -1,6 +1,6 @@
 # OxiCode — Codebase Summary
 
-**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Scope:** Phase 5 Complete (Command Implementations) | **Total:** 16 crates, 39 oxicode-tools files, ~105K tokens
+**Version:** 0.4.0 | **Last Updated:** 2026-04-04 | **Scope:** Phase 5 Complete (Plugin Marketplace & Enterprise Settings) | **Total:** 17 crates, 39 oxicode-tools files, ~120K tokens
 
 ---
 
@@ -59,6 +59,13 @@
                 └───────────────┬────────────────┘
                                 │
     ┌───────────────────────────┴──────────────────────┐
+    │     PHASE 5: PLUGINS & ENTERPRISE LAYER          │
+    │                                                   │
+    │  oxicode-plugins (Registry, Trust, Hot-Reload)  │
+    │  oxicode-config enhanced (Enterprise Settings)   │
+    └───────────┬────────────────────────────────────┘
+                │
+    ┌───────────┴──────────────────────────────────┐
     │          INTEGRATION & USER-FACING LAYER         │
     │                                                   │
     │  oxicode-mcp ──── oxicode-tui ─── oxicode-cli   │
@@ -460,7 +467,104 @@ pub fn build_skills_prompt(&self, ctx: &ActivationContext) -> Option<String>
 
 ---
 
-### Layer 5: Integration & User-Facing
+### Layer 5: Phase 5 — Plugin Marketplace & Enterprise Settings
+
+#### oxicode-plugins (~2.1K LOC, new crate)
+**Purpose:** Remote plugin registry client, trust assessment, hot-reload, lifecycle management
+
+**Key exports:**
+- `PluginRegistry` — Fetch remote index, cache, search/filter by keywords/version
+- `PluginManager` — Discover → validate → install → hot-reload workflow
+- `PluginEntry` — name, version, download_url, trust (verified/community/unverified), permissions
+- `TrustLevel` enum — Verified (signed), Community (voted), Unverified (default)
+- `PluginManifest` — Plugin.toml: name, version, permissions, min_oxicode_version
+
+**Files:**
+- registry.rs — Remote index fetch, caching (TTL: 1 hour), search/filter APIs
+- manager.rs — Plugin lifecycle, validation, discovery
+- security.rs — Trust assessment, permission validation
+- manifest.rs — Plugin.toml parsing
+- install.rs — Download tar.gz, extract, install flow
+- lifecycle.rs — Enable/disable state machine
+- subprocess.rs — Subprocess spawning (sandbox-ready)
+
+**Key methods:**
+```rust
+pub async fn fetch_index(url: &str) -> OxiResult<Vec<PluginEntry>>;
+pub fn search(query: &str, entries: &[PluginEntry]) -> Vec<PluginEntry>;
+pub async fn install(entry: &PluginEntry) -> OxiResult<()>;
+pub fn reload_plugins(&mut self) -> OxiResult<()>;
+```
+
+**Commands (CLI integration via oxicode-cli/commands/plugin_commands.rs):**
+- `/plugin browse [--category TAG]` — List marketplace
+- `/plugin search QUERY` — Search by keywords
+- `/plugin info NAME [--version V]` — Details + trust level
+- `/plugin install NAME[@VERSION]` — Download + install
+- `/plugin update [NAME]` — Update all or specific
+- `/plugin remove NAME` — Uninstall
+- `/plugin list [--status]` — Local installed
+- `/reload-plugins` — Hot-reload without restart
+
+**Used by:** CLI (plugin commands), ToolRegistry (plugin tools), Manager (lifecycle)
+
+**Dependencies:** reqwest, flate2, tar, serde_json, chrono, tokio
+
+---
+
+#### oxicode-config enhancement — Enterprise Settings
+**Purpose:** Remote admin endpoint for enterprise settings with HMAC-SHA256 validation, cloud sync
+
+**New files:**
+- enterprise_settings.rs (~400 LOC) — EnterpriseSettingsClient, caching, signature validation
+- Updated settings.rs — Merge enterprise + local settings, conflict detection
+
+**Key types:**
+```rust
+pub struct EnterpriseSettingsClient {
+    endpoint: String,           // OXICODE_ENTERPRISE_SETTINGS_URL
+    signing_key: Option<String>, // OXICODE_ENTERPRISE_KEY
+    cache_dir: PathBuf,
+    cache_ttl_secs: i64,        // Default: 3600
+}
+
+pub struct EnterpriseSettingsResponse {
+    settings: HashMap<String, String>,
+    locked: HashMap<String, bool>,  // Immutable keys
+    signature: String,              // HMAC-SHA256 (hex)
+    version_ts: Option<String>,     // Admin version
+}
+```
+
+**Key methods:**
+```rust
+pub async fn fetch_settings(&self, oauth_token: Option<&str>) -> OxiResult<EnterpriseSettingsResponse>;
+pub async fn push_settings(&self, settings: &HashMap<String, String>, oauth_token: &str) -> OxiResult<()>;
+pub async fn pull_settings(&self, oauth_token: &str) -> OxiResult<HashMap<String, String>>;
+pub fn sync_status(&self) -> OxiResult<SyncStatus>;
+```
+
+**Validation flow:**
+1. Fetch settings from remote endpoint
+2. Extract signature from response
+3. Compute HMAC-SHA256(signing_key, payload)
+4. Compare signatures (hex match)
+5. Cache locally if valid
+6. Merge with user local settings (latest-wins)
+
+**Commands (CLI integration via oxicode-cli/commands/enterprise_commands.rs):**
+- `/enterprise pull` — Fetch admin settings
+- `/enterprise push` — Upload user settings
+- `/enterprise status` — Sync status + conflict report
+- `/enterprise diff` — Show changes vs. local
+
+**Used by:** Config loader, Settings manager, CLI commands
+
+**Dependencies:** hmac, sha2, hex, reqwest (enhanced), chrono (enhanced)
+
+---
+
+### Layer 6: Integration & User-Facing
 
 #### oxicode-mcp (~200 LOC)
 **Purpose:** MCP (Model Context Protocol) server wrapper for external tools
@@ -582,9 +686,11 @@ pub fn build_skills_prompt(&self, ctx: &ActivationContext) -> Option<String>
 | **oxicode-agents** | **280** | **Multi-agent (P4)** |
 | **oxicode-skills** | **350** | **Skills system (P4)** |
 | **oxicode-tasks** | **380** | **Background tasks (P4)** |
+| **oxicode-plugins** | **2,100** | **Plugin marketplace + registry (P5)** |
 | oxicode-mcp | 200 | MCP bridging |
 | oxicode-tui | 600 | Terminal UI |
 | oxicode-cli | 280 | Commands/REPL |
+| **Total** | **~8,240** | **16 crates + plugins** |
 
 ---
 

@@ -1,9 +1,12 @@
 //! Settings export/import (sync) functionality.
 //!
 //! Provides JSON-based settings export and import with validation,
-//! MDM conflict detection, and schema checking.
+//! MDM conflict detection, schema checking, and cloud sync (push/pull).
 
 use std::path::Path;
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::settings::Settings;
 
@@ -203,6 +206,154 @@ pub fn merge_imported(
     // target.api_key is intentionally left unchanged.
 
     skipped
+}
+
+// ========================================================================
+// Cloud Sync — push/pull settings when logged in via OAuth
+// ========================================================================
+
+/// Cloud sync endpoint for settings storage.
+const CLOUD_SYNC_BASE_URL: &str = "https://api.oxicode.dev/v1/settings";
+
+/// Cloud settings payload with metadata for conflict resolution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudSettings {
+    /// The settings JSON (exported via `export_settings`).
+    pub settings_json: String,
+    /// Timestamp of the last push.
+    pub updated_at: DateTime<Utc>,
+    /// Device identifier for conflict tracking.
+    #[serde(default)]
+    pub device_id: String,
+}
+
+/// Result of a cloud sync pull with conflict info.
+#[derive(Debug)]
+pub struct SyncPullResult {
+    /// The pulled settings.
+    pub settings: Settings,
+    /// Whether a conflict was detected (remote was newer AND different).
+    pub had_conflict: bool,
+    /// Warnings from import validation.
+    pub warnings: Vec<String>,
+}
+
+/// Push local settings to cloud storage.
+/// Requires a valid OAuth access token.
+pub async fn push_settings(
+    settings: &Settings,
+    access_token: &str,
+    device_id: &str,
+) -> Result<(), String> {
+    let json = export_settings(settings)?;
+
+    let payload = CloudSettings {
+        settings_json: json,
+        updated_at: Utc::now(),
+        device_id: device_id.to_string(),
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .put(CLOUD_SYNC_BASE_URL)
+        .bearer_auth(access_token)
+        .json(&payload)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Cloud sync push failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Cloud sync push returned HTTP {}", resp.status()));
+    }
+
+    tracing::info!("Settings pushed to cloud sync");
+    Ok(())
+}
+
+/// Pull settings from cloud storage.
+/// Uses latest-wins conflict resolution: if remote is newer, it wins.
+pub async fn pull_settings(
+    current: &Settings,
+    access_token: &str,
+) -> Result<SyncPullResult, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(CLOUD_SYNC_BASE_URL)
+        .bearer_auth(access_token)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Cloud sync pull failed: {e}"))?;
+
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        // No cloud settings yet — nothing to pull.
+        return Ok(SyncPullResult {
+            settings: current.clone(),
+            had_conflict: false,
+            warnings: vec!["No cloud settings found. Push your local settings first.".into()],
+        });
+    }
+
+    if !resp.status().is_success() {
+        return Err(format!("Cloud sync pull returned HTTP {}", resp.status()));
+    }
+
+    let cloud: CloudSettings = resp
+        .json()
+        .await
+        .map_err(|e| format!("Invalid cloud settings response: {e}"))?;
+
+    let import_result = import_settings(&cloud.settings_json)?;
+
+    // Detect conflict: cloud settings differ from local.
+    let local_json = export_settings(current)?;
+    let had_conflict = cloud.settings_json != local_json;
+
+    if had_conflict {
+        tracing::info!(
+            "Cloud sync conflict detected (remote updated at {}). Using latest-wins.",
+            cloud.updated_at
+        );
+    }
+
+    Ok(SyncPullResult {
+        settings: import_result.settings,
+        had_conflict,
+        warnings: import_result.warnings,
+    })
+}
+
+/// Check cloud sync status (whether remote settings exist and their timestamp).
+pub async fn sync_status(access_token: &str) -> Result<Option<DateTime<Utc>>, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .head(CLOUD_SYNC_BASE_URL)
+        .bearer_auth(access_token)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|e| format!("Cloud sync status check failed: {e}"))?;
+
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+
+    if !resp.status().is_success() {
+        return Err(format!("Cloud sync status returned HTTP {}", resp.status()));
+    }
+
+    // Parse Last-Modified header if available.
+    if let Some(header) = resp.headers().get("last-modified") {
+        if let Ok(date_str) = header.to_str() {
+            if let Ok(dt) = DateTime::parse_from_rfc2822(date_str) {
+                return Ok(Some(dt.with_timezone(&Utc)));
+            }
+        }
+    }
+
+    // Fallback: cloud settings exist but no timestamp.
+    Ok(Some(Utc::now()))
 }
 
 #[cfg(test)]

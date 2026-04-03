@@ -2,6 +2,7 @@
 //!
 //! Discovers plugins from user and project directories, spawns subprocesses,
 //! manages lifecycle, and dispatches tool/hook calls with security validation.
+//! Supports hot-reload and registry-based installation.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use oxicode_common::{OxiError, OxiResult};
 use crate::install::{self, InstalledPlugin};
 use crate::lifecycle;
 use crate::manifest::{PluginManifest, PluginToolDef};
+use crate::registry::PluginRegistry;
 use crate::security;
 use crate::subprocess::PluginSubprocess;
 
@@ -208,6 +210,170 @@ impl PluginManager {
         let target = self.user_plugins_dir()?;
         install::uninstall_plugin(&target, name)?;
         self.plugins.remove(name);
+        Ok(())
+    }
+
+    /// Hot-reload all plugins: shut down running plugins, re-discover, re-load.
+    /// Returns names of successfully reloaded plugins.
+    pub async fn reload_plugins(&mut self) -> Vec<String> {
+        tracing::info!("Hot-reloading plugins...");
+
+        // Shut down all current plugins.
+        self.shutdown_all().await;
+        self.plugins.clear();
+
+        // Re-discover and load.
+        self.discover_and_load().await
+    }
+
+    /// Install a plugin from the remote registry by name.
+    /// Downloads the plugin archive, extracts it, and loads it.
+    pub async fn install_from_registry(
+        &mut self,
+        name: &str,
+        registry: &PluginRegistry,
+    ) -> OxiResult<InstalledPlugin> {
+        let entries = registry.fetch_index().await?;
+        let entry = entries
+            .iter()
+            .find(|e| e.name.eq_ignore_ascii_case(name))
+            .ok_or_else(|| {
+                OxiError::Config(format!("Plugin '{name}' not found in registry"))
+            })?;
+
+        // Check trust level — reject Unverified, warn for Community.
+        let trust = security::assess_trust(&entry.trust);
+        if trust == security::TrustLevel::Unverified {
+            return Err(OxiError::Permission(format!(
+                "Plugin '{}' is unverified and cannot be auto-installed. \
+                 Use /plugin install <local-path> for manual installs.",
+                entry.name
+            )));
+        }
+        if trust.requires_approval() {
+            tracing::warn!(
+                "Plugin '{}' has trust level: {}. Community plugins require caution.",
+                entry.name,
+                trust
+            );
+        }
+
+        // Download the plugin archive.
+        let archive_bytes = registry.download_plugin(entry).await?;
+
+        // Extract to user plugins directory.
+        let target_dir = self.user_plugins_dir()?;
+        std::fs::create_dir_all(&target_dir)?;
+
+        let plugin_dir = target_dir.join(&entry.name);
+        if plugin_dir.exists() {
+            // Remove old version before installing new.
+            std::fs::remove_dir_all(&plugin_dir)
+                .map_err(|e| OxiError::Other(format!("Failed to remove old version: {e}")))?;
+        }
+
+        // Write archive bytes to temp file and extract.
+        // For now, assume the archive is a tar.gz.
+        Self::extract_tar_gz(&archive_bytes, &plugin_dir)?;
+
+        // Discover and load the newly installed plugin.
+        let installed = install::discover_plugins(&target_dir);
+        let plugin = installed
+            .into_iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+            .ok_or_else(|| {
+                OxiError::Config(format!(
+                    "Plugin '{name}' installed but manifest not found"
+                ))
+            })?;
+
+        // Load it into the manager.
+        let result = plugin.clone();
+        self.load_plugin(plugin).await?;
+
+        tracing::info!("Installed plugin '{}' v{} from registry", result.name, result.version);
+        Ok(result)
+    }
+
+    /// Extract a tar.gz archive to the target directory.
+    /// Includes path traversal protection: rejects entries that escape target dir.
+    /// Limits total extracted size to 100MB to prevent OOM.
+    fn extract_tar_gz(data: &[u8], target: &Path) -> OxiResult<()> {
+        use std::io::Read;
+
+        const MAX_EXTRACT_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
+
+        let gz = flate2::read::GzDecoder::new(data);
+        let mut archive = tar::Archive::new(gz);
+
+        std::fs::create_dir_all(target)?;
+        let canonical_target = target.canonicalize().map_err(|e| {
+            OxiError::Other(format!("Cannot canonicalize target dir: {e}"))
+        })?;
+
+        let mut total_size: u64 = 0;
+
+        // Extract all entries, stripping the top-level directory if present.
+        for entry_result in archive.entries().map_err(|e| {
+            OxiError::Other(format!("Failed to read archive entries: {e}"))
+        })? {
+            let mut entry = entry_result
+                .map_err(|e| OxiError::Other(format!("Bad archive entry: {e}")))?;
+            let path = entry
+                .path()
+                .map_err(|e| OxiError::Other(format!("Bad path in archive: {e}")))?
+                .into_owned();
+
+            // Strip first component (top-level dir in tarball).
+            let stripped: PathBuf = path.components().skip(1).collect();
+            if stripped.as_os_str().is_empty() {
+                continue;
+            }
+
+            // SECURITY: Reject path traversal attempts (e.g. "../../etc/passwd").
+            let dest = target.join(&stripped);
+            let canonical_dest = dest.canonicalize().unwrap_or_else(|_| {
+                // File doesn't exist yet — normalize manually by resolving parent.
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent).ok();
+                    parent
+                        .canonicalize()
+                        .map(|p| p.join(dest.file_name().unwrap_or_default()))
+                        .unwrap_or_else(|_| dest.clone())
+                } else {
+                    dest.clone()
+                }
+            });
+
+            if !canonical_dest.starts_with(&canonical_target) {
+                return Err(OxiError::Permission(format!(
+                    "Path traversal detected in plugin archive: {}",
+                    stripped.display()
+                )));
+            }
+
+            // Size limit check.
+            total_size += entry.header().size().unwrap_or(0);
+            if total_size > MAX_EXTRACT_SIZE {
+                return Err(OxiError::Other(
+                    "Plugin archive exceeds 100MB extraction limit".into(),
+                ));
+            }
+
+            if entry.header().entry_type().is_dir() {
+                std::fs::create_dir_all(&dest)?;
+            } else {
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                let mut buf = Vec::new();
+                entry
+                    .read_to_end(&mut buf)
+                    .map_err(|e| OxiError::Other(format!("Failed to read entry: {e}")))?;
+                std::fs::write(&dest, &buf)?;
+            }
+        }
+
         Ok(())
     }
 

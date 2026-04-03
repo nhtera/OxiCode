@@ -195,6 +195,7 @@ pub fn default_registry() -> CommandRegistry {
 
     // Phase 5: Plugin commands
     reg.register(Box::new(plugin_commands::PluginCommand));
+    reg.register(Box::new(plugin_commands::ReloadPluginsCommand));
 
     // Phase 5: Plan commands
     reg.register(Box::new(plan_commands::PlanCommand));

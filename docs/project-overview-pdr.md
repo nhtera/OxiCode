@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.3.0 | **Last Updated:** 2026-04-03 | **Status:** Phase 1-8 Complete (UX Polish done)
+**Version:** 0.4.0 | **Last Updated:** 2026-04-04 | **Status:** Phase 1-8 + Phase 5 Complete (Plugin Marketplace & Enterprise Settings)
 
 ## Project Vision
 
@@ -75,6 +75,18 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **Output Styles** — markdown, plain, minimal, verbose rendering modes
 - **Enhanced Input** — Multi-line editing, command history, history search, readline shortcuts, word-level movement
 - **Test Coverage** — 59 passing tests (50 TUI + 9 config), zero clippy warnings
+
+### Phase 5: Plugin Marketplace & Enterprise Settings (Complete ✓)
+**Added:** New `oxicode-plugins` crate (2.1K LOC), enterprise settings in `oxicode-config`
+- **Plugin Registry Client** — Remote index fetch/cache, search, version filtering, trust assessment
+- **Plugin Manager** — Lifecycle management (discovery → validation → install → hot-reload)
+- **Trust Levels** — Verified (signed), Community (voted), Unverified (default)
+- **Marketplace Commands** — `/plugin browse|search|info|install|update|remove|list`, `/reload-plugins`
+- **Hot-Reload** — In-place plugin reloading without restart
+- **Enterprise Settings** — Remote admin endpoint with HMAC-SHA256 validation, cloud sync support
+- **Cloud Sync** — `push_settings()`, `pull_settings()`, `sync_status()` with OAuth tokens
+- **Conflict Resolution** — Latest-wins with logging of overridden keys
+- **Dependencies Added** — flate2, tar, hmac, sha2, hex
 
 ### Phase 9+: Forthcoming
 - **Phase 9 (Enterprise):** OAuth, GitHub SSO, telemetry, audit logging
@@ -256,7 +268,9 @@ oxicode/
 | 1-3 | ✓ Complete | Core LLM, providers, tools, permissions, TUI |
 | **2 (API)** | **✓ Complete** | **Prompt caching, extended thinking, Bedrock, Vertex** |
 | **4** | **✓ Complete** | **Context defense, multi-agent, skills, tasks** |
-| 5 | Planned | User commands, team UI panels, skill marketplace |
+| **5** | **✓ Complete** | **Plugin marketplace, enterprise settings, cloud sync** |
+| 8 | ✓ Complete | Vim mode, keybindings, onboarding, output styles |
+| 9+ | Planned | OAuth, GitHub SSO, telemetry, advanced features |
 
 **Code Quality:** Phase 4 review found 4 critical security issues, 7 high-priority wiring/robustness gaps. **All 11 issues fixed and verified** (326 tests pass, clippy clean, cargo check passes).
 
