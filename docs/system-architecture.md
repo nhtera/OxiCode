@@ -1,6 +1,6 @@
 # OxiCode — System Architecture
 
-**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Phase:** 5 (Command Implementations Complete) | **Cumulative:** Phase 1-4 foundations + Phase 5 CLI completeness
+**Version:** 0.3.0 | **Last Updated:** 2026-04-03 | **Phase:** 6 (Server Mode Complete) | **Cumulative:** Phase 1-6 foundations + CLI completeness + IDE bridge
 
 ## Architecture Overview
 
@@ -237,6 +237,22 @@ else:
 ```
 
 ---
+
+```
+IDE Extension ←──stdin/stdout──→ oxicode --server
+                                    │
+                                    ├── Session management
+                                    ├── Tool execution
+                                    ├── Streaming responses
+                                    └── JSON-RPC 2.0 protocol
+```
+
+**Phase 6 updates:**
+- Added top-level Server Mode entry point (Phase 6: Server Mode + IDE Bridge)
+- Server loop handles JSON-RPC over stdin/stdout
+- Per-session tokio tasks with cancellation support
+- Permission bridge: ask → wait → respond flow
+- Streaming notifications: stream.text, tool.start, tool.result, permission.ask
 
 ---
 
@@ -538,6 +554,116 @@ OutputReader::next() -> OxiResult<OutputLine> {
 
 ---
 
+## Phase 6: Server Mode + IDE Bridge
+
+### Protocol: JSON-RPC 2.0 over stdin/stdout
+
+**Message Format (bidirectional line-delimited JSON):**
+
+```json
+// IDE → OxiCode (Request with ID for correlation)
+{"jsonrpc":"2.0","id":"uuid","method":"session.create","params":{"user_id":"alice"}}
+
+// OxiCode → IDE (Response with matching ID)
+{"jsonrpc":"2.0","id":"uuid","result":{"session_id":"sess-123"}}
+
+// OxiCode → IDE (Notification, no ID)
+{"jsonrpc":"2.0","method":"stream.text","params":{"delta":"Hello"}}
+```
+
+### Supported Methods
+
+**Requests (IDE → OxiCode):**
+| Method | Params | Response | Purpose |
+|--------|--------|----------|---------|
+| session.create | user_id | session_id | Start new session |
+| session.resume | session_id | session_id | Resume existing |
+| session.list | — | [sessions] | List available |
+| message.send | session_id, text | — | Send user message (streams notifications) |
+| message.cancel | request_id | — | Cancel in-flight request |
+| tool.approve | request_id, decision | — | Approve pending permission |
+| tool.deny | request_id, reason | — | Deny pending permission |
+| compact | session_id | — | Trigger LLM-assisted compaction |
+| shutdown | graceful | — | Graceful server shutdown |
+
+**Notifications (OxiCode → IDE):**
+| Method | Params | Meaning |
+|--------|--------|---------|
+| stream.text | delta | LLM text delta |
+| tool.start | name, input | Tool execution started |
+| tool.result | name, output | Tool execution completed |
+| permission.ask | tool_name, justification | User permission needed |
+| session.updated | session_id, state | Session state changed |
+| error | code, message | Error notification |
+
+### Session Management
+
+```
+ServerHandler {
+  sessions: HashMap<SessionId, SessionState>,
+  message_tx: mpsc::Sender<ServerNotification>,
+}
+
+SessionState {
+  id: SessionId,
+  user_id: UserId,
+  query_engine: Arc<QueryEngine>,
+  cancellation_token: CancellationToken,
+  permission_pending: Option<PermissionRequest>,
+  timeout: Duration,
+}
+```
+
+**Lifecycle:**
+1. IDE: `session.create` → ServerHandler creates SessionState + tokio task
+2. IDE: `message.send` → SessionState spawns query_engine.stream_message() with streaming callback
+3. Streaming callback emits `stream.text`, `tool.start`, `tool.result` notifications
+4. On permission request: emit `permission.ask`, block until `tool.approve`/`tool.deny`
+5. IDE: `session.resume` → Lookup SessionState, continue using same query_engine
+
+### Permission Bridge Flow
+
+```
+query_engine requests permission
+  ↓
+Streaming callback triggers permission_pending = Some(request)
+  ↓
+Emit notification: {"method":"permission.ask","params":{...}}
+  ↓
+IDE displays prompt to user
+  ↓
+IDE sends: {"method":"tool.approve","params":{"request_id":"x"}}
+  ↓
+ServerHandler unblocks query_engine
+  ↓
+Tool execution resumes, result emitted as notification
+```
+
+### Cancellation
+
+```
+IDE: message.cancel {request_id}
+  ↓
+ServerHandler finds SessionState
+  ↓
+Calls cancellation_token.cancel()
+  ↓
+tokio task observing token gets cancelled
+  ↓
+In-flight query_engine request interrupted
+  ↓
+Emit notification: stream ends, tool results discarded
+```
+
+### Implementation Files
+
+- **`server_protocol.rs`** — JSON-RPC types, serialization
+- **`server.rs`** — Main server loop, stdin/stdout handler
+- **`server_handler.rs`** — RequestHandler, session management, streaming
+- **`main.rs`** — `--server` flag routing
+
+---
+
 ## State Management
 
 ### AppState (Central Source of Truth)
@@ -676,11 +802,10 @@ match result {
 
 ---
 
-## Next Steps (Phase 5)
+## Next Steps (Phase 7+)
 
-1. **User Commands:** `/agent list`, `/agent send`, `/skills list`, `/task view`
-2. **Team UI:** Split pane for agent monitoring, skill activation UI
-3. **Marketplace:** Register skills online, version management
-4. **Advanced Compaction:** Priority-based (recent messages higher priority), context pruning strategies
-5. **Observability:** Metrics dashboard, debug mode, trace export
+1. **Phase 7 (Task System + Feature Flags):** Task queuing, feature toggles for beta features
+2. **Phase 8 (UX Polish):** Vim keybindings, custom onboarding, terminal themes
+3. **Phase 9 (Enterprise):** OAuth, GitHub SSO, telemetry, audit logging
+4. **Phase 10 (Extras):** Voice input, advanced bridging, community plugins
 

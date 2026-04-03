@@ -1,5 +1,8 @@
 mod commands;
 mod completions;
+mod server;
+mod server_handler;
+mod server_protocol;
 mod structured_output;
 
 use std::sync::Arc;
@@ -65,6 +68,10 @@ struct Cli {
     /// Run in agent mode (subagent receives config via stdin).
     #[arg(long, value_name = "AGENT_ID", hide = true)]
     agent_mode: Option<String>,
+
+    /// Run as a long-running JSON-RPC server for IDE integration.
+    #[arg(long)]
+    server: bool,
 }
 
 #[tokio::main]
@@ -203,6 +210,13 @@ async fn main() -> Result<()> {
             }
             OutputFormat::Text => run_single_prompt(engine, &mut session, &prompt).await,
         };
+        mcp_ref.shutdown_all().await;
+        return result;
+    }
+
+    // Server mode: long-running JSON-RPC service for IDE extensions.
+    if cli.server {
+        let result = server::run_server(engine, settings.model).await;
         mcp_ref.shutdown_all().await;
         return result;
     }
