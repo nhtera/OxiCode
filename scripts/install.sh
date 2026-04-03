@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # OxiCode installer — detects platform, downloads latest release, installs binary.
-# Usage: curl -fsSL https://raw.githubusercontent.com/nicktien007/oxicode/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/nhtera/oxicode/main/scripts/install.sh | bash
 
 set -euo pipefail
 
-REPO="nicktien007/oxicode"
+REPO="nhtera/oxicode"
 INSTALL_DIR="${OXICODE_INSTALL_DIR:-$HOME/.local/bin}"
 BINARY_NAME="oxicode"
 

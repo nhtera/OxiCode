@@ -337,7 +337,7 @@ Yes! Set `provider = "openai"` in config. Supports: anthropic, openai, compatibl
 Configurable per model. Default: 80% of model's max_tokens triggers L3 auto-compact.
 
 ### Q: How do I contribute?
-1. Check [GitHub Issues](https://github.com/nicktien007/oxicode/issues)
+1. Check [GitHub Issues](https://github.com/nhtera/oxicode/issues)
 2. Discuss your approach
 3. Follow [Code Standards](./code-standards.md)
 4. Submit PR with tests
@@ -372,9 +372,9 @@ Located in `../plans/reports/`:
 
 ## Contact & Support
 
-**Repository:** https://github.com/nicktien007/oxicode  
-**Issues:** https://github.com/nicktien007/oxicode/issues  
-**Discussions:** https://github.com/nicktien007/oxicode/discussions
+**Repository:** https://github.com/nhtera/oxicode  
+**Issues:** https://github.com/nhtera/oxicode/issues  
+**Discussions:** https://github.com/nhtera/oxicode/discussions
 
 ---
 

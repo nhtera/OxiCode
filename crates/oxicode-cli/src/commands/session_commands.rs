@@ -251,7 +251,7 @@ impl SlashCommand for BugCommand {
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(
-            "Report bugs at: https://github.com/nicktien007/oxicode/issues".to_string(),
+            "Report bugs at: https://github.com/nhtera/oxicode/issues".to_string(),
         )
     }
 }

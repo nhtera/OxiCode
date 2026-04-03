@@ -95,7 +95,7 @@ impl SlashCommand for DesktopCommand {
 
         CommandOutput::Message(
             "OxiCode desktop app not found.\n\
-             Visit https://github.com/nicktien007/oxicode/releases for downloads."
+             Visit https://github.com/nhtera/oxicode/releases for downloads."
                 .to_string(),
         )
     }
@@ -116,7 +116,7 @@ impl SlashCommand for MobileCommand {
         CommandOutput::Message(
             "Mobile companion not yet available.\n\
              Future: scan a QR code to connect from your phone.\n\
-             Track progress at: https://github.com/nicktien007/oxicode/issues"
+             Track progress at: https://github.com/nhtera/oxicode/issues"
                 .to_string(),
         )
     }

@@ -22,13 +22,13 @@ A Rust-powered CLI agent for software engineering — full-parity port of Claude
 ### Quick install (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nicktien007/oxicode/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nhtera/oxicode/main/scripts/install.sh | bash
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/nicktien007/oxicode.git
+git clone https://github.com/nhtera/oxicode.git
 cd oxicode
 cargo install --path crates/oxicode-cli
 ```
@@ -36,7 +36,7 @@ cargo install --path crates/oxicode-cli
 ### Homebrew (macOS)
 
 ```bash
-brew tap nicktien007/oxicode
+brew tap nhtera/oxicode
 brew install oxicode
 ```
 

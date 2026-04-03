@@ -64,7 +64,7 @@ impl SlashCommand for AboutCommand {
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(format!(
             "{} v{}\nA production Rust CLI agent\n\
-             Repository: https://github.com/nicktien007/oxicode",
+             Repository: https://github.com/nhtera/oxicode",
             oxicode_common::constants::APP_DISPLAY_NAME,
             oxicode_common::constants::VERSION,
         ))

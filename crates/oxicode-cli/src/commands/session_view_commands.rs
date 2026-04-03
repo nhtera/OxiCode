@@ -368,7 +368,7 @@ impl SlashCommand for FeedbackCommand {
     }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         CommandOutput::Message(
-            "Report issues: https://github.com/nicktien007/oxicode/issues".into(),
+            "Report issues: https://github.com/nhtera/oxicode/issues".into(),
         )
     }
 }
@@ -382,6 +382,6 @@ impl SlashCommand for DocsCommand {
         "Open documentation"
     }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Docs: https://github.com/nicktien007/oxicode".into())
+        CommandOutput::Message("Docs: https://github.com/nhtera/oxicode".into())
     }
 }
