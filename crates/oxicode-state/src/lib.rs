@@ -43,6 +43,8 @@ pub struct AppState {
     pub feature_flags: FeatureFlags,
     /// Last rate limit event (for /status display).
     pub last_rate_limit: Option<RateLimitSnapshot>,
+    /// Auth status display label (e.g. "⚡ user@example.com" or "🔑 sk-...XXXX").
+    pub auth_label: String,
 }
 
 /// Snapshot of a rate limit event for display in /status.
@@ -68,6 +70,7 @@ impl Default for AppState {
             background_tasks: Vec::new(),
             feature_flags: FeatureFlags::default(),
             last_rate_limit: None,
+            auth_label: String::new(),
         }
     }
 }

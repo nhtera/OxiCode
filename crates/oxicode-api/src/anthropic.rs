@@ -15,6 +15,8 @@ pub struct AnthropicProvider {
     api_key: String,
     base_url: String,
     retry_policy: RetryPolicy,
+    /// When true, use `Authorization: Bearer` instead of `x-api-key`.
+    use_bearer_auth: bool,
 }
 
 impl AnthropicProvider {
@@ -24,6 +26,18 @@ impl AnthropicProvider {
             api_key: api_key.into(),
             base_url: ANTHROPIC_API_URL.to_string(),
             retry_policy: RetryPolicy::default(),
+            use_bearer_auth: false,
+        }
+    }
+
+    /// Create a provider using OAuth Bearer token authentication.
+    pub fn with_oauth_token(token: impl Into<String>) -> Self {
+        Self {
+            client: build_proxy_client(),
+            api_key: token.into(),
+            base_url: ANTHROPIC_API_URL.to_string(),
+            retry_policy: RetryPolicy::default(),
+            use_bearer_auth: true,
         }
     }
 
@@ -151,6 +165,7 @@ impl LlmProvider for AnthropicProvider {
         let body_str = serde_json::to_string(&self.build_request_body(&request))
             .map_err(|e| OxiError::api(e.to_string()))?;
         let retry_policy = self.retry_policy.clone();
+        let use_bearer = self.use_bearer_auth;
 
         let stream = async_stream::stream! {
             let mut retry_count = 0u32;
@@ -159,10 +174,16 @@ impl LlmProvider for AnthropicProvider {
             'retry: loop {
                 let mut req = client
                     .post(format!("{base_url}/v1/messages"))
-                    .header("x-api-key", &api_key)
                     .header("anthropic-version", ANTHROPIC_API_VERSION)
                     .header("content-type", "application/json")
                     .body(body_str.clone());
+
+                // Use Bearer auth for OAuth tokens, x-api-key for API keys.
+                if use_bearer {
+                    req = req.header("authorization", format!("Bearer {api_key}"));
+                } else {
+                    req = req.header("x-api-key", &api_key);
+                }
 
                 if let Some(beta) = &beta_header {
                     req = req.header("anthropic-beta", beta.as_str());

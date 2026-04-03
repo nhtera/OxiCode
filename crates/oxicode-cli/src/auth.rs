@@ -1,15 +1,11 @@
-//! OAuth authentication and credential management.
+//! Authentication and credential management.
 //!
-//! Provides OAuth flow with local HTTP callback, system keychain storage,
-//! and token refresh. Supports Anthropic as primary provider with extensible
-//! design for other providers.
+//! Manages API keys from env vars and credential store, plus OAuth PKCE
+//! integration. Resolution priority: OAuth token > env var > credentials.toml > prompt.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
 
-/// Default local callback port for OAuth redirect.
-const OAUTH_CALLBACK_PORT: u16 = 17483;
+pub use crate::oauth::AuthSource;
 
 /// Stored credential for a provider.
 #[derive(Debug, Clone)]
@@ -148,108 +144,14 @@ impl AuthManager {
             };
             lines.push(format!("  {p}: {status}"));
         }
+
+        // Check OAuth status.
+        if crate::oauth::is_logged_in() {
+            lines.push("  oauth: logged in".to_string());
+        }
+
         lines.join("\n")
     }
-
-    /// Initiate OAuth flow for a provider.
-    /// Returns the auth URL to open in browser. Spawns a background thread
-    /// that listens for the callback and stores the credential on success.
-    pub fn start_oauth_flow(&mut self, provider: &str) -> Result<String, String> {
-        let auth_url = match provider {
-            "anthropic" => format!(
-                "https://console.anthropic.com/oauth/authorize?\
-                 redirect_uri=http://localhost:{OAUTH_CALLBACK_PORT}/callback&\
-                 response_type=code&\
-                 client_id=oxicode-cli"
-            ),
-            other => return Err(format!("OAuth not supported for provider: {other}")),
-        };
-
-        // Start the callback listener in a background thread.
-        // The caller opens the URL in browser; when the redirect arrives,
-        // the thread stores the credential automatically.
-        let provider_owned = provider.to_string();
-        std::thread::spawn(move || {
-            match wait_for_oauth_callback(&provider_owned) {
-                Ok(token) => {
-                    let mut mgr = AuthManager::new();
-                    let _ = mgr.store_credential(Credential {
-                        provider: provider_owned,
-                        token,
-                        refresh_token: None,
-                        expires_at: 0,
-                    });
-                    tracing::info!("OAuth token stored successfully");
-                }
-                Err(e) => {
-                    tracing::error!("OAuth callback failed: {e}");
-                }
-            }
-        });
-
-        // Return the URL immediately so caller can open it in browser.
-        Ok(auth_url)
-    }
-}
-
-/// Wait for OAuth callback on local HTTP server.
-/// Listens for a single request, extracts the code/token, returns it.
-fn wait_for_oauth_callback(_provider: &str) -> Result<String, String> {
-    let listener = TcpListener::bind(format!("127.0.0.1:{OAUTH_CALLBACK_PORT}"))
-        .map_err(|e| format!("Failed to bind callback port {OAUTH_CALLBACK_PORT}: {e}"))?;
-
-    // Set a timeout so we don't block forever.
-    listener
-        .set_nonblocking(false)
-        .map_err(|e| format!("Failed to set blocking: {e}"))?;
-
-    tracing::info!("OAuth callback server listening on port {OAUTH_CALLBACK_PORT}");
-
-    let (stream, _addr) = listener
-        .accept()
-        .map_err(|e| format!("Failed to accept connection: {e}"))?;
-
-    let reader = BufReader::new(&stream);
-    let request_line = reader
-        .lines()
-        .next()
-        .ok_or("No request received")?
-        .map_err(|e| format!("Read error: {e}"))?;
-
-    // Parse the GET request for the code parameter.
-    let token = extract_code_from_request(&request_line)?;
-
-    // Send a success response.
-    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
-        <html><body><h2>Authentication successful!</h2>\
-        <p>You can close this window and return to OxiCode.</p></body></html>";
-
-    let mut writer = stream;
-    let _ = writer.write_all(response.as_bytes());
-
-    Ok(token)
-}
-
-/// Extract the `code` query parameter from an HTTP GET request line.
-fn extract_code_from_request(request_line: &str) -> Result<String, String> {
-    // Request line format: "GET /callback?code=xxx HTTP/1.1"
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    if parts.len() < 2 {
-        return Err("Invalid request format".into());
-    }
-
-    let path = parts[1];
-    if let Some(query) = path.split('?').nth(1) {
-        for param in query.split('&') {
-            if let Some(value) = param.strip_prefix("code=") {
-                if !value.is_empty() {
-                    return Ok(value.to_string());
-                }
-            }
-        }
-    }
-
-    Err("No authorization code found in callback".into())
 }
 
 // --- Credential store helpers (file-based, cross-platform) ---
@@ -355,27 +257,27 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_code_from_request() {
-        let line = "GET /callback?code=abc123 HTTP/1.1";
-        assert_eq!(extract_code_from_request(line).unwrap(), "abc123");
-    }
-
-    #[test]
-    fn test_extract_code_missing() {
-        let line = "GET /callback HTTP/1.1";
-        assert!(extract_code_from_request(line).is_err());
-    }
-
-    #[test]
-    fn test_extract_code_with_extra_params() {
-        let line = "GET /callback?state=xyz&code=tok999&foo=bar HTTP/1.1";
-        assert_eq!(extract_code_from_request(line).unwrap(), "tok999");
-    }
-
-    #[test]
     fn test_auth_manager_new() {
         let mgr = AuthManager::new();
         // Should not panic; may or may not have env credentials.
         let _ = mgr.status_summary();
+    }
+
+    #[test]
+    fn test_auth_source_token() {
+        let src = AuthSource::OAuth {
+            token: "test-tok".into(),
+            email: None,
+        };
+        assert_eq!(src.token(), Some("test-tok"));
+
+        let src = AuthSource::ApiKey {
+            key: "sk-xxx".into(),
+            display: "sk-...".into(),
+        };
+        assert_eq!(src.token(), Some("sk-xxx"));
+
+        let src = AuthSource::None;
+        assert!(src.token().is_none());
     }
 }

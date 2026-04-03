@@ -50,6 +50,7 @@ tracing-subscriber = { workspace = true }
 toml = { workspace = true }
 anyhow = { workspace = true }
 futures = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

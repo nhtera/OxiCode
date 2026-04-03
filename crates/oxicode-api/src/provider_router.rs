@@ -30,10 +30,22 @@ pub struct ProviderRouter {
 impl ProviderRouter {
     /// Build a router by detecting available providers from environment variables.
     pub fn from_env() -> Self {
+        Self::from_env_with_oauth(None)
+    }
+
+    /// Build a router with optional OAuth token for Anthropic.
+    ///
+    /// If `oauth_token` is provided, it takes priority over `ANTHROPIC_API_KEY`.
+    pub fn from_env_with_oauth(oauth_token: Option<String>) -> Self {
         let mut providers: Vec<(String, Arc<dyn LlmProvider>)> = Vec::new();
 
-        // Anthropic (always first priority).
-        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+        // Anthropic: OAuth token > API key.
+        if let Some(token) = oauth_token {
+            providers.push((
+                "anthropic".to_string(),
+                Arc::new(AnthropicProvider::with_oauth_token(token)),
+            ));
+        } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
             providers.push((
                 "anthropic".to_string(),
                 Arc::new(AnthropicProvider::new(key)),

@@ -11,7 +11,7 @@ impl SlashCommand for LoginCommand {
         "login"
     }
     fn description(&self) -> &str {
-        "Authenticate with API provider"
+        "Authenticate with Anthropic via OAuth (browser-based)"
     }
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         let provider = if args.trim().is_empty() {
@@ -20,33 +20,86 @@ impl SlashCommand for LoginCommand {
             args.trim()
         };
 
-        let mgr = crate::auth::AuthManager::new();
-        if mgr.is_authenticated(provider) {
+        // Only Anthropic supports OAuth PKCE for now.
+        if provider != "anthropic" {
+            let env_key = match provider {
+                "openai" => "OPENAI_API_KEY",
+                "google" | "gemini" => "GOOGLE_API_KEY",
+                _ => {
+                    return CommandOutput::Error(format!(
+                        "Unknown provider: {provider}\n\
+                         Supported: anthropic (OAuth), openai, google (API key)"
+                    ));
+                }
+            };
+            let config_path = dirs::home_dir()
+                .map(|h| h.join(".oxicode").join("credentials.toml"))
+                .unwrap_or_default();
             return CommandOutput::Message(format!(
-                "Already authenticated with {provider}."
+                "OAuth not available for {provider}.\n\
+                 Set {env_key} env var, or add to:\n  {}",
+                config_path.display()
             ));
         }
 
-        let env_key = match provider {
-            "anthropic" => "ANTHROPIC_API_KEY",
-            "openai" => "OPENAI_API_KEY",
-            "google" | "gemini" => "GOOGLE_API_KEY",
-            _ => {
-                return CommandOutput::Message(format!(
-                    "Unknown provider: {provider}\n\
-                     Supported: anthropic, openai, google"
-                ));
-            }
-        };
+        // Check if already logged in via OAuth.
+        if crate::oauth::is_logged_in() {
+            return CommandOutput::Message(
+                "Already logged in via OAuth.\n\
+                 Use /logout first to re-authenticate."
+                    .into(),
+            );
+        }
 
-        let config_path = dirs::home_dir()
-            .map(|h| h.join(".oxicode").join("credentials.toml"))
-            .unwrap_or_default();
-        CommandOutput::Message(format!(
-            "Not authenticated with {provider}.\n\
-             Set {env_key} environment variable, or add to:\n  {}",
-            config_path.display()
-        ))
+        // Check if already authenticated via API key.
+        let mgr = crate::auth::AuthManager::new();
+        if mgr.is_authenticated("anthropic") {
+            return CommandOutput::Message(
+                "Already authenticated with API key.\n\
+                 Use /login to switch to OAuth (browser-based) login."
+                    .into(),
+            );
+        }
+
+        // Trigger OAuth PKCE flow. Since execute() is sync but login() is async,
+        // spawn the async task on the tokio runtime.
+        let handle = tokio::runtime::Handle::try_current();
+        match handle {
+            Ok(_rt) => {
+                // We're inside a tokio context — spawn the login and report result.
+                // Use spawn_blocking to avoid blocking the event loop.
+                let result = std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().ok()?;
+                    rt.block_on(crate::oauth::login()).ok()
+                })
+                .join()
+                .ok()
+                .flatten();
+
+                match result {
+                    Some(login_result) => {
+                        let who = login_result
+                            .email
+                            .as_deref()
+                            .unwrap_or("Anthropic account");
+                        CommandOutput::Message(format!(
+                            "Login successful! Authenticated as {who}.\n\
+                             OAuth token stored. Restart to use."
+                        ))
+                    }
+                    None => CommandOutput::Error(
+                        "OAuth login failed or was cancelled.\n\
+                         Check logs for details, or try again."
+                            .into(),
+                    ),
+                }
+            }
+            Err(_) => CommandOutput::Error(
+                "Cannot start OAuth flow — no async runtime available.\n\
+                 Try running oxicode interactively."
+                    .into(),
+            ),
+        }
     }
 }
 
@@ -56,7 +109,7 @@ impl SlashCommand for LogoutCommand {
         "logout"
     }
     fn description(&self) -> &str {
-        "Clear stored credentials"
+        "Clear stored OAuth tokens and credentials"
     }
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         let provider = if args.trim().is_empty() {
@@ -64,14 +117,26 @@ impl SlashCommand for LogoutCommand {
         } else {
             args.trim()
         };
+
+        let mut results = Vec::new();
+
+        // Clear OAuth tokens (Anthropic only).
+        if provider == "anthropic" || args.trim().is_empty() {
+            match crate::oauth::logout() {
+                Ok(()) => results.push("OAuth tokens cleared.".to_string()),
+                Err(e) => results.push(format!("OAuth logout error: {e}")),
+            }
+        }
+
+        // Clear credential store entry.
         let mut mgr = crate::auth::AuthManager::new();
         match mgr.clear_credential(provider) {
-            Ok(()) => CommandOutput::Message(format!(
-                "Credentials cleared for {provider}.\n\
-                 Environment variables (if set) are still active."
-            )),
-            Err(e) => CommandOutput::Error(format!("Logout failed: {e}")),
+            Ok(()) => results.push(format!("Credentials cleared for {provider}.")),
+            Err(e) => results.push(format!("Credential clear error: {e}")),
         }
+
+        results.push("Environment variables (if set) are still active.".into());
+        CommandOutput::Message(results.join("\n"))
     }
 }
 

@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Widget;
 
-/// Status bar showing model info, provider, token count, cost, and streaming state.
+/// Status bar showing model info, provider, token count, cost, streaming state, and auth.
 pub struct StatusBar<'a> {
     model: &'a str,
     provider: &'a str,
@@ -15,6 +15,8 @@ pub struct StatusBar<'a> {
     session_name: &'a str,
     /// Vim mode badge (e.g. "N", "I", "V", "C") or empty if disabled.
     vim_badge: &'a str,
+    /// Auth status label (e.g. "⚡ user@example.com", "🔑 sk-...XXXX", or empty).
+    auth_label: &'a str,
 }
 
 impl<'a> StatusBar<'a> {
@@ -27,6 +29,7 @@ impl<'a> StatusBar<'a> {
             mcp_server_count: 0,
             session_name: "",
             vim_badge: "",
+            auth_label: "",
         }
     }
 
@@ -51,6 +54,12 @@ impl<'a> StatusBar<'a> {
     /// Set vim mode badge for display (e.g. "N", "I", "V", "C").
     pub fn with_vim_badge(mut self, badge: &'a str) -> Self {
         self.vim_badge = badge;
+        self
+    }
+
+    /// Set auth status label for display (e.g. "⚡ user@example.com").
+    pub fn with_auth_label(mut self, label: &'a str) -> Self {
+        self.auth_label = label;
         self
     }
 }
@@ -153,6 +162,21 @@ impl Widget for StatusBar<'_> {
             )
         };
 
+        // Auth status indicator.
+        let auth_span = if self.auth_label.is_empty() {
+            Span::raw("")
+        } else {
+            let auth_color = if self.auth_label.contains('\u{26a1}') {
+                Color::Green // OAuth
+            } else {
+                Color::Yellow // API key
+            };
+            Span::styled(
+                format!(" {} ", self.auth_label),
+                Style::default().fg(auth_color),
+            )
+        };
+
         let line = Line::from(vec![
             status,
             provider_span,
@@ -160,6 +184,7 @@ impl Widget for StatusBar<'_> {
             tokens,
             cost_span,
             mcp_span,
+            auth_span,
             vim_span,
             session_span,
         ]);

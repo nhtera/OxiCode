@@ -2,6 +2,7 @@ pub mod auth;
 mod commands;
 mod completions;
 pub mod github_service;
+pub mod oauth;
 mod onboarding;
 mod server;
 mod server_handler;
@@ -134,8 +135,16 @@ async fn main() -> Result<()> {
         settings.model = model;
     }
 
-    // Build provider router from environment
-    let router = ProviderRouter::from_env();
+    // Resolve auth source: OAuth token > env var > config > none.
+    let auth_source = oauth::resolve_auth_source().await;
+    let auth_label = auth_source.display_label();
+    let oauth_token = match &auth_source {
+        oauth::AuthSource::OAuth { token, .. } => Some(token.clone()),
+        _ => None,
+    };
+
+    // Build provider router (with OAuth token if available).
+    let router = ProviderRouter::from_env_with_oauth(oauth_token);
     let resolved = match router.resolve(&settings.model) {
         Ok(r) => r,
         Err(e) => {
@@ -174,6 +183,7 @@ async fn main() -> Result<()> {
 
     let state_store = Arc::new(StateStore::new(AppState {
         current_model: settings.model.clone(),
+        auth_label,
         ..AppState::default()
     }));
 

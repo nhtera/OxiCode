@@ -201,10 +201,11 @@ impl App {
                 ])
                 .split(frame.area());
 
-            // Status bar with vim badge.
+            // Status bar with vim badge and auth status.
             let status_bar =
                 StatusBar::new(&state.current_model, &state.total_usage, state.is_streaming)
-                    .with_vim_badge(vim_badge);
+                    .with_vim_badge(vim_badge)
+                    .with_auth_label(&state.auth_label);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
