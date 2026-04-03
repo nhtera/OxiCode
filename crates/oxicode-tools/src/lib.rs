@@ -39,6 +39,18 @@ pub mod sleep;
 pub mod structured_output;
 pub mod worktree;
 
+// Phase 3 gap-closure: Missing tools
+pub mod lsp_tool;
+pub mod mcp_auth;
+pub mod powershell;
+pub mod repl_tool;
+pub mod suggest_background_pr;
+pub mod synthetic_output;
+pub mod team_tools;
+pub mod todo_write;
+pub mod verify_plan_execution;
+pub mod workflow_tool;
+
 // Re-exports
 pub use registry::ToolRegistry;
 pub use tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
@@ -93,6 +105,19 @@ pub fn default_registry() -> ToolRegistry {
 
     // Skill tool
     reg.register(Box::new(skill_tool::SkillTool));
+
+    // Phase 3 gap-closure: Missing tools
+    reg.register(Box::new(todo_write::TodoWriteTool));
+    reg.register(Box::new(team_tools::TeamCreateTool));
+    reg.register(Box::new(team_tools::TeamDeleteTool));
+    reg.register(Box::new(lsp_tool::LspTool));
+    reg.register(Box::new(powershell::PowerShellTool));
+    reg.register(Box::new(repl_tool::ReplTool));
+    reg.register(Box::new(mcp_auth::McpAuthTool));
+    reg.register(Box::new(suggest_background_pr::SuggestBackgroundPrTool));
+    reg.register(Box::new(synthetic_output::SyntheticOutputTool));
+    reg.register(Box::new(verify_plan_execution::VerifyPlanExecutionTool));
+    reg.register(Box::new(workflow_tool::WorkflowTool));
 
     reg
 }

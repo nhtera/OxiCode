@@ -1,6 +1,6 @@
 # OxiCode — Codebase Summary
 
-**Version:** 0.1.0 | **Last Updated:** 2026-04-02 | **Scope:** Phase 4 Complete | **Total:** 16 crates, 121 files, ~102K tokens
+**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Scope:** Phase 3 Gap Closure + Phase 4 Complete | **Total:** 16 crates, 39 oxicode-tools files, ~105K tokens
 
 ---
 
@@ -159,21 +159,29 @@ pub async fn execute_turn(&self, conversation: &mut Conversation) -> OxiResult<M
 
 ---
 
-#### oxicode-tools (~350 LOC)
+#### oxicode-tools (~450 LOC)
 **Purpose:** Tool registry, execution, schema generation
 
 **Key exports:**
 - `Tool` async trait (name, description, schema, execute)
 - `ToolRegistry` (HashMap-based lookup + execution)
 - `ToolSchema`, `ToolInput`, `ToolResult`
-- 33 built-in tools (file_read, bash, grep, agent, mcp, list_mcp_resources, read_mcp_resource, skill, etc)
+- 42 built-in tools (Phase 3 gap-closure: 11 new tools added)
 
 **Files:**
-- tool_trait.rs (trait definition, includes ToolContext with skill_executor field)
+- tool_trait.rs (trait definition, includes ToolContext with skill_executor, team_manager, task_manager, mcp_manager fields)
 - registry.rs (lookup + execute)
-- tools/ subdirectory with 33 implementations
-- mcp_resource_tools.rs (Phase 1: list_mcp_resources, read_mcp_resource)
-- skill_tool.rs (Phase 1: invoke skills by name)
+- 39 tool implementation files (Phase 1: mcp_resource_tools, skill_tool; Phase 3 gap-closure: 11 new tools)
+- Phase 3 new tools: todo_write, team_tools, lsp_tool, powershell, repl_tool, mcp_auth, suggest_background_pr, synthetic_output, verify_plan_execution, workflow_tool
+
+**ToolContext (Phase 3 enhancement):**
+- working_dir: PathBuf
+- file_state: FileStateTracker (stale edit detection)
+- task_manager: TaskManager (background tasks)
+- task_abort_handles: HashMap for task cancellation
+- mcp_manager: McpServerManager (external tools)
+- skill_executor: SkillExecutor (skill invocation)
+- **team_manager: TeamManager** (team coordination via Phase 3)
 
 **Key method:**
 ```rust
@@ -555,7 +563,7 @@ pub fn build_skills_prompt(&self, ctx: &ActivationContext) -> Option<String>
 | oxicode-config | 150 | Config loading |
 | oxicode-api | 600 | Provider traits |
 | oxicode-core | 400 | Query execution |
-| oxicode-tools | 350 | Tool system |
+| oxicode-tools | 450 | Tool system (42 tools as of Phase 3) |
 | oxicode-permissions | 300 | Access control |
 | oxicode-state | 150 | State management |
 | oxicode-session | 180 | Persistence |
@@ -584,18 +592,25 @@ pub trait LlmProvider: Send + Sync {
 
 **Enables:** Easy swapping between providers (Anthropic, OpenAI, compatible, MCP)
 
-### 2. Tool Trait
-All tools implement `Tool` async trait:
+### 2. Tool Trait & Registry
+All tools implement `Tool` async trait. Registry manages 42 built-in tools + custom tools:
 ```rust
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
+    fn description(&self) -> &str;
     fn schema(&self) -> ToolSchema;
     async fn execute(&self, input: Value, ctx: &ToolContext) -> OxiResult<ToolResult>;
 }
+
+pub struct ToolRegistry {
+    tools: HashMap<String, Box<dyn Tool>>,
+}
 ```
 
-**Enables:** Custom tools, uniform execution, schema-based validation
+**Enables:** Custom tools, uniform execution, schema-based validation, dynamic registry management
+
+**Phase 3 Gap Closure:** 11 new tools added to match OpenClaude feature parity (44 tools target)
 
 ### 3. Permission Pipeline
 Layered checks, each can Allow/Deny/Ask:

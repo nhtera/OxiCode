@@ -739,6 +739,35 @@ See `provider-integration-guide.md` for detailed patterns on implementing custom
 
 ---
 
+## Phase 3 Gap Closure Standards
+
+### Tool Implementation Checklist
+
+When adding new tools (Phase 3 closure: 11 new tools added):
+1. Create new tool file in `oxicode-tools/src/{tool_name}.rs`
+2. Implement `Tool` trait with async `execute()` method
+3. Define `ToolSchema` with name, description, input_schema
+4. Register in `lib.rs` `default_registry()` function
+5. Handle edge cases: empty input, missing files, permission errors
+6. Return `ToolResult` with appropriate content and error status
+7. Use `tracing` for tool-level debugging
+8. Write unit tests covering happy path + error cases
+9. Validate all JSON schema inputs before execution
+
+### Phase 3 New Tools
+- **TodoWriteTool:** Manages todo list persistence
+- **Team Tools:** TeamCreate, TeamDelete for multi-agent teams
+- **LSP Tool:** Language Server Protocol integration
+- **PowerShell:** Cross-platform shell execution
+- **REPL Tool:** Interactive Python/JS/etc REPL
+- **MCP Auth:** Authentication credential management
+- **Synthetic Output:** Test data generation
+- **Background PR:** Automated PR suggestion
+- **Verify Plan:** Plan execution validation
+- **Workflow:** Task automation orchestration
+
+---
+
 ## Phase 4 Integration Standards
 
 ### Context Defense Code

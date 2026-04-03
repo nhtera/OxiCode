@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use oxicode_common::OxiResult;
+use oxicode_agents::TeamManager;
 use oxicode_mcp::McpServerManager;
 use oxicode_skills::SkillExecutor;
 use oxicode_tasks::TaskManager;
@@ -52,6 +53,8 @@ pub struct ToolContext {
     pub mcp_manager: Arc<McpServerManager>,
     /// Skill executor for invoking discovered skills (None if not initialized).
     pub skill_executor: Option<Arc<SkillExecutor>>,
+    /// Team manager for creating/deleting agent teams.
+    pub team_manager: Arc<Mutex<TeamManager>>,
 }
 
 impl fmt::Debug for ToolContext {
@@ -71,6 +74,7 @@ impl Default for ToolContext {
             task_abort_handles: Arc::new(Mutex::new(HashMap::new())),
             mcp_manager: Arc::new(McpServerManager::default()),
             skill_executor: None,
+            team_manager: Arc::new(Mutex::new(TeamManager::new())),
         }
     }
 }

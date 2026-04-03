@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Status:** Phase 4 Complete + Phase 2 API Enhancement
+**Version:** 0.3.0 | **Last Updated:** 2026-04-03 | **Status:** Phase 4 Complete + Phase 2 API + Phase 3 Gap Closure
 
 ## Project Vision
 
@@ -39,11 +39,26 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **oxicode-tasks** — Background task management, async process execution
 - **Integration** — Context defense hooks in QueryEngine, TUI widgets for agents/tasks/notifications
 
+### Phase 3: Gap Closure (Complete ✓)
+**Added:** 11 new tools to oxicode-tools crate for OpenClaude feature parity
+- **TodoWriteTool** — Write todo lists and task management
+- **TeamCreateTool, TeamDeleteTool** — Team management with TeamManager integration
+- **LspTool** — Language Server Protocol integration for IDE features
+- **PowerShellTool** — PowerShell script execution (Windows/cross-platform)
+- **ReplTool** — Interactive REPL environment
+- **McpAuthTool** — MCP authentication and credential management
+- **SuggestBackgroundPrTool** — Background PR suggestion and generation
+- **SyntheticOutputTool** — Generate synthetic test output and data
+- **VerifyPlanExecutionTool** — Plan execution verification and validation
+- **WorkflowTool** — Workflow automation and orchestration
+- **Tool Count:** Increased from 31 to 42 (of 44 in OpenClaude)
+
 ### Phase 5: Forthcoming
 - User-facing agent/skill commands
 - Team UI panels (split_pane, agent_panel, task_panel)
 - Skill marketplace and versioning
 - Advanced context strategy (priority-based compaction, LLM-assisted summarization)
+- Final 2 tools for complete OpenClaude parity (44/44)
 
 ---
 
@@ -117,12 +132,20 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 5. Rule matching (user-configured allow/deny)
 6. Default ask behavior
 
-### 4. Tool System (33 Built-in + Custom)
-**Built-in:** file_read, file_write, file_edit, bash, grep_tool, glob_tool, notebook_edit, ask_user, send_message, config_tool, mcp_tool, agent_tool, list_mcp_resources, read_mcp_resource, skill, etc.
+### 4. Tool System (42 Built-in + Custom)
+**Built-in (42 total):**
+- **Core I/O (6):** file_read, file_write, file_edit, glob_tool, grep_tool, bash
+- **User Interaction (3):** ask_user, send_message, config_tool
+- **Specialized (3):** notebook_edit, tool_search, skill
+- **Task Management (7):** task_create, task_get, task_list, task_update, task_stop, task_output
+- **Web Tools (2):** web_fetch, web_search
+- **MCP Integration (2):** list_mcp_resources, read_mcp_resource
+- **Phase 5 Workflow (7):** plan_mode (enter/exit), worktree (enter/exit), brief, structured_output, cron (create/delete/list), sleep, remote_trigger
+- **Phase 3 Gap Closure (11):** todo_write, team_create, team_delete, lsp_tool, powershell, repl_tool, mcp_auth, suggest_background_pr, synthetic_output, verify_plan_execution, workflow_tool
 
 **Custom:** Implement `Tool` trait, register via `ToolRegistry`.
 
-**Phase 1 additions:** MCP resource tools (access external MCP server resources), skill tool (invoke skills by name).
+**Phases:** Phase 1 (MCP resources + skill), Phase 5 (workflow + dev tools), Phase 3 (gap closure: 11 tools for OpenClaude parity)
 
 ### 5. Skill System
 **Skills** are markdown files (`SKILL.md`) with YAML frontmatter that inject prompt snippets when activated.

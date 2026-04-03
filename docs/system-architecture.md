@@ -40,8 +40,9 @@
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐ │
 │  │ Tool Registry & Execution                            │ │
-│  │ - 33 built-in tools (file, bash, grep, agent, etc)  │ │
+│  │ - 42 built-in tools (Phase 3: 11 new tools added)   │ │
 │  │ - Phase 1: MCP resource tools, skill invocation      │ │
+│  │ - Phase 3: Team, LSP, PowerShell, REPL, workflow    │ │
 │  │ - Permission checks via 6-layer pipeline             │ │
 │  │ - MCP bridging for external tools                    │ │
 │  └──────────────────────────────────────────────────────┘ │

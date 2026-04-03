@@ -182,6 +182,7 @@ async fn main() -> Result<()> {
         task_abort_handles: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         mcp_manager: mcp_ref.clone(),
         skill_executor: Some(skill_executor),
+        team_manager: std::sync::Arc::new(std::sync::Mutex::new(oxicode_agents::TeamManager::new())),
     };
 
     let engine = Arc::new(QueryEngine::new(
@@ -579,6 +580,7 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
         task_abort_handles: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         mcp_manager: Arc::new(oxicode_mcp::McpServerManager::new()),
         skill_executor: None, // Agent mode doesn't initialize skills
+        team_manager: Arc::new(std::sync::Mutex::new(oxicode_agents::TeamManager::new())),
     };
 
     let engine = Arc::new(QueryEngine::new(
