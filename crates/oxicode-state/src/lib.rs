@@ -1,4 +1,4 @@
-use oxicode_common::{FeatureFlags, Message, Usage};
+use oxicode_common::{FeatureFlags, Message, RateLimitInfo, Usage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -41,6 +41,18 @@ pub struct AppState {
     pub background_tasks: Vec<TaskEntry>,
     /// Runtime feature flags.
     pub feature_flags: FeatureFlags,
+    /// Last rate limit event (for /status display).
+    pub last_rate_limit: Option<RateLimitSnapshot>,
+}
+
+/// Snapshot of a rate limit event for display in /status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateLimitSnapshot {
+    pub info: RateLimitInfo,
+    /// ISO-8601 timestamp string.
+    pub occurred_at: String,
+    /// Which provider was rate limited.
+    pub provider: String,
 }
 
 impl Default for AppState {
@@ -55,6 +67,7 @@ impl Default for AppState {
             active_skills: Vec::new(),
             background_tasks: Vec::new(),
             feature_flags: FeatureFlags::default(),
+            last_rate_limit: None,
         }
     }
 }
@@ -164,6 +177,17 @@ impl StateStore {
     pub fn set_feature_flags(&self, flags: FeatureFlags) {
         self.update(|state| {
             state.feature_flags = flags;
+        });
+    }
+
+    /// Record a rate limit event.
+    pub fn record_rate_limit(&self, info: RateLimitInfo, provider: String) {
+        self.update(|state| {
+            state.last_rate_limit = Some(RateLimitSnapshot {
+                info,
+                occurred_at: chrono::Utc::now().to_rfc3339(),
+                provider,
+            });
         });
     }
 }
@@ -279,5 +303,92 @@ mod tests {
         flags.set("vim_mode", true);
         store.set_feature_flags(flags);
         assert!(store.is_feature_enabled("vim_mode"));
+    }
+
+    #[test]
+    fn test_record_rate_limit() {
+        use oxicode_common::RateLimitType;
+
+        let store = StateStore::default();
+        assert!(store.current().last_rate_limit.is_none());
+
+        let info = RateLimitInfo {
+            retry_after_secs: Some(60.0),
+            limit_type: RateLimitType::TokensPerMinute,
+            remaining: Some(0),
+            message: "Rate limited (tokens/min)".to_string(),
+            ..Default::default()
+        };
+
+        store.record_rate_limit(info.clone(), "anthropic".to_string());
+
+        let current = store.current();
+        assert!(current.last_rate_limit.is_some());
+
+        let snapshot = current.last_rate_limit.unwrap();
+        assert_eq!(snapshot.provider, "anthropic");
+        assert_eq!(snapshot.info.retry_after_secs, Some(60.0));
+        assert_eq!(snapshot.info.limit_type, RateLimitType::TokensPerMinute);
+        // Verify that occurred_at is set to a valid ISO-8601 timestamp.
+        assert!(!snapshot.occurred_at.is_empty());
+    }
+
+    #[test]
+    fn test_record_rate_limit_overwrites_previous() {
+        use oxicode_common::RateLimitType;
+
+        let store = StateStore::default();
+
+        let info1 = RateLimitInfo {
+            limit_type: RateLimitType::TokensPerMinute,
+            retry_after_secs: Some(10.0),
+            ..Default::default()
+        };
+        store.record_rate_limit(info1, "anthropic".to_string());
+
+        let snapshot1 = store.current().last_rate_limit.unwrap();
+        assert_eq!(snapshot1.info.retry_after_secs, Some(10.0));
+
+        let info2 = RateLimitInfo {
+            limit_type: RateLimitType::RequestsPerMinute,
+            retry_after_secs: Some(30.0),
+            ..Default::default()
+        };
+        store.record_rate_limit(info2, "openai".to_string());
+
+        let snapshot2 = store.current().last_rate_limit.unwrap();
+        assert_eq!(snapshot2.provider, "openai");
+        assert_eq!(snapshot2.info.retry_after_secs, Some(30.0));
+        assert_eq!(
+            snapshot2.info.limit_type,
+            RateLimitType::RequestsPerMinute
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_snapshot_serde() {
+        use oxicode_common::RateLimitType;
+
+        let info = RateLimitInfo {
+            retry_after_secs: Some(45.0),
+            limit_type: RateLimitType::TokensPerDay,
+            remaining: Some(100),
+            message: "Rate limited".to_string(),
+            ..Default::default()
+        };
+
+        let snapshot = RateLimitSnapshot {
+            info,
+            occurred_at: "2026-04-04T12:00:00Z".to_string(),
+            provider: "anthropic".to_string(),
+        };
+
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let parsed: RateLimitSnapshot = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.provider, "anthropic");
+        assert_eq!(parsed.info.retry_after_secs, Some(45.0));
+        assert_eq!(parsed.info.limit_type, RateLimitType::TokensPerDay);
+        assert_eq!(parsed.occurred_at, "2026-04-04T12:00:00Z");
     }
 }

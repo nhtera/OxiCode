@@ -459,6 +459,18 @@ async fn forward_turn_event(
                 }).unwrap_or_default(),
             )).await;
         }
+        TurnEvent::RateLimited { message, attempt, max_retries, retry_in_secs } => {
+            tracing::warn!("Rate limited ({attempt}/{max_retries}): {message} — retry in {retry_in_secs:.0}s");
+            let _ = notify_tx.send(RpcNotification::new("stream.rate_limited",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "message": message,
+                    "attempt": attempt,
+                    "max_retries": max_retries,
+                    "retry_in_secs": retry_in_secs,
+                }),
+            )).await;
+        }
     }
 }
 

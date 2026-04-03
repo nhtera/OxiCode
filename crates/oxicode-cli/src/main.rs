@@ -394,6 +394,9 @@ fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
             reply_tx,
         },
         TurnEvent::Error(e) => CoreEvent::Error(e),
+        TurnEvent::RateLimited { message, attempt, max_retries, retry_in_secs } => {
+            CoreEvent::RateLimited { message, attempt, max_retries, retry_in_secs }
+        }
     }
 }
 

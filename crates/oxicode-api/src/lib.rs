@@ -4,6 +4,7 @@ pub mod openai_compatible;
 pub mod provider;
 pub mod provider_router;
 pub mod proxy;
+pub mod rate_limit_headers;
 pub mod retry;
 pub mod schema_adapter;
 pub mod stream_event;

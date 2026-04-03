@@ -48,4 +48,11 @@ pub enum CoreEvent {
         prompt: String,
         reply_tx: tokio::sync::oneshot::Sender<oxicode_common::PermissionResponse>,
     },
+    /// Rate limited — provider returned 429, retry in progress.
+    RateLimited {
+        message: String,
+        attempt: u32,
+        max_retries: u32,
+        retry_in_secs: f64,
+    },
 }

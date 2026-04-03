@@ -5,6 +5,7 @@ use reqwest_eventsource::{Event, EventSource};
 
 use crate::provider::{EventStream, LlmProvider, MessageRequest};
 use crate::proxy::build_proxy_client;
+use crate::rate_limit_headers::parse_anthropic_headers;
 use crate::retry::RetryPolicy;
 use crate::stream_event::{RawSseEvent, StreamEvent};
 
@@ -201,13 +202,33 @@ impl LlmProvider for AnthropicProvider {
                         }
                         Some(Err(e)) => {
                             es.close();
+                            // Check if this is a 429 rate limit error with headers.
+                            if let reqwest_eventsource::Error::InvalidStatusCode(status, ref response) = e {
+                                if status.as_u16() == 429 && retry_count < retry_policy.max_retries {
+                                    retry_count += 1;
+                                    let info = parse_anthropic_headers(response.headers());
+                                    let delay = retry_policy.delay_for_rate_limit(retry_count, &info);
+                                    tracing::warn!(
+                                        "Anthropic rate limited (retry {}/{}): {} — retrying in {:?}",
+                                        retry_count, retry_policy.max_retries, info.message, delay
+                                    );
+                                    yield Ok(StreamEvent::RateLimited {
+                                        info,
+                                        attempt: retry_count,
+                                        max_retries: retry_policy.max_retries,
+                                        retry_in_secs: delay.as_secs_f64(),
+                                    });
+                                    tokio::time::sleep(delay).await;
+                                    continue 'retry;
+                                }
+                            }
                             if retry_count < retry_policy.max_retries {
                                 retry_count += 1;
                                 let delay = retry_policy.delay_for(retry_count);
                                 tracing::warn!("SSE error (retry {}/{}): {} — reconnecting in {:?}",
                                     retry_count, retry_policy.max_retries, e, delay);
                                 tokio::time::sleep(delay).await;
-                                continue 'retry; // Reconstruct EventSource
+                                continue 'retry;
                             }
                             yield Err(OxiError::api(format!("SSE stream error after {retry_count} retries: {e}")));
                             return;

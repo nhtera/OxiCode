@@ -803,6 +803,16 @@ impl App {
                     reply_tx,
                 });
             }
+            CoreEvent::RateLimited { message, attempt, max_retries, retry_in_secs } => {
+                let notif_msg = format!(
+                    "Rate limited. Retrying in {retry_in_secs:.0}s... ({attempt}/{max_retries})"
+                );
+                tracing::warn!("{}", message);
+                self.notifications.push(Notification::new(
+                    notif_msg,
+                    crate::widgets::notification::NotificationLevel::RateLimit,
+                ));
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Widget;
 
 const EXPIRE_SECS: u64 = 5;
+const RATE_LIMIT_EXPIRE_SECS: u64 = 30;
 
 /// Severity level for a toast notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +15,8 @@ pub enum NotificationLevel {
     Info,
     Warning,
     Error,
+    /// Rate limit notification — auto-dismiss after retry succeeds.
+    RateLimit,
 }
 
 impl NotificationLevel {
@@ -22,6 +25,7 @@ impl NotificationLevel {
             Self::Info => "INFO",
             Self::Warning => "WARN",
             Self::Error => "ERROR",
+            Self::RateLimit => "RATE",
         }
     }
 
@@ -30,6 +34,7 @@ impl NotificationLevel {
             Self::Info => Color::Blue,
             Self::Warning => Color::Yellow,
             Self::Error => Color::Red,
+            Self::RateLimit => Color::Rgb(255, 165, 0), // Orange
         }
     }
 }
@@ -53,7 +58,12 @@ impl Notification {
 
     /// Returns true if the notification has not yet expired.
     pub fn is_active(&self) -> bool {
-        self.created_at.elapsed() < Duration::from_secs(EXPIRE_SECS)
+        let ttl = if self.level == NotificationLevel::RateLimit {
+            Duration::from_secs(RATE_LIMIT_EXPIRE_SECS)
+        } else {
+            Duration::from_secs(EXPIRE_SECS)
+        };
+        self.created_at.elapsed() < ttl
     }
 }
 
@@ -124,8 +134,16 @@ mod tests {
         assert_eq!(NotificationLevel::Info.label(), "INFO");
         assert_eq!(NotificationLevel::Warning.label(), "WARN");
         assert_eq!(NotificationLevel::Error.label(), "ERROR");
+        assert_eq!(NotificationLevel::RateLimit.label(), "RATE");
         assert_eq!(NotificationLevel::Info.color(), Color::Blue);
         assert_eq!(NotificationLevel::Warning.color(), Color::Yellow);
         assert_eq!(NotificationLevel::Error.color(), Color::Red);
+        assert_eq!(NotificationLevel::RateLimit.color(), Color::Rgb(255, 165, 0));
+    }
+
+    #[test]
+    fn rate_limit_notification_has_longer_ttl() {
+        let n = Notification::new("rate limited", NotificationLevel::RateLimit);
+        assert!(n.is_active());
     }
 }

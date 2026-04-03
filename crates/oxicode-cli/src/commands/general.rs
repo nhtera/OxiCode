@@ -78,10 +78,21 @@ impl SlashCommand for StatusCommand {
         let msg_count = state.messages.len();
         let usage = &state.total_usage;
 
-        CommandOutput::Message(format!(
+        let mut output = format!(
             "Model: {}\nProvider: {}\nSession: {}\nMessages: {msg_count}\nTokens: {}in / {}out",
             ctx.model, ctx.provider_name, ctx.session_id, usage.input_tokens, usage.output_tokens,
-        ))
+        );
+
+        // Show last rate limit event if present.
+        if let Some(snapshot) = &state.last_rate_limit {
+            let _ = write!(
+                output,
+                "\nLast rate limited: {} ({}, {})",
+                snapshot.occurred_at, snapshot.provider, snapshot.info.limit_type,
+            );
+        }
+
+        CommandOutput::Message(output)
     }
 }
 

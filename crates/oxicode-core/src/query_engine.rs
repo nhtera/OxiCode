@@ -300,6 +300,16 @@ impl QueryEngine {
                     return Err(err);
                 }
                 StreamEvent::Ping => {}
+                StreamEvent::RateLimited { info, attempt, max_retries, retry_in_secs } => {
+                    // Record in state for /status display.
+                    self.state_store.record_rate_limit(info.clone(), self.provider.name().to_string());
+                    emit(event_tx, TurnEvent::RateLimited {
+                        message: info.message,
+                        attempt,
+                        max_retries,
+                        retry_in_secs,
+                    }).await;
+                }
             }
         }
 

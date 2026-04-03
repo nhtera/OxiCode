@@ -12,6 +12,8 @@ oxicode-common = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+serde_json = { workspace = true }

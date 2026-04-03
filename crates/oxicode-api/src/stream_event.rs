@@ -1,4 +1,4 @@
-use oxicode_common::{StopReason, Usage};
+use oxicode_common::{RateLimitInfo, StopReason, Usage};
 use serde::{Deserialize, Serialize};
 
 /// Events emitted from an LLM streaming response.
@@ -24,6 +24,14 @@ pub enum StreamEvent {
 
     /// Message completed.
     MessageStop { stop_reason: StopReason },
+
+    /// Rate limited — provider returned 429, retry in progress.
+    RateLimited {
+        info: RateLimitInfo,
+        attempt: u32,
+        max_retries: u32,
+        retry_in_secs: f64,
+    },
 
     /// Stream error.
     Error { message: String },
@@ -233,5 +241,114 @@ mod tests {
                 stop_reason: StopReason::EndTurn
             }
         ));
+    }
+
+    #[test]
+    fn test_stream_event_rate_limited_serde() {
+        use oxicode_common::RateLimitType;
+
+        let info = RateLimitInfo {
+            retry_after_secs: Some(30.0),
+            limit_type: RateLimitType::TokensPerMinute,
+            remaining: Some(0),
+            message: "Rate limited (tokens/min). Retry after 30s".to_string(),
+            ..Default::default()
+        };
+
+        let event = StreamEvent::RateLimited {
+            info,
+            attempt: 1,
+            max_retries: 3,
+            retry_in_secs: 30.0,
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: StreamEvent = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            StreamEvent::RateLimited {
+                info: parsed_info,
+                attempt,
+                max_retries,
+                retry_in_secs,
+            } => {
+                assert_eq!(parsed_info.retry_after_secs, Some(30.0));
+                assert_eq!(parsed_info.limit_type, RateLimitType::TokensPerMinute);
+                assert_eq!(parsed_info.remaining, Some(0));
+                assert_eq!(attempt, 1);
+                assert_eq!(max_retries, 3);
+                assert_eq!(retry_in_secs, 30.0);
+            }
+            _ => panic!("Expected RateLimited event"),
+        }
+    }
+
+    #[test]
+    fn test_stream_event_rate_limited_with_different_types() {
+        use oxicode_common::RateLimitType;
+
+        let test_cases = vec![
+            (RateLimitType::TokensPerMinute, "tokens/min"),
+            (RateLimitType::RequestsPerMinute, "requests/min"),
+            (RateLimitType::TokensPerDay, "tokens/day"),
+            (RateLimitType::InputTokensPerMinute, "input tokens/min"),
+            (RateLimitType::OutputTokensPerMinute, "output tokens/min"),
+        ];
+
+        for (limit_type, _expected_str) in test_cases {
+            let info = RateLimitInfo {
+                limit_type,
+                retry_after_secs: Some(60.0),
+                ..Default::default()
+            };
+
+            let event = StreamEvent::RateLimited {
+                info,
+                attempt: 2,
+                max_retries: 3,
+                retry_in_secs: 60.0,
+            };
+
+            let json = serde_json::to_string(&event).unwrap();
+            let parsed: StreamEvent = serde_json::from_str(&json).unwrap();
+
+            match parsed {
+                StreamEvent::RateLimited {
+                    info: parsed_info,
+                    ..
+                } => {
+                    assert_eq!(parsed_info.limit_type, limit_type);
+                }
+                _ => panic!("Expected RateLimited event"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_stream_event_text_delta_vs_rate_limited() {
+        use oxicode_common::RateLimitType;
+
+        let text_event = StreamEvent::TextDelta {
+            text: "Hello".to_string(),
+        };
+        let text_json = serde_json::to_string(&text_event).unwrap();
+        assert!(text_json.contains("\"TextDelta\"") || text_json.contains("text_delta"));
+
+        let rate_limited_event = StreamEvent::RateLimited {
+            info: RateLimitInfo {
+                limit_type: RateLimitType::TokensPerMinute,
+                ..Default::default()
+            },
+            attempt: 1,
+            max_retries: 3,
+            retry_in_secs: 30.0,
+        };
+        let rate_limited_json = serde_json::to_string(&rate_limited_event).unwrap();
+        assert!(
+            rate_limited_json.contains("\"RateLimited\"") || rate_limited_json.contains("rate_limited")
+        );
+
+        // Ensure they serialize differently
+        assert_ne!(text_json, rate_limited_json);
     }
 }

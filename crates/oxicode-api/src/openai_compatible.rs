@@ -8,6 +8,7 @@ use oxicode_common::{OxiError, OxiResult, Usage};
 
 use crate::provider::{EventStream, LlmProvider, MessageRequest};
 use crate::proxy::build_proxy_client;
+use crate::rate_limit_headers::parse_openai_headers;
 use crate::retry::RetryPolicy;
 use crate::schema_adapter::{
     claude_tools_to_openai_functions, openai_finish_reason_to_stop_reason,
@@ -302,15 +303,24 @@ impl LlmProvider for OpenAiCompatibleProvider {
 
                 if !response.status().is_success() {
                     let status = response.status();
-                    let body_text = response.text().await.unwrap_or_default();
                     if status.as_u16() == 429 && retry_count < retry_policy.max_retries {
                         retry_count += 1;
-                        let delay = retry_policy.delay_for(retry_count);
-                        tracing::warn!("Rate limited (retry {}/{}), retrying in {:?}",
-                            retry_count, retry_policy.max_retries, delay);
+                        let info = parse_openai_headers(response.headers());
+                        let delay = retry_policy.delay_for_rate_limit(retry_count, &info);
+                        tracing::warn!(
+                            "Rate limited (retry {}/{}): {} — retrying in {:?}",
+                            retry_count, retry_policy.max_retries, info.message, delay
+                        );
+                        yield Ok(StreamEvent::RateLimited {
+                            info,
+                            attempt: retry_count,
+                            max_retries: retry_policy.max_retries,
+                            retry_in_secs: delay.as_secs_f64(),
+                        });
                         tokio::time::sleep(delay).await;
                         continue 'retry;
                     }
+                    let body_text = response.text().await.unwrap_or_default();
                     yield Err(OxiError::api(format!("API error {status}: {body_text}")));
                     return;
                 }

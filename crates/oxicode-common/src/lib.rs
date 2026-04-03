@@ -6,4 +6,7 @@ pub mod types;
 // Re-export commonly used items.
 pub use error::{OxiError, OxiResult};
 pub use features::FeatureFlags;
-pub use types::{ContentBlock, Message, ModelInfo, PermissionResponse, Role, StopReason, Usage};
+pub use types::{
+    ContentBlock, Message, ModelInfo, PermissionResponse, RateLimitInfo, RateLimitType, Role,
+    StopReason, Usage,
+};

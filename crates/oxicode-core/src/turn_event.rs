@@ -36,6 +36,13 @@ pub enum TurnEvent {
     },
     /// Error during the turn.
     Error(String),
+    /// Rate limited — provider returned 429, retry in progress.
+    RateLimited {
+        message: String,
+        attempt: u32,
+        max_retries: u32,
+        retry_in_secs: f64,
+    },
 }
 
 /// Send a `TurnEvent` if a sender is present. Ignores send failures
