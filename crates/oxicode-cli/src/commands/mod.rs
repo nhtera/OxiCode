@@ -11,6 +11,7 @@ pub mod hook_commands;
 pub mod mcp_commands;
 pub mod new_commands;
 pub mod plan_commands;
+pub mod project_detect;
 pub mod plugin_commands;
 pub mod provider;
 pub mod session_commands;
@@ -195,6 +196,8 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(git_commands::StashCommand));
     reg.register(Box::new(git_commands::PushCommand));
     reg.register(Box::new(git_commands::PullCommand));
+    reg.register(Box::new(git_commands::IssueCommand));
+    reg.register(Box::new(git_commands::PrCommentsCommand));
 
     // Phase 5: Team commands
     reg.register(Box::new(team_commands::TeamCommand));
@@ -259,12 +262,17 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(session_view_commands::FeedbackCommand));
     reg.register(Box::new(session_view_commands::DocsCommand));
 
-    // Phase 5: New commands (enhanced resume/review + vim/rename/usage)
+    // Phase 5: New commands (enhanced resume/review + vim/rename/usage + stats/rewind/thinking)
     reg.register(Box::new(new_commands::ResumeCommand));
     reg.register(Box::new(new_commands::ReviewCommand));
     reg.register(Box::new(new_commands::VimCommand));
     reg.register(Box::new(new_commands::RenameCommand));
     reg.register(Box::new(new_commands::UsageCommand));
+    reg.register(Box::new(new_commands::StatsCommand));
+    reg.register(Box::new(new_commands::RewindCommand));
+    reg.register(Box::new(new_commands::ThinkingCommand));
+    reg.register(Box::new(new_commands::SandboxToggleCommand));
+    reg.register(Box::new(new_commands::OutputStyleCommand));
 
     reg
 }

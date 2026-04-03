@@ -13,12 +13,40 @@ impl SlashCommand for LoginCommand {
     fn description(&self) -> &str {
         "Authenticate with API provider"
     }
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message(
-            "Use environment variables to set API keys:\n\
-             \x20 ANTHROPIC_API_KEY, OPENAI_API_KEY, etc."
-                .into(),
-        )
+    fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
+        let provider = if args.trim().is_empty() {
+            &ctx.provider_name
+        } else {
+            args.trim()
+        };
+
+        // Check if key is already set in environment.
+        let env_key = match provider {
+            "anthropic" => "ANTHROPIC_API_KEY",
+            "openai" => "OPENAI_API_KEY",
+            "google" | "gemini" => "GOOGLE_API_KEY",
+            _ => {
+                return CommandOutput::Message(format!(
+                    "Unknown provider: {provider}\n\
+                     Supported: anthropic, openai, google"
+                ));
+            }
+        };
+
+        if std::env::var(env_key).is_ok() {
+            CommandOutput::Message(format!(
+                "Already authenticated with {provider} (via {env_key})."
+            ))
+        } else {
+            let config_path = dirs::home_dir()
+                .map(|h| h.join(".oxicode").join("credentials.toml"))
+                .unwrap_or_default();
+            CommandOutput::Message(format!(
+                "Not authenticated with {provider}.\n\
+                 Set {env_key} environment variable, or add to:\n  {}",
+                config_path.display()
+            ))
+        }
     }
 }
 
@@ -31,7 +59,28 @@ impl SlashCommand for LogoutCommand {
         "Clear stored credentials"
     }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Credentials cleared.".into())
+        let cred_path = dirs::home_dir()
+            .map(|h| h.join(".oxicode").join("credentials.toml"))
+            .unwrap_or_default();
+
+        if cred_path.exists() {
+            match std::fs::remove_file(&cred_path) {
+                Ok(()) => CommandOutput::Message(format!(
+                    "Credentials file removed: {}\n\
+                     Environment variables (if set) are still active.",
+                    cred_path.display()
+                )),
+                Err(e) => CommandOutput::Error(format!(
+                    "Failed to remove credentials: {e}"
+                )),
+            }
+        } else {
+            CommandOutput::Message(
+                "No stored credentials file found.\n\
+                 Unset environment variables (ANTHROPIC_API_KEY, etc.) to fully log out."
+                    .into(),
+            )
+        }
     }
 }
 

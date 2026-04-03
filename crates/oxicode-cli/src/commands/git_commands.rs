@@ -226,3 +226,119 @@ impl SlashCommand for PullCommand {
         }
     }
 }
+
+/// /issue [title] — create a GitHub issue using `gh` CLI.
+pub struct IssueCommand;
+impl SlashCommand for IssueCommand {
+    fn name(&self) -> &str {
+        "issue"
+    }
+    fn description(&self) -> &str {
+        "Create a GitHub issue (requires gh CLI)"
+    }
+    fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
+        if args.trim().is_empty() {
+            // List recent issues.
+            match run_command("gh", &["issue", "list", "--limit", "10"]) {
+                Ok(out) if out.is_empty() => CommandOutput::Message("No open issues.".into()),
+                Ok(out) => CommandOutput::Message(format!("Open issues:\n{out}")),
+                Err(e) => {
+                    if e.contains("not found") {
+                        CommandOutput::Error(
+                            "gh CLI not found. Install: https://cli.github.com".into(),
+                        )
+                    } else {
+                        CommandOutput::Error(format!("Failed to list issues: {e}"))
+                    }
+                }
+            }
+        } else {
+            let title = args.trim();
+            // Build body from recent conversation context.
+            let state = ctx.state_store.current();
+            let context_msgs: Vec<String> = state
+                .messages
+                .iter()
+                .rev()
+                .take(4)
+                .map(|m| {
+                    let role = match m.role {
+                        oxicode_common::Role::User => "User",
+                        oxicode_common::Role::Assistant => "Assistant",
+                        oxicode_common::Role::System => "System",
+                    };
+                    let text = super::git_helpers::truncate(&m.text(), 200);
+                    format!("**{role}:** {text}")
+                })
+                .collect();
+
+            let body = if context_msgs.is_empty() {
+                String::from("Created via OxiCode CLI.")
+            } else {
+                format!(
+                    "Created via OxiCode CLI.\n\n## Context\n\n{}",
+                    context_msgs.into_iter().rev().collect::<Vec<_>>().join("\n\n")
+                )
+            };
+
+            match run_command("gh", &["issue", "create", "--title", title, "--body", &body]) {
+                Ok(url) => CommandOutput::Message(format!("Issue created: {url}")),
+                Err(e) => {
+                    if e.contains("not found") {
+                        CommandOutput::Error(
+                            "gh CLI not found. Install: https://cli.github.com".into(),
+                        )
+                    } else {
+                        CommandOutput::Error(format!("Issue creation failed: {e}"))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// /pr-comments [pr_number] — show PR review comments.
+pub struct PrCommentsCommand;
+impl SlashCommand for PrCommentsCommand {
+    fn name(&self) -> &str {
+        "pr-comments"
+    }
+    fn description(&self) -> &str {
+        "Show PR review comments (requires gh CLI)"
+    }
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let pr_num = args.trim();
+        if pr_num.is_empty() {
+            return CommandOutput::Error("Usage: /pr-comments <pr_number>".into());
+        }
+        if !pr_num.chars().all(|c| c.is_ascii_digit()) {
+            return CommandOutput::Error("PR number must be numeric.".into());
+        }
+
+        match run_command("gh", &["pr", "view", pr_num, "--comments"]) {
+            Ok(out) if out.is_empty() => {
+                CommandOutput::Message(format!("No comments on PR #{pr_num}."))
+            }
+            Ok(out) => {
+                let lines: Vec<&str> = out.lines().collect();
+                let total = lines.len();
+                let preview: String = lines.into_iter().take(80).collect::<Vec<_>>().join("\n");
+                let suffix = if total > 80 {
+                    format!("\n\n... ({total} total lines)")
+                } else {
+                    String::new()
+                };
+                CommandOutput::Message(format!("PR #{pr_num} comments:\n{preview}{suffix}"))
+            }
+            Err(e) => {
+                if e.contains("not found") {
+                    CommandOutput::Error(
+                        "gh CLI not found. Install: https://cli.github.com".into(),
+                    )
+                } else {
+                    CommandOutput::Error(format!("Failed to get PR comments: {e}"))
+                }
+            }
+        }
+    }
+}
