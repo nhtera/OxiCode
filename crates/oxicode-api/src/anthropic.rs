@@ -31,6 +31,14 @@ impl AnthropicProvider {
         self
     }
 
+    /// Build the `anthropic-beta` header value from request beta features.
+    fn build_beta_header(request: &MessageRequest) -> Option<String> {
+        if request.beta_features.is_empty() {
+            return None;
+        }
+        Some(request.beta_features.join(","))
+    }
+
     /// Build the JSON request body for the Anthropic Messages API.
     fn build_request_body(&self, request: &MessageRequest) -> serde_json::Value {
         let messages: Vec<serde_json::Value> = request
@@ -85,12 +93,45 @@ impl AnthropicProvider {
             "stream": request.stream,
         });
 
+        // System prompt — with optional cache_control for prompt caching.
         if let Some(system) = &request.system {
-            body["system"] = serde_json::json!(system);
+            if request.prompt_caching {
+                body["system"] = serde_json::json!([{
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"}
+                }]);
+            } else {
+                body["system"] = serde_json::json!(system);
+            }
         }
 
+        // Tools — with optional cache_control on the last tool for prompt caching.
         if !request.tools.is_empty() {
-            body["tools"] = serde_json::json!(request.tools);
+            if request.prompt_caching {
+                let mut tools = request.tools.clone();
+                if let Some(last) = tools.last_mut() {
+                    if let Some(obj) = last.as_object_mut() {
+                        obj.insert(
+                            "cache_control".to_string(),
+                            serde_json::json!({"type": "ephemeral"}),
+                        );
+                    }
+                }
+                body["tools"] = serde_json::json!(tools);
+            } else {
+                body["tools"] = serde_json::json!(request.tools);
+            }
+        }
+
+        // Extended thinking.
+        if let Some(thinking) = &request.thinking {
+            if thinking.enabled {
+                body["thinking"] = serde_json::json!({
+                    "type": "enabled",
+                    "budget_tokens": thinking.budget_tokens
+                });
+            }
         }
 
         body
@@ -104,6 +145,7 @@ impl LlmProvider for AnthropicProvider {
         let client = self.client.clone();
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
+        let beta_header = Self::build_beta_header(&request);
         let body_str = serde_json::to_string(&self.build_request_body(&request))
             .map_err(|e| OxiError::api(e.to_string()))?;
         let retry_policy = self.retry_policy.clone();
@@ -113,12 +155,16 @@ impl LlmProvider for AnthropicProvider {
 
             // C2 FIX: Outer retry loop reconstructs EventSource on each attempt.
             'retry: loop {
-                let req = client
+                let mut req = client
                     .post(format!("{base_url}/v1/messages"))
                     .header("x-api-key", &api_key)
                     .header("anthropic-version", ANTHROPIC_API_VERSION)
                     .header("content-type", "application/json")
                     .body(body_str.clone());
+
+                if let Some(beta) = &beta_header {
+                    req = req.header("anthropic-beta", beta.as_str());
+                }
 
                 let mut es = match EventSource::new(req) {
                     Ok(es) => es,
@@ -179,5 +225,124 @@ impl LlmProvider for AnthropicProvider {
 
     fn name(&self) -> &'static str {
         "anthropic"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxicode_common::Message;
+
+    fn make_provider() -> AnthropicProvider {
+        AnthropicProvider::new("test-key")
+    }
+
+    #[test]
+    fn test_prompt_caching_system_prompt() {
+        let provider = make_provider();
+        let request = MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")])
+            .with_system("You are helpful.")
+            .with_prompt_caching(true);
+
+        let body = provider.build_request_body(&request);
+
+        // System should be an array with cache_control.
+        let system = body["system"].as_array().expect("system should be array");
+        assert_eq!(system.len(), 1);
+        assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(system[0]["text"], "You are helpful.");
+    }
+
+    #[test]
+    fn test_prompt_caching_tools() {
+        let provider = make_provider();
+        let mut request =
+            MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")])
+                .with_prompt_caching(true);
+        request.tools = vec![
+            serde_json::json!({"name": "tool1", "description": "first"}),
+            serde_json::json!({"name": "tool2", "description": "second"}),
+        ];
+
+        let body = provider.build_request_body(&request);
+        let tools = body["tools"].as_array().expect("tools should be array");
+
+        // Only the last tool should have cache_control.
+        assert!(tools[0].get("cache_control").is_none());
+        assert_eq!(tools[1]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn test_no_caching_when_disabled() {
+        let provider = make_provider();
+        let request = MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")])
+            .with_system("You are helpful.");
+
+        let body = provider.build_request_body(&request);
+
+        // System should be a plain string, not an array.
+        assert!(body["system"].is_string());
+    }
+
+    #[test]
+    fn test_extended_thinking_in_body() {
+        let provider = make_provider();
+        let request = MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")])
+            .with_thinking(10000);
+
+        let body = provider.build_request_body(&request);
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["thinking"]["budget_tokens"], 10000);
+    }
+
+    #[test]
+    fn test_thinking_budget_clamped_to_minimum() {
+        let request = MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")])
+            .with_thinking(500);
+
+        // Should be clamped to 1024 minimum.
+        assert_eq!(request.thinking.unwrap().budget_tokens, 1024);
+    }
+
+    #[test]
+    fn test_no_thinking_by_default() {
+        let provider = make_provider();
+        let request =
+            MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")]);
+
+        let body = provider.build_request_body(&request);
+        assert!(body.get("thinking").is_none());
+    }
+
+    #[test]
+    fn test_beta_header_with_caching() {
+        let request = MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")])
+            .with_prompt_caching(true);
+
+        let beta = AnthropicProvider::build_beta_header(&request);
+        assert_eq!(beta, Some("prompt-caching-2024-07-31".to_string()));
+    }
+
+    #[test]
+    fn test_beta_header_empty_when_no_features() {
+        let request =
+            MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")]);
+
+        let beta = AnthropicProvider::build_beta_header(&request);
+        assert!(beta.is_none());
+    }
+
+    #[test]
+    fn test_beta_header_multiple_features() {
+        let mut request =
+            MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")])
+                .with_prompt_caching(true);
+        request
+            .beta_features
+            .push("max-tokens-3-5-sonnet-2024-07-15".to_string());
+
+        let beta = AnthropicProvider::build_beta_header(&request).unwrap();
+        assert!(beta.contains("prompt-caching-2024-07-31"));
+        assert!(beta.contains("max-tokens-3-5-sonnet-2024-07-15"));
     }
 }

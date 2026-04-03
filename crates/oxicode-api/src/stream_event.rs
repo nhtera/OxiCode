@@ -171,3 +171,67 @@ impl RawSseEvent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thinking_delta_event() {
+        let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me think..."}}"#;
+        let raw: RawSseEvent = serde_json::from_str(json).unwrap();
+        let events = raw.into_stream_events();
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], StreamEvent::ThinkingDelta { thinking } if thinking == "Let me think...")
+        );
+    }
+
+    #[test]
+    fn test_thinking_content_block_start() {
+        let json = r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#;
+        let raw: RawSseEvent = serde_json::from_str(json).unwrap();
+        let events = raw.into_stream_events();
+        // Thinking block start produces no events (same as text block start).
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_cache_usage_in_message_start() {
+        let json = r#"{"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_creation_input_tokens":50,"cache_read_input_tokens":25}}}"#;
+        let raw: RawSseEvent = serde_json::from_str(json).unwrap();
+        let events = raw.into_stream_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StreamEvent::UsageUpdate(usage) => {
+                assert_eq!(usage.input_tokens, 100);
+                assert_eq!(usage.cache_creation_input_tokens, Some(50));
+                assert_eq!(usage.cache_read_input_tokens, Some(25));
+            }
+            _ => panic!("Expected UsageUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_cache_usage_in_message_delta() {
+        let json = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}}"#;
+        let raw: RawSseEvent = serde_json::from_str(json).unwrap();
+        let events = raw.into_stream_events();
+        // Should produce both UsageUpdate and MessageStop.
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            StreamEvent::UsageUpdate(usage) => {
+                assert_eq!(usage.output_tokens, 42);
+                assert_eq!(usage.cache_creation_input_tokens, Some(10));
+                assert_eq!(usage.cache_read_input_tokens, Some(5));
+            }
+            _ => panic!("Expected UsageUpdate"),
+        }
+        assert!(matches!(
+            &events[1],
+            StreamEvent::MessageStop {
+                stop_reason: StopReason::EndTurn
+            }
+        ));
+    }
+}

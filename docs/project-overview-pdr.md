@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.1.0 | **Last Updated:** 2026-04-02 | **Status:** Phase 4 Complete
+**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Status:** Phase 4 Complete + Phase 2 API Enhancement
 
 ## Project Vision
 
@@ -22,6 +22,14 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - TUI frontend with streaming display
 - Permission-based tool access control
 - Session persistence and undo/redo
+
+### Phase 2: API Enhancement (Complete ✓)
+**Enhanced:** oxicode-api crate with multi-provider support
+- **Prompt Caching** — Request-level flag for Anthropic prompt caching
+- **Extended Thinking** — ThinkingConfig with token budget (min 1024)
+- **AWS Bedrock Provider** — SigV4 auth, event-stream parsing, env var auto-detection
+- **Google Vertex AI Provider** — OAuth2 bearer auth, standard SSE streaming
+- **Provider Router Enhancement** — Auto-detect Bedrock/Vertex from env vars, model prefix routing
 
 ### Phase 4: Multi-Agent & Skills (Complete ✓)
 **Added:** 4 new crates, 31 new files, ~2800 LOC
@@ -93,11 +101,13 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 
 **Integration:** `BudgetManager` orchestrates layers; `QueryEngine` hooks context defense into stream loop.
 
-### 2. Multi-Provider Support
-- **Anthropic Claude** — Primary provider, full tool + thinking support
-- **OpenAI Compatible** — OpenAI, Azure OpenAI, local endpoints
+### 2. Multi-Provider Support (Phase 2 Enhanced)
+- **Anthropic Claude** — Primary provider, prompt caching, extended thinking
+- **OpenAI Compatible** — OpenAI, Azure, DeepSeek, OpenRouter, Ollama
+- **AWS Bedrock** — SigV4-signed requests, event-stream parsing
+- **Google Vertex AI** — OAuth2 bearer auth, standard SSE streaming
 - **MCP (Model Context Protocol)** — External tools via stdin/stdout bridge
-- **Provider Router** — Load-balance across multiple providers, cost optimization
+- **Provider Router** — Auto-detect providers from env vars, model prefix routing
 
 ### 3. Permission Pipeline (6 Layers)
 1. Safe allowlist (read-only always allowed)
@@ -201,6 +211,7 @@ oxicode/
 | Phase | Status | Deliverables |
 |-------|--------|--------------|
 | 1-3 | ✓ Complete | Core LLM, providers, tools, permissions, TUI |
+| **2 (API)** | **✓ Complete** | **Prompt caching, extended thinking, Bedrock, Vertex** |
 | **4** | **✓ Complete** | **Context defense, multi-agent, skills, tasks** |
 | 5 | Planned | User commands, team UI panels, skill marketplace |
 

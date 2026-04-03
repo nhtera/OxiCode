@@ -1,6 +1,6 @@
 # OxiCode — System Architecture
 
-**Version:** 0.1.0 | **Last Updated:** 2026-04-02 | **Phase:** 4 (Multi-Agent, Skills, Context Defense)
+**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Phase:** 4 (Multi-Agent, Skills, Context Defense) + Phase 2 API (Multi-Provider)
 
 ## Architecture Overview
 
@@ -105,15 +105,17 @@
 │  ┌──────────────────────────────────────────────────────┐ │
 │  │ Provider Router                                      │ │
 │  │ - Load balance across providers                     │ │
+│  │ - Auto-detect from env vars                         │ │
 │  │ - Fallback on errors                                │ │
-│  │ - Cost optimization (choose cheapest valid model)   │ │
 │  └──────────────────────────────────────────────────────┘ │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐ │
-│  │ Anthropic Provider      OpenAI Provider   MCP Server  │ │
-│  │ - Claude 3.5 Sonnet    - GPT-4o          - External  │ │
-│  │ - Streaming support    - Tool calling    - stdin/out  │ │
-│  │ - Thinking blocks      - Vision support  - bridge     │ │
+│  │ Supported Providers                                 │ │
+│  │ - Anthropic (Claude)       - OpenAI (GPT-4o)        │ │
+│  │ - OpenAI Compatible APIs   - AWS Bedrock            │ │
+│  │ - Google Vertex AI         - MCP Server             │ │
+│  │                                                     │ │
+│  │ See phase-2-api-enhancement.md for provider details │ │
 │  └──────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
                               ▲

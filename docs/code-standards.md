@@ -733,6 +733,12 @@ Before submitting PR:
 
 ---
 
+## Phase 2 Provider Integration Standards
+
+See `provider-integration-guide.md` for detailed patterns on implementing custom LLM providers, using MessageRequest builders, and environment variable conventions.
+
+---
+
 ## Phase 4 Integration Standards
 
 ### Context Defense Code

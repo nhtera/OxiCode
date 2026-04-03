@@ -7,10 +7,12 @@ use std::sync::Arc;
 
 use oxicode_common::OxiResult;
 
+use crate::bedrock::BedrockProvider;
 use crate::openai_compatible::{
     azure_openai_provider, deepseek_provider, ollama_provider, openai_provider, openrouter_provider,
 };
 use crate::provider::LlmProvider;
+use crate::vertex::VertexProvider;
 use crate::AnthropicProvider;
 
 /// Resolved provider with its target model name.
@@ -62,6 +64,34 @@ impl ProviderRouter {
             providers.push((
                 "azure".to_string(),
                 Arc::new(azure_openai_provider(endpoint, key, version)),
+            ));
+        }
+
+        // AWS Bedrock.
+        if let (Ok(access_key), Ok(secret_key)) = (
+            std::env::var("AWS_ACCESS_KEY_ID"),
+            std::env::var("AWS_SECRET_ACCESS_KEY"),
+        ) {
+            let region = std::env::var("AWS_BEDROCK_REGION")
+                .or_else(|_| std::env::var("AWS_REGION"))
+                .unwrap_or_else(|_| "us-east-1".to_string());
+            providers.push((
+                "bedrock".to_string(),
+                Arc::new(BedrockProvider::new(access_key, secret_key, region)),
+            ));
+        }
+
+        // Google Vertex AI.
+        if let (Ok(project), Ok(token)) = (
+            std::env::var("VERTEX_AI_PROJECT")
+                .or_else(|_| std::env::var("GOOGLE_CLOUD_PROJECT")),
+            std::env::var("VERTEX_AI_ACCESS_TOKEN"),
+        ) {
+            let region = std::env::var("VERTEX_AI_REGION")
+                .unwrap_or_else(|_| "us-central1".to_string());
+            providers.push((
+                "vertex".to_string(),
+                Arc::new(VertexProvider::new(project, region, token)),
             ));
         }
 
@@ -138,6 +168,9 @@ impl ProviderRouter {
 fn detect_provider_from_model(model: &str) -> Option<String> {
     let m = model.to_lowercase();
 
+    if m.starts_with("anthropic.claude") {
+        return Some("bedrock".to_string());
+    }
     if m.starts_with("claude-") || m.starts_with("anthropic/") {
         return Some("anthropic".to_string());
     }
@@ -213,10 +246,36 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_bedrock() {
+        assert_eq!(
+            detect_provider_from_model("anthropic.claude-3-sonnet-20240229-v1:0"),
+            Some("bedrock".to_string())
+        );
+        assert_eq!(
+            detect_provider_from_model("anthropic.claude-v2"),
+            Some("bedrock".to_string())
+        );
+    }
+
+    #[test]
     fn test_explicit_prefix() {
         // This tests the parsing logic, not the actual resolution.
         let (prefix, model) = "openai:gpt-4o".split_once(':').unwrap();
         assert_eq!(prefix, "openai");
         assert_eq!(model, "gpt-4o");
+    }
+
+    #[test]
+    fn test_explicit_vertex_prefix() {
+        let (prefix, model) = "vertex:claude-sonnet-4-20250514".split_once(':').unwrap();
+        assert_eq!(prefix, "vertex");
+        assert_eq!(model, "claude-sonnet-4-20250514");
+    }
+
+    #[test]
+    fn test_explicit_bedrock_prefix() {
+        let (prefix, model) = "bedrock:anthropic.claude-3-sonnet".split_once(':').unwrap();
+        assert_eq!(prefix, "bedrock");
+        assert_eq!(model, "anthropic.claude-3-sonnet");
     }
 }

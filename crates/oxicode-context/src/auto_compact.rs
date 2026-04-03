@@ -35,6 +35,9 @@ impl AutoCompactor {
             max_tokens: SUMMARY_MAX_TOKENS,
             stream: false,
             tools: Vec::new(),
+            prompt_caching: false,
+            thinking: None,
+            beta_features: Vec::new(),
         };
 
         let stream = provider
