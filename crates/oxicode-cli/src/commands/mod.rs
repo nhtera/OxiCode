@@ -3,9 +3,11 @@
 //! Commands are invoked with `/name [args]` in the TUI input.
 
 pub mod agent_commands;
+pub mod clipboard_commands;
 pub mod debug_commands;
 pub mod enterprise_commands;
 pub mod extras_commands;
+pub mod utility_commands;
 pub mod general;
 pub mod git_commands;
 pub mod git_helpers;
@@ -16,6 +18,7 @@ pub mod plan_commands;
 pub mod project_detect;
 pub mod plugin_commands;
 pub mod provider;
+pub mod reasoning_commands;
 pub mod session_commands;
 pub mod session_view_commands;
 pub mod task_commands;
@@ -293,6 +296,15 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(extras_commands::DesktopCommand));
     reg.register(Box::new(extras_commands::MobileCommand));
     reg.register(Box::new(extras_commands::BridgeCommand));
+
+    // Phase 3: Gap closure — clipboard, reasoning, and utility commands
+    reg.register(Box::new(clipboard_commands::CopyCommand));
+    reg.register(Box::new(reasoning_commands::EffortCommand));
+    reg.register(Box::new(utility_commands::UpgradeCommand));
+    reg.register(Box::new(utility_commands::PrivacySettingsCommand));
+    reg.register(Box::new(utility_commands::AddDirCommand));
+    reg.register(Box::new(utility_commands::ExtraUsageCommand));
+    reg.register(Box::new(mcp_commands::McpDoctorCommand));
 
     reg
 }

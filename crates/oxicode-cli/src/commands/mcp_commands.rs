@@ -124,3 +124,74 @@ impl SlashCommand for McpServersCommand {
         CommandOutput::Message(output)
     }
 }
+
+/// /mcp-doctor — run connectivity diagnostics on all configured MCP servers.
+pub struct McpDoctorCommand;
+
+impl SlashCommand for McpDoctorCommand {
+    fn name(&self) -> &str {
+        "mcp-doctor"
+    }
+    fn description(&self) -> &str {
+        "Diagnose MCP server connectivity"
+    }
+
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let config = oxicode_mcp::McpConfig::load();
+        let servers: Vec<_> = config.enabled_servers().collect();
+
+        if servers.is_empty() {
+            return CommandOutput::Message(
+                "No MCP servers configured.\nAdd servers to ~/.oxicode/mcp.toml".into(),
+            );
+        }
+
+        let mut output = String::from("MCP server diagnostics:\n\n");
+        for (name, cfg) in &servers {
+            let transport = match &cfg.transport {
+                oxicode_mcp::config::McpTransportType::Stdio => "stdio",
+                oxicode_mcp::config::McpTransportType::Sse => "sse",
+                oxicode_mcp::config::McpTransportType::WebSocket => "websocket",
+            };
+            let _ = writeln!(output, "  {name:<20} [{transport}]");
+
+            // Check basic config validity.
+            match &cfg.transport {
+                oxicode_mcp::config::McpTransportType::Stdio => {
+                    if cfg.command.is_none() {
+                        let _ = writeln!(output, "    ⚠ No command configured");
+                    }
+                }
+                oxicode_mcp::config::McpTransportType::Sse
+                | oxicode_mcp::config::McpTransportType::WebSocket => {
+                    if cfg.url.is_none() {
+                        let _ = writeln!(output, "    ⚠ No URL configured");
+                    }
+                }
+            }
+
+            if !cfg.allowed_tools.is_empty() {
+                let _ = writeln!(
+                    output,
+                    "    Allowed tools: {}",
+                    cfg.allowed_tools.join(", ")
+                );
+            }
+            if !cfg.blocked_tools.is_empty() {
+                let _ = writeln!(
+                    output,
+                    "    Blocked tools: {}",
+                    cfg.blocked_tools.join(", ")
+                );
+            }
+        }
+
+        let _ = writeln!(
+            output,
+            "\n{} server(s) configured. Full connectivity test runs at startup.",
+            servers.len()
+        );
+
+        CommandOutput::Message(output)
+    }
+}

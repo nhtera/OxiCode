@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::env_expansion;
+
 /// Transport type for an MCP server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -34,7 +36,7 @@ pub struct McpServerConfig {
     #[serde(default)]
     pub args: Vec<String>,
 
-    /// For SSE: the server URL.
+    /// For SSE/WebSocket: the server URL.
     #[serde(default)]
     pub url: Option<String>,
 
@@ -45,6 +47,56 @@ pub struct McpServerConfig {
     /// Whether this server is enabled.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+
+    /// OAuth configuration for servers requiring authentication.
+    #[serde(default)]
+    pub auth: Option<McpAuthConfig>,
+
+    /// Tool allowlist — only these tools are exposed (empty = all allowed).
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+
+    /// Tool blocklist — these tools are hidden (allowlist takes precedence if both set).
+    #[serde(default)]
+    pub blocked_tools: Vec<String>,
+}
+
+/// OAuth/auth configuration for an MCP server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpAuthConfig {
+    /// OAuth authorization URL.
+    pub auth_url: String,
+    /// OAuth token URL.
+    pub token_url: String,
+    /// Client ID.
+    pub client_id: String,
+    /// OAuth scopes (space-separated).
+    #[serde(default)]
+    pub scopes: String,
+}
+
+impl McpServerConfig {
+    /// Apply environment variable expansion to all string fields.
+    pub fn expand_env(&mut self) {
+        if let Some(ref mut cmd) = self.command {
+            *cmd = env_expansion::expand_env(cmd);
+        }
+        self.args = self.args.iter().map(|a| env_expansion::expand_env(a)).collect();
+        if let Some(ref mut url) = self.url {
+            *url = env_expansion::expand_env(url);
+        }
+        self.env = env_expansion::expand_env_map(&self.env);
+    }
+
+    /// Check if a tool name is permitted by this server's allow/block lists.
+    pub fn is_tool_allowed(&self, tool_name: &str) -> bool {
+        // If allowlist is non-empty, tool must be in it.
+        if !self.allowed_tools.is_empty() {
+            return self.allowed_tools.iter().any(|t| t == tool_name);
+        }
+        // Otherwise, check blocklist.
+        !self.blocked_tools.iter().any(|t| t == tool_name)
+    }
 }
 
 fn default_enabled() -> bool {
@@ -82,6 +134,11 @@ impl McpConfig {
             } else {
                 tracing::warn!("Failed to parse OXICODE_MCP_SERVERS env var");
             }
+        }
+
+        // Apply environment variable expansion to all server configs.
+        for cfg in config.servers.values_mut() {
+            cfg.expand_env();
         }
 
         config
@@ -176,6 +233,9 @@ url = "http://localhost:3000/mcp"
                 url: None,
                 env: HashMap::new(),
                 enabled: true,
+                auth: None,
+                allowed_tools: vec![],
+                blocked_tools: vec![],
             },
         );
         config.servers.insert(
@@ -187,10 +247,65 @@ url = "http://localhost:3000/mcp"
                 url: None,
                 env: HashMap::new(),
                 enabled: false,
+                auth: None,
+                allowed_tools: vec![],
+                blocked_tools: vec![],
             },
         );
         let enabled: Vec<_> = config.enabled_servers().collect();
         assert_eq!(enabled.len(), 1);
         assert_eq!(enabled[0].0, "enabled");
+    }
+
+    #[test]
+    fn test_channel_permissions_allowlist() {
+        let cfg = McpServerConfig {
+            transport: McpTransportType::Stdio,
+            command: Some("echo".to_string()),
+            args: vec![],
+            url: None,
+            env: HashMap::new(),
+            enabled: true,
+            auth: None,
+            allowed_tools: vec!["read_file".to_string(), "write_file".to_string()],
+            blocked_tools: vec![],
+        };
+        assert!(cfg.is_tool_allowed("read_file"));
+        assert!(!cfg.is_tool_allowed("delete_file"));
+    }
+
+    #[test]
+    fn test_channel_permissions_blocklist() {
+        let cfg = McpServerConfig {
+            transport: McpTransportType::Stdio,
+            command: Some("echo".to_string()),
+            args: vec![],
+            url: None,
+            env: HashMap::new(),
+            enabled: true,
+            auth: None,
+            allowed_tools: vec![],
+            blocked_tools: vec!["dangerous_tool".to_string()],
+        };
+        assert!(cfg.is_tool_allowed("read_file"));
+        assert!(!cfg.is_tool_allowed("dangerous_tool"));
+    }
+
+    #[test]
+    fn test_allowlist_takes_precedence() {
+        let cfg = McpServerConfig {
+            transport: McpTransportType::Stdio,
+            command: Some("echo".to_string()),
+            args: vec![],
+            url: None,
+            env: HashMap::new(),
+            enabled: true,
+            auth: None,
+            allowed_tools: vec!["read_file".to_string()],
+            blocked_tools: vec!["read_file".to_string()], // conflicting — allowlist wins
+        };
+        // Allowlist is non-empty, so it takes precedence.
+        assert!(cfg.is_tool_allowed("read_file"));
+        assert!(!cfg.is_tool_allowed("write_file"));
     }
 }

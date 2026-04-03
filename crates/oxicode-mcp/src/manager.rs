@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use oxicode_common::{OxiError, OxiResult};
 
-use crate::config::{McpConfig, McpTransportType};
+use crate::config::{McpConfig, McpServerConfig, McpTransportType};
 use crate::protocol::{McpToolDef, McpToolResult, ServerCapabilities};
 use crate::sse_transport::SseTransport;
 use crate::stdio_transport::StdioTransport;
@@ -39,6 +39,8 @@ struct RunningServer {
     #[allow(dead_code)]
     capabilities: ServerCapabilities,
     tools: Vec<McpToolDef>,
+    /// Original config for channel permission filtering.
+    config: McpServerConfig,
 }
 
 /// Manages multiple MCP server connections.
@@ -102,7 +104,7 @@ impl McpServerManager {
             };
 
             // Initialize the server.
-            match self.initialize_server(name, transport).await {
+            match self.initialize_server(name, transport, server_config.clone()).await {
                 Ok(()) => started.push(name.to_string()),
                 Err(e) => tracing::error!("Failed to initialize MCP server '{name}': {e}"),
             }
@@ -112,7 +114,12 @@ impl McpServerManager {
     }
 
     /// Initialize a server: send initialize, list tools.
-    async fn initialize_server(&mut self, name: &str, transport: ActiveTransport) -> OxiResult<()> {
+    async fn initialize_server(
+        &mut self,
+        name: &str,
+        transport: ActiveTransport,
+        server_config: McpServerConfig,
+    ) -> OxiResult<()> {
         let init_params = serde_json::json!({
             "protocolVersion": "2024-11-05",
             "capabilities": {},
@@ -157,6 +164,7 @@ impl McpServerManager {
                 transport,
                 capabilities,
                 tools,
+                config: server_config,
             },
         );
 
@@ -164,10 +172,15 @@ impl McpServerManager {
     }
 
     /// Get all discovered tools across all servers, prefixed with server name.
+    /// Tools are filtered by per-server channel permissions (allow/block lists).
     pub fn all_tools(&self) -> Vec<(String, &McpToolDef)> {
         let mut tools = Vec::new();
         for (server_name, server) in &self.servers {
             for tool in &server.tools {
+                // Apply channel permission filtering.
+                if !server.config.is_tool_allowed(&tool.name) {
+                    continue;
+                }
                 // Prefix tool name: "server_name__tool_name"
                 let prefixed = format!("{server_name}__{}", tool.name);
                 tools.push((prefixed, tool));

@@ -1,12 +1,20 @@
 pub mod config;
+pub mod doctor;
+pub mod elicitation;
+pub mod env_expansion;
 pub mod manager;
+pub mod oauth;
 pub mod protocol;
 pub mod sse_transport;
 pub mod stdio_transport;
 pub mod tool_adapter;
 pub mod websocket_transport;
 
-pub use config::{McpConfig, McpServerConfig};
+pub use config::{McpAuthConfig, McpConfig, McpServerConfig};
+pub use doctor::{diagnose_all, diagnose_server, DiagResult, DiagStatus};
+pub use elicitation::{ElicitationHandler, ElicitationRequest, ElicitationResponse};
+pub use env_expansion::expand_env;
 pub use manager::McpServerManager;
+pub use oauth::McpOAuth;
 pub use protocol::{McpContent, McpPrompt, McpResource, McpToolDef, McpToolResult};
 pub use tool_adapter::{mcp_tool_to_schema, mcp_tools_to_schemas};
