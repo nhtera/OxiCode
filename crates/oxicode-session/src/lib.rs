@@ -1,3 +1,5 @@
+pub mod memory;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

@@ -108,7 +108,7 @@ impl SlashCommand for DiffCommand {
     }
 }
 
-/// /memory — show or manage memory files.
+/// /memory — manage persistent memories (add, search, list, delete).
 pub struct MemoryCommand;
 
 impl SlashCommand for MemoryCommand {
@@ -116,18 +116,79 @@ impl SlashCommand for MemoryCommand {
         "memory"
     }
     fn description(&self) -> &str {
-        "Show conversation memory usage"
+        "Manage persistent memories: add, search, list, delete"
     }
 
-    fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
-        let state = ctx.state_store.current();
-        let total_chars: usize = state.messages.iter().map(|m| m.text().len()).sum();
-        let approx_tokens = total_chars / 4; // rough estimate
+    fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
+        let parts: Vec<&str> = args.trim().splitn(2, ' ').collect();
+        let subcommand = parts.first().copied().unwrap_or("");
+        let rest = parts.get(1).copied().unwrap_or("");
 
-        CommandOutput::Message(format!(
-            "Messages: {}\nApprox tokens in context: ~{approx_tokens}",
-            state.messages.len(),
-        ))
+        match subcommand {
+            "add" if !rest.is_empty() => {
+                let entry =
+                    oxicode_session::memory::MemoryEntry::manual(rest, vec!["manual".to_string()]);
+                match oxicode_session::memory::save_memory(&entry) {
+                    Ok(_) => CommandOutput::Message(format!("Memory saved: {rest}")),
+                    Err(e) => CommandOutput::Error(format!("Failed to save memory: {e}")),
+                }
+            }
+            "search" if !rest.is_empty() => {
+                match oxicode_session::memory::search_memories(rest) {
+                    Ok(results) => {
+                        if results.is_empty() {
+                            return CommandOutput::Message(format!(
+                                "No memories matching \"{rest}\"."
+                            ));
+                        }
+                        let mut output = format!("Found {} memories:\n", results.len());
+                        for m in results.iter().take(10) {
+                            let preview: String = m.content.chars().take(80).collect();
+                            let tags = m.tags.join(", ");
+                            let _ = writeln!(output, "  [{tags}] {preview}");
+                        }
+                        CommandOutput::Message(output)
+                    }
+                    Err(e) => CommandOutput::Error(format!("Search failed: {e}")),
+                }
+            }
+            "list" | "ls" => match oxicode_session::memory::load_all_memories() {
+                Ok(memories) => {
+                    if memories.is_empty() {
+                        return CommandOutput::Message("No saved memories.".to_string());
+                    }
+                    let mut output = format!("{} memories:\n", memories.len());
+                    for m in memories.iter().take(20) {
+                        let preview: String = m.content.chars().take(60).collect();
+                        let id_short: String = m.id.chars().take(8).collect();
+                        let _ = writeln!(output, "  {id_short} [{source}] {preview}", source = m.source);
+                    }
+                    CommandOutput::Message(output)
+                }
+                Err(e) => CommandOutput::Error(format!("Failed to list: {e}")),
+            },
+            "delete" | "rm" if !rest.is_empty() => {
+                match oxicode_session::memory::delete_memory(rest) {
+                    Ok(()) => CommandOutput::Message(format!("Deleted memory: {rest}")),
+                    Err(e) => CommandOutput::Error(format!("Delete failed: {e}")),
+                }
+            }
+            "" => {
+                // Show context usage + memory count.
+                let state = ctx.state_store.current();
+                let total_chars: usize = state.messages.iter().map(|m| m.text().len()).sum();
+                let approx_tokens = total_chars / 4;
+                let mem_count = oxicode_session::memory::memory_count();
+
+                CommandOutput::Message(format!(
+                    "Context: {} messages, ~{approx_tokens} tokens\nSaved memories: {mem_count}\n\nUsage: /memory [add|search|list|delete] [args]",
+                    state.messages.len(),
+                ))
+            }
+            _ => CommandOutput::Error(
+                "Usage: /memory [add <text>|search <query>|list|delete <id>]".to_string(),
+            ),
+        }
     }
 }
 

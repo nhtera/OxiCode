@@ -9,6 +9,7 @@ use oxicode_common::{OxiError, OxiResult};
 use reqwest_eventsource::{Event, EventSource};
 
 use crate::provider::{EventStream, LlmProvider, MessageRequest};
+use crate::proxy::build_proxy_client;
 use crate::retry::RetryPolicy;
 use crate::stream_event::{RawSseEvent, StreamEvent};
 
@@ -24,7 +25,7 @@ pub struct VertexProvider {
 impl VertexProvider {
     pub fn new(project_id: String, region: String, access_token: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: build_proxy_client(),
             project_id,
             region,
             access_token,

@@ -7,6 +7,7 @@ use futures::StreamExt;
 use oxicode_common::{OxiError, OxiResult, Usage};
 
 use crate::provider::{EventStream, LlmProvider, MessageRequest};
+use crate::proxy::build_proxy_client;
 use crate::retry::RetryPolicy;
 use crate::schema_adapter::{
     claude_tools_to_openai_functions, openai_finish_reason_to_stop_reason,
@@ -31,7 +32,7 @@ impl OpenAiCompatibleProvider {
         provider_name: impl Into<String>,
     ) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: build_proxy_client(),
             api_key,
             base_url: base_url.into().trim_end_matches('/').to_string(),
             provider_name: provider_name.into(),

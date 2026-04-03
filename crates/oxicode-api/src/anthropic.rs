@@ -4,6 +4,7 @@ use oxicode_common::{ContentBlock, OxiError, OxiResult, Role};
 use reqwest_eventsource::{Event, EventSource};
 
 use crate::provider::{EventStream, LlmProvider, MessageRequest};
+use crate::proxy::build_proxy_client;
 use crate::retry::RetryPolicy;
 use crate::stream_event::{RawSseEvent, StreamEvent};
 
@@ -18,7 +19,7 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: build_proxy_client(),
             api_key: api_key.into(),
             base_url: ANTHROPIC_API_URL.to_string(),
             retry_policy: RetryPolicy::default(),

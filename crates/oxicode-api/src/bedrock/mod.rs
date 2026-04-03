@@ -7,6 +7,7 @@ use futures::StreamExt;
 use oxicode_common::{OxiError, OxiResult};
 
 use crate::provider::{EventStream, LlmProvider, MessageRequest};
+use crate::proxy::build_proxy_client;
 use crate::retry::RetryPolicy;
 use crate::stream_event::{RawSseEvent, StreamEvent};
 
@@ -25,7 +26,7 @@ pub struct BedrockProvider {
 impl BedrockProvider {
     pub fn new(access_key: String, secret_key: String, region: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: build_proxy_client(),
             access_key,
             secret_key,
             session_token: std::env::var("AWS_SESSION_TOKEN").ok(),

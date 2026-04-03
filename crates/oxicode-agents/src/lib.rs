@@ -4,6 +4,7 @@ pub mod communication;
 pub mod coordinator;
 pub mod fork;
 pub mod spawner;
+pub mod summary;
 pub mod team;
 
 // Key type re-exports for convenience.
@@ -15,4 +16,5 @@ pub use coordinator::{
 };
 pub use fork::{run_fork_agent, ForkConfig, ForkResult};
 pub use spawner::{spawn_agent, spawn_agent_handle, AgentConfig, AgentHandle, AgentResult};
+pub use summary::AgentSummary;
 pub use team::{Team, TeamManager};

@@ -77,6 +77,14 @@ struct Cli {
     #[arg(long)]
     server: bool,
 
+    /// Run as a headless bridge server for cloud deployment.
+    #[arg(long, hide = true)]
+    bridge: bool,
+
+    /// Port for bridge mode (default: 8080).
+    #[arg(long, default_value = "8080", hide = true)]
+    port: u16,
+
     /// Skip first-run onboarding wizard.
     #[arg(long)]
     no_onboard: bool,
@@ -232,6 +240,19 @@ async fn main() -> Result<()> {
         let result = server::run_server(engine, settings.model).await;
         mcp_ref.shutdown_all().await;
         return result;
+    }
+
+    // Bridge mode: headless server for cloud deployment (placeholder).
+    if cli.bridge {
+        eprintln!(
+            "Bridge mode placeholder (port {}). Future: multi-session headless server with JWT auth.",
+            cli.port
+        );
+        eprintln!("Press Ctrl+C to stop.");
+        // Keep alive until interrupted.
+        tokio::signal::ctrl_c().await.ok();
+        mcp_ref.shutdown_all().await;
+        return Ok(());
     }
 
     if matches!(cli.output, OutputFormat::Json) {

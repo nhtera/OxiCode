@@ -5,6 +5,7 @@
 pub mod agent_commands;
 pub mod debug_commands;
 pub mod enterprise_commands;
+pub mod extras_commands;
 pub mod general;
 pub mod git_commands;
 pub mod git_helpers;
@@ -280,6 +281,12 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(enterprise_commands::SettingsCommand));
     reg.register(Box::new(enterprise_commands::AuthCommand));
     reg.register(Box::new(enterprise_commands::ManagedCommand));
+
+    // Phase 10: Extra commands (voice, desktop, mobile, bridge)
+    reg.register(Box::new(extras_commands::VoiceCommand));
+    reg.register(Box::new(extras_commands::DesktopCommand));
+    reg.register(Box::new(extras_commands::MobileCommand));
+    reg.register(Box::new(extras_commands::BridgeCommand));
 
     reg
 }

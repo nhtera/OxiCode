@@ -12,8 +12,9 @@ default = []
 remote = ["oxicode-tasks/remote", "oxicode-tools/remote"]
 dream = ["oxicode-tasks/dream", "oxicode-tools/dream"]
 teammate = ["oxicode-tasks/teammate", "oxicode-tools/teammate"]
+voice = []
 enterprise = []
-all = ["remote", "dream", "teammate", "enterprise"]
+all = ["remote", "dream", "teammate", "voice", "enterprise"]
 
 [[bin]]
 name = "oxicode"
