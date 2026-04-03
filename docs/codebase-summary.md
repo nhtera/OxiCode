@@ -1,6 +1,6 @@
 # OxiCode — Codebase Summary
 
-**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Scope:** Phase 3 Gap Closure + Phase 4 Complete | **Total:** 16 crates, 39 oxicode-tools files, ~105K tokens
+**Version:** 0.2.0 | **Last Updated:** 2026-04-03 | **Scope:** Phase 5 Complete (Command Implementations) | **Total:** 16 crates, 39 oxicode-tools files, ~105K tokens
 
 ---
 
@@ -518,16 +518,26 @@ pub fn build_skills_prompt(&self, ctx: &ActivationContext) -> Option<String>
 - `CommandRegistry` — HashMap of slash commands
 - `SlashCommand` trait (execute, completions)
 - `CommandOutput` enum (Message, Silent, Quit, Error)
-- Built-in commands:
-  - Help, version, clear, status, quit, config
-  - Model selection, permission mode, hooks, MCP
-  - Session save/load, export, undo, redo
-  - Compact, doctor (Phase 3)
-  - **Phase 4:** /agent, /skills, /tasks (stubs)
+- **Built-in commands: 75 total (was 42 real + 27 stubs)**
+  - Core: help, version, clear, status, quit, config, model, permissions
+  - Session: save, load, export, undo, redo, rename, resume
+  - Git: commit, pr, branch, log, stash, push, pull (7 Phase 5)
+  - Debug: compact, context, usage, tokens, doctor
+  - MCP: mcp-servers, mcp-tools, mcp-connect, mcp-disconnect
+  - Team/Agents: team, agents, task, plugin, plan
+  - View: theme, shortcuts, about, tools, history, vim, review (+ many workflow stubs)
+  - **Phase 5:** All 27 stubs replaced + 6 new commands (vim, rename, usage, context, resume, review)
+  - **File management:** view_commands.rs split into 3 modules (each <200 lines)
 
 **Files:**
 - commands/mod.rs (registry)
-- commands/ subdirectory with individual command files
+- commands/git_commands.rs + git_helpers.rs (Phase 5)
+- commands/session_commands.rs (Phase 5: undo, rename)
+- commands/provider.rs (permissions)
+- commands/mcp_commands.rs, team_commands.rs, task_commands.rs, plugin_commands.rs, plan_commands.rs
+- commands/debug_commands.rs (Phase 5: usage, context enhancements)
+- commands/general.rs (vim)
+- commands/view_commands.rs, workflow_commands.rs, session_view_commands.rs (Phase 5 split)
 - repl.rs (REPL mode with readline)
 
 **Used by:** TUI (command parsing), CLI (REPL)
@@ -771,14 +781,13 @@ cargo build --release
 
 ---
 
-## Next Steps (Phase 5)
+## Next Steps (Phase 5+)
 
-1. **Fix H1 & H2** — High-priority bugs from review
-2. **User Commands** — `/agent list`, `/agent send`, `/skills list`, `/task view`
-3. **Team UI** — Agent panel, task panel, notification panel in TUI
-4. **Skill Marketplace** — Register, version, publish skills
-5. **Advanced Compaction** — Priority-based message retention, context pruning
-6. **Observability** — Metrics, debug mode, trace export
+1. ✅ **Phase 5 COMPLETE** — All 27 stubs replaced (75 total commands, all real)
+2. **Phase 6:** Advanced features (server mode, Web UI, plugin marketplace)
+3. **Bug fixes:** Address H1, H2 priority issues from Phase 4 review
+4. **Performance:** Token counting optimization, context window tuning
+5. **Observability:** Metrics, trace export, debug mode enhancements
 
 ---
 

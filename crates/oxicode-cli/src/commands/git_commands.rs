@@ -1,42 +1,82 @@
 //! Git slash commands: /commit, /pr, /branch, /log, /stash, /push, /pull.
+//!
+//! All commands shell out to `git` (or `gh`) CLI via helpers in `git_helpers`.
 
+use super::git_helpers::{run_command, run_git};
 use super::{CommandContext, CommandOutput, SlashCommand};
 
+/// /commit [message] — stage all changes and create a git commit.
 pub struct CommitCommand;
 impl SlashCommand for CommitCommand {
     fn name(&self) -> &str {
         "commit"
     }
     fn description(&self) -> &str {
-        "Create a git commit"
+        "Create a git commit (stages all changes)"
     }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        let msg = if args.is_empty() {
-            "auto-generated"
+        // Stage all tracked + untracked files.
+        if let Err(e) = run_git(&["add", "-A"]) {
+            return CommandOutput::Error(format!("git add failed: {e}"));
+        }
+
+        // Check if there's anything to commit.
+        match run_git(&["diff", "--cached", "--stat"]) {
+            Ok(stat) if stat.is_empty() => {
+                return CommandOutput::Message("Nothing to commit (working tree clean).".into());
+            }
+            Err(e) => return CommandOutput::Error(format!("git diff failed: {e}")),
+            _ => {}
+        }
+
+        let result = if args.trim().is_empty() {
+            // No message — use a default based on diff stat.
+            match run_git(&["diff", "--cached", "--shortstat"]) {
+                Ok(shortstat) => run_git(&["commit", "-m", &format!("wip: {shortstat}")]),
+                Err(_) => run_git(&["commit", "-m", "wip"]),
+            }
         } else {
-            args
+            run_git(&["commit", "-m", args.trim()])
         };
-        CommandOutput::Message(format!("Committing with message: {msg}"))
+
+        match result {
+            Ok(out) => CommandOutput::Message(format!("Committed:\n{out}")),
+            Err(e) => CommandOutput::Error(format!("Commit failed: {e}")),
+        }
     }
 }
 
+/// /pr [title] — create a GitHub PR using `gh` CLI.
 pub struct PrCommand;
 impl SlashCommand for PrCommand {
     fn name(&self) -> &str {
         "pr"
     }
     fn description(&self) -> &str {
-        "Create a GitHub pull request"
+        "Create a GitHub pull request (requires gh CLI)"
     }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        if args.is_empty() {
-            CommandOutput::Message("Creating PR from current branch...".into())
+        let result = if args.trim().is_empty() {
+            run_command("gh", &["pr", "create", "--fill"])
         } else {
-            CommandOutput::Message(format!("Creating PR: {args}"))
+            run_command("gh", &["pr", "create", "--title", args.trim(), "--fill-verbose"])
+        };
+        match result {
+            Ok(url) => CommandOutput::Message(format!("PR created: {url}")),
+            Err(e) => {
+                if e.contains("not found") {
+                    CommandOutput::Error(
+                        "gh CLI not found. Install: https://cli.github.com".into(),
+                    )
+                } else {
+                    CommandOutput::Error(format!("PR creation failed: {e}"))
+                }
+            }
         }
     }
 }
 
+/// /branch [name] — show current branch or switch/create a branch.
 pub struct BranchCommand;
 impl SlashCommand for BranchCommand {
     fn name(&self) -> &str {
@@ -46,14 +86,27 @@ impl SlashCommand for BranchCommand {
         "Show or switch git branch"
     }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        if args.is_empty() {
-            CommandOutput::Message("Current branch: (git branch --show-current)".into())
+        if args.trim().is_empty() {
+            let current = run_git(&["branch", "--show-current"]).unwrap_or_default();
+            match run_git(&["branch", "--list"]) {
+                Ok(list) => CommandOutput::Message(format!("Current: {current}\n{list}")),
+                Err(e) => CommandOutput::Error(format!("Not a git repo: {e}")),
+            }
         } else {
-            CommandOutput::Message(format!("Switching to branch: {args}"))
+            let name = args.trim();
+            // Try switching first, then create if it doesn't exist.
+            match run_git(&["checkout", name]) {
+                Ok(out) => CommandOutput::Message(out),
+                Err(_) => match run_git(&["checkout", "-b", name]) {
+                    Ok(out) => CommandOutput::Message(out),
+                    Err(e) => CommandOutput::Error(format!("Branch switch failed: {e}")),
+                },
+            }
         }
     }
 }
 
+/// /log [count] — show recent git log entries.
 pub struct LogCommand;
 impl SlashCommand for LogCommand {
     fn name(&self) -> &str {
@@ -62,28 +115,59 @@ impl SlashCommand for LogCommand {
     fn description(&self) -> &str {
         "Show recent git log"
     }
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Recent commits: (git log --oneline -10)".into())
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let count = args.trim().parse::<u32>().unwrap_or(10).min(100);
+        let count_str = format!("-{count}");
+        match run_git(&["log", "--oneline", "--decorate", &count_str]) {
+            Ok(log) if log.is_empty() => {
+                CommandOutput::Message("No commits yet.".into())
+            }
+            Ok(log) => CommandOutput::Message(log),
+            Err(e) => CommandOutput::Error(format!("git log failed: {e}")),
+        }
     }
 }
 
+/// /stash [push|pop|list|drop] — git stash operations.
 pub struct StashCommand;
 impl SlashCommand for StashCommand {
     fn name(&self) -> &str {
         "stash"
     }
     fn description(&self) -> &str {
-        "Git stash operations"
+        "Git stash operations (push/pop/list/drop)"
     }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        match args {
-            "pop" => CommandOutput::Message("Popping stash...".into()),
-            "list" => CommandOutput::Message("Stashes: (git stash list)".into()),
-            _ => CommandOutput::Message("Stashing changes...".into()),
+        let parts: Vec<&str> = args.split_whitespace().collect();
+        let sub = parts.first().copied().unwrap_or("push");
+        let result = match sub {
+            "pop" => run_git(&["stash", "pop"]),
+            "list" => run_git(&["stash", "list"]),
+            "drop" => {
+                let index = parts.get(1).unwrap_or(&"0");
+                run_git(&["stash", "drop", index])
+            }
+            // Default action: stash push.
+            _ => run_git(&["stash", "push"]),
+        };
+        match result {
+            Ok(out) if out.is_empty() => {
+                CommandOutput::Message("Stash operation completed (no output).".into())
+            }
+            Ok(out) => CommandOutput::Message(out),
+            Err(e) => CommandOutput::Error(format!("Stash failed: {e}")),
         }
+    }
+    fn completions(&self, partial: &str, _ctx: &CommandContext) -> Vec<String> {
+        ["push", "pop", "list", "drop"]
+            .iter()
+            .filter(|s| s.starts_with(partial))
+            .map(|s| (*s).to_string())
+            .collect()
     }
 }
 
+/// /push [remote] [branch] — push to a remote.
 pub struct PushCommand;
 impl SlashCommand for PushCommand {
     fn name(&self) -> &str {
@@ -92,11 +176,28 @@ impl SlashCommand for PushCommand {
     fn description(&self) -> &str {
         "Push to remote"
     }
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Pushing to remote...".into())
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let parts: Vec<&str> = args.split_whitespace().collect();
+        let result = match parts.len() {
+            0 => run_git(&["push"]),
+            1 => run_git(&["push", parts[0]]),
+            _ => run_git(&["push", parts[0], parts[1]]),
+        };
+        match result {
+            Ok(out) => {
+                let msg = if out.is_empty() {
+                    "Pushed successfully.".to_string()
+                } else {
+                    out
+                };
+                CommandOutput::Message(msg)
+            }
+            Err(e) => CommandOutput::Error(format!("Push failed: {e}")),
+        }
     }
 }
 
+/// /pull [remote] [branch] — pull from a remote.
 pub struct PullCommand;
 impl SlashCommand for PullCommand {
     fn name(&self) -> &str {
@@ -105,7 +206,23 @@ impl SlashCommand for PullCommand {
     fn description(&self) -> &str {
         "Pull from remote"
     }
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Pulling from remote...".into())
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let parts: Vec<&str> = args.split_whitespace().collect();
+        let result = match parts.len() {
+            0 => run_git(&["pull"]),
+            1 => run_git(&["pull", parts[0]]),
+            _ => run_git(&["pull", parts[0], parts[1]]),
+        };
+        match result {
+            Ok(out) => {
+                let msg = if out.is_empty() {
+                    "Already up to date.".to_string()
+                } else {
+                    out
+                };
+                CommandOutput::Message(msg)
+            }
+            Err(e) => CommandOutput::Error(format!("Pull failed: {e}")),
+        }
     }
 }

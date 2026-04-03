@@ -142,9 +142,38 @@ impl SlashCommand for UndoCommand {
         "Remove last assistant response and your prompt"
     }
 
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        // TODO: Implement state mutation to pop last message pair.
-        CommandOutput::Message("Undo not yet implemented.".to_string())
+    fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
+        let state = ctx.state_store.current();
+        let msg_count = state.messages.len();
+
+        if msg_count < 2 {
+            return CommandOutput::Message("Nothing to undo.".to_string());
+        }
+
+        let last = &state.messages[msg_count - 1];
+        let second_last = &state.messages[msg_count - 2];
+
+        // Check for a user+assistant pair.
+        if let (oxicode_common::Role::User, oxicode_common::Role::Assistant) =
+            (&second_last.role, &last.role)
+        {
+            let u_preview = super::git_helpers::truncate(&second_last.text(), 60);
+            let a_preview = super::git_helpers::truncate(&last.text(), 60);
+            ctx.state_store.update(|s| {
+                s.messages.pop(); // assistant
+                s.messages.pop(); // user
+            });
+            CommandOutput::Message(format!(
+                "Undone last turn:\n  You: {u_preview}\n  Assistant: {a_preview}"
+            ))
+        } else {
+            // Not a clean pair — just pop the last message.
+            let preview = super::git_helpers::truncate(&last.text(), 60);
+            ctx.state_store.update(|s| {
+                s.messages.pop();
+            });
+            CommandOutput::Message(format!("Removed last message: {preview}"))
+        }
     }
 }
 

@@ -6,15 +6,19 @@ pub mod agent_commands;
 pub mod debug_commands;
 pub mod general;
 pub mod git_commands;
+pub mod git_helpers;
 pub mod hook_commands;
 pub mod mcp_commands;
+pub mod new_commands;
 pub mod plan_commands;
 pub mod plugin_commands;
 pub mod provider;
 pub mod session_commands;
+pub mod session_view_commands;
 pub mod task_commands;
 pub mod team_commands;
 pub mod view_commands;
+pub mod workflow_commands;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -222,36 +226,45 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(view_commands::FastCommand));
     reg.register(Box::new(view_commands::VerboseCommand));
     reg.register(Box::new(view_commands::HistoryCommand));
-    reg.register(Box::new(view_commands::ReviewCommand));
-    reg.register(Box::new(view_commands::LoginCommand));
-    reg.register(Box::new(view_commands::LogoutCommand));
-    reg.register(Box::new(view_commands::ResumeCommand));
-    reg.register(Box::new(view_commands::SkillCommand));
-    reg.register(Box::new(view_commands::CronCommand));
-    reg.register(Box::new(view_commands::ScheduleCommand));
-    reg.register(Box::new(view_commands::WorktreeCommand));
-    reg.register(Box::new(view_commands::ProviderCommand));
-    reg.register(Box::new(view_commands::ContextWindowCommand));
-    reg.register(Box::new(view_commands::EditConfigCommand));
-    reg.register(Box::new(view_commands::ResetCommand));
-    reg.register(Box::new(view_commands::RetryCommand));
-    reg.register(Box::new(view_commands::ForkCommand));
-    reg.register(Box::new(view_commands::SystemPromptCommand));
-    reg.register(Box::new(view_commands::ApproveCommand));
-    reg.register(Box::new(view_commands::RejectCommand));
-    reg.register(Box::new(view_commands::FileCommand));
-    reg.register(Box::new(view_commands::SearchCommand));
-    reg.register(Box::new(view_commands::RunCommand));
-    reg.register(Box::new(view_commands::TestCommand));
-    reg.register(Box::new(view_commands::LintCommand));
-    reg.register(Box::new(view_commands::FormatCommand));
-    reg.register(Box::new(view_commands::BuildCommand));
-    reg.register(Box::new(view_commands::DeployCommand));
-    reg.register(Box::new(view_commands::ChatCommand));
-    reg.register(Box::new(view_commands::CodeCommand));
-    reg.register(Box::new(view_commands::ShareCommand));
-    reg.register(Box::new(view_commands::FeedbackCommand));
-    reg.register(Box::new(view_commands::DocsCommand));
+
+    // Phase 5: Workflow commands (extracted from view_commands)
+    reg.register(Box::new(workflow_commands::RunCommand));
+    reg.register(Box::new(workflow_commands::TestCommand));
+    reg.register(Box::new(workflow_commands::LintCommand));
+    reg.register(Box::new(workflow_commands::FormatCommand));
+    reg.register(Box::new(workflow_commands::BuildCommand));
+    reg.register(Box::new(workflow_commands::DeployCommand));
+    reg.register(Box::new(workflow_commands::SearchCommand));
+    reg.register(Box::new(workflow_commands::FileCommand));
+    reg.register(Box::new(workflow_commands::ChatCommand));
+    reg.register(Box::new(workflow_commands::CodeCommand));
+    reg.register(Box::new(workflow_commands::ShareCommand));
+
+    // Phase 5: Session view commands (extracted + enhanced)
+    reg.register(Box::new(session_view_commands::LoginCommand));
+    reg.register(Box::new(session_view_commands::LogoutCommand));
+    reg.register(Box::new(session_view_commands::SkillCommand));
+    reg.register(Box::new(session_view_commands::CronCommand));
+    reg.register(Box::new(session_view_commands::ScheduleCommand));
+    reg.register(Box::new(session_view_commands::WorktreeCommand));
+    reg.register(Box::new(session_view_commands::ProviderCommand));
+    reg.register(Box::new(session_view_commands::ContextWindowCommand));
+    reg.register(Box::new(session_view_commands::EditConfigCommand));
+    reg.register(Box::new(session_view_commands::ResetCommand));
+    reg.register(Box::new(session_view_commands::RetryCommand));
+    reg.register(Box::new(session_view_commands::ForkCommand));
+    reg.register(Box::new(session_view_commands::SystemPromptCommand));
+    reg.register(Box::new(session_view_commands::ApproveCommand));
+    reg.register(Box::new(session_view_commands::RejectCommand));
+    reg.register(Box::new(session_view_commands::FeedbackCommand));
+    reg.register(Box::new(session_view_commands::DocsCommand));
+
+    // Phase 5: New commands (enhanced resume/review + vim/rename/usage)
+    reg.register(Box::new(new_commands::ResumeCommand));
+    reg.register(Box::new(new_commands::ReviewCommand));
+    reg.register(Box::new(new_commands::VimCommand));
+    reg.register(Box::new(new_commands::RenameCommand));
+    reg.register(Box::new(new_commands::UsageCommand));
 
     reg
 }

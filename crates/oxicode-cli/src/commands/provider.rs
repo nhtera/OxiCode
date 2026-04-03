@@ -60,10 +60,68 @@ impl SlashCommand for PermissionsCommand {
         "Show permission settings"
     }
 
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message(
-            "Permission system active. Use settings.toml to configure permission_mode.".to_string(),
-        )
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let config_path = dirs::home_dir()
+            .map(|h| h.join(".oxicode").join("settings.toml"))
+            .unwrap_or_default();
+
+        // Read permission_mode from config file if it exists.
+        let mode = if config_path.exists() {
+            std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|content| {
+                    content
+                        .lines()
+                        .find(|l| l.starts_with("permission_mode"))
+                        .and_then(|l| l.split('=').nth(1))
+                        .map(|v| v.trim().trim_matches('"').to_string())
+                })
+                .unwrap_or_else(|| "default".to_string())
+        } else {
+            "default".to_string()
+        };
+
+        if !args.trim().is_empty() {
+            let info = match args.trim() {
+                "bypass" => "bypass: Skips all permission checks except hard security denials.\n\
+                             WARNING: All tools auto-approved, including shell execution.",
+                "default" => "default: Asks approval for file writes and shell execution.\n\
+                              Read-only tools (glob, grep, read) are auto-approved.",
+                "approval_only" => {
+                    "approval_only: Asks for every non-readonly tool invocation.\n\
+                     Most restrictive mode for maximum control."
+                }
+                other => {
+                    return CommandOutput::Error(format!(
+                        "Unknown mode: {other}. Available: default, bypass, approval_only"
+                    ));
+                }
+            };
+            return CommandOutput::Message(info.to_string());
+        }
+
+        let mode_desc = match mode.as_str() {
+            "bypass" => "bypass (all tools auto-approved)",
+            "approval_only" => "approval_only (ask for every tool)",
+            _ => "default (ask for writes & shell)",
+        };
+
+        CommandOutput::Message(format!(
+            "Permission mode: {mode_desc}\n\
+             Config: {}\n\n\
+             Modes: default, bypass, approval_only\n\
+             Set via: permission_mode = \"<mode>\" in settings.toml\n\
+             Info: /permissions <mode>",
+            config_path.display(),
+        ))
+    }
+
+    fn completions(&self, partial: &str, _ctx: &CommandContext) -> Vec<String> {
+        ["default", "bypass", "approval_only"]
+            .iter()
+            .filter(|s| s.starts_with(partial))
+            .map(|s| (*s).to_string())
+            .collect()
     }
 }
 
