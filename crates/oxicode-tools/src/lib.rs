@@ -16,7 +16,7 @@ pub mod ask_user;
 pub mod config_tool;
 pub mod notebook_edit;
 pub mod send_message;
-pub mod stub_tools;
+pub mod agent_tool;
 pub mod tool_search;
 
 // Task tools
@@ -70,7 +70,7 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(send_message::SendMessageTool));
     reg.register(Box::new(config_tool::ConfigTool));
     reg.register(Box::new(tool_search::ToolSearchTool));
-    reg.register(Box::new(stub_tools::AgentTool));
+    reg.register(Box::new(agent_tool::AgentTool));
 
     // Phase 5: Workflow tools
     reg.register(Box::new(plan_mode::EnterPlanModeTool));

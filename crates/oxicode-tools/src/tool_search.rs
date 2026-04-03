@@ -40,7 +40,7 @@ impl Tool for ToolSearchTool {
     async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
         let query = input["query"].as_str().unwrap_or("");
 
-        // This tool needs access to the registry at runtime.
+        // TODO(gap-phase-3): implement real tool search with fuzzy matching.
         // For now, return a placeholder — the query engine will
         // intercept this tool and inject the actual registry data.
         Ok(ToolResult::success(format!(

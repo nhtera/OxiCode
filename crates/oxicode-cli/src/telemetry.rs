@@ -11,7 +11,7 @@ use std::time::Instant;
 /// Whether telemetry collection is currently enabled.
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Default OTLP endpoint (placeholder for future OTLP integration).
+/// TODO(gap-phase-7): replace with OTLP exporter
 const DEFAULT_OTLP_ENDPOINT: &str = "http://localhost:4317";
 
 /// Global singleton metrics collector.

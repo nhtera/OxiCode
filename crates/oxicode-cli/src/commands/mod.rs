@@ -33,6 +33,7 @@ pub enum CommandOutput {
     /// Display text to the user.
     Message(String),
     /// Command executed silently (no output).
+    #[allow(dead_code)] // TODO(gap-phase-6): wire into TUI silent command execution
     Silent,
     /// Command wants to quit the app.
     Quit,
@@ -57,6 +58,7 @@ pub trait SlashCommand: Send + Sync {
     /// Execute the command with optional args string.
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput;
     /// Tab-completion candidates for arguments (optional).
+    #[allow(dead_code)] // TODO(gap-phase-6): wire into TUI tab completion
     fn completions(&self, _partial: &str, _ctx: &CommandContext) -> Vec<String> {
         Vec::new()
     }
@@ -101,6 +103,7 @@ impl CommandRegistry {
     }
 
     /// Get tab-completion candidates for partial input.
+    #[allow(dead_code)] // TODO(gap-phase-6): wire into TUI tab completion
     pub fn completions(&self, partial: &str, ctx: &CommandContext) -> Vec<String> {
         let input = partial.trim();
         if !input.starts_with('/') {
@@ -140,16 +143,19 @@ impl CommandRegistry {
     }
 
     /// Number of registered commands.
+    #[allow(dead_code)] // TODO(gap-phase-6): expose in /status and TUI status bar
     pub fn len(&self) -> usize {
         self.commands.len()
     }
 
+    #[allow(dead_code)] // TODO(gap-phase-6): expose in /status and TUI status bar
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }
 }
 
 /// Create a registry with all built-in commands.
+#[allow(clippy::too_many_lines)] // Command registration listing
 pub fn default_registry() -> CommandRegistry {
     let mut reg = CommandRegistry::new();
 

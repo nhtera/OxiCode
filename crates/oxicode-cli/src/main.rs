@@ -39,6 +39,7 @@ enum OutputFormat {
 /// `OxiCode` — A Rust-powered CLI agent for software engineering.
 #[derive(Parser, Debug)]
 #[command(name = "oxicode", version, about)]
+#[allow(clippy::struct_excessive_bools)] // CLI flags are inherently boolean
 struct Cli {
     /// Model to use (e.g., claude-sonnet-4-20250514).
     #[arg(short, long)]
@@ -91,6 +92,7 @@ struct Cli {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)] // CLI entry point with mode dispatch
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -242,7 +244,7 @@ async fn main() -> Result<()> {
         return result;
     }
 
-    // Bridge mode: headless server for cloud deployment (placeholder).
+    // TODO(gap-phase-7): implement bridge mode server with multi-session + JWT auth.
     if cli.bridge {
         eprintln!(
             "Bridge mode placeholder (port {}). Future: multi-session headless server with JWT auth.",
@@ -396,6 +398,7 @@ fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
 }
 
 /// Run the interactive TUI.
+#[allow(clippy::too_many_lines)] // TUI event loop with many input handlers
 async fn run_tui(
     engine: Arc<QueryEngine>,
     state_store: Arc<StateStore>,
@@ -519,8 +522,7 @@ async fn run_tui(
                                     role: Role::Assistant,
                                     content: vec![ContentBlock::Text {
                                         text: format!(
-                                            "Context compacted: {} messages → 1 summary.",
-                                            msg_count_before
+                                            "Context compacted: {msg_count_before} messages → 1 summary.",
                                         ),
                                     }],
                                     model: None,

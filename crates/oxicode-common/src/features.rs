@@ -26,6 +26,7 @@ pub mod flag {
 /// Unknown flags are preserved in the `extra` map so user-defined flags work too.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[allow(clippy::struct_excessive_bools)] // Feature flags are inherently boolean
 pub struct FeatureFlags {
     pub extended_thinking: bool,
     pub prompt_caching: bool,
