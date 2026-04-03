@@ -570,7 +570,19 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
     );
 
     let state_store = Arc::new(StateStore::new(AppState::default()));
-    let tool_registry = Arc::new(oxicode_tools::default_registry());
+
+    // Enforce agent-type tool whitelist: remove tools not in the allowed list.
+    let mut registry = oxicode_tools::default_registry();
+    if let Some(ref whitelist) = config.allowed_tools {
+        tracing::info!(
+            agent_id = %agent_id,
+            allowed = ?whitelist,
+            "Enforcing tool whitelist for agent type {:?}",
+            config.agent_type
+        );
+        registry.retain(|name| whitelist.iter().any(|w| w == name));
+    }
+    let tool_registry = Arc::new(registry);
     let permission_mode = PermissionMode::parse(&config.permission_mode);
     let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
     let tool_context = ToolContext {

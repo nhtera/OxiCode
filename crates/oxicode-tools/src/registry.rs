@@ -75,6 +75,16 @@ impl ToolRegistry {
     pub fn is_empty(&self) -> bool {
         self.tools.is_empty()
     }
+
+    /// Remove tools whose names are not in the predicate.
+    /// Used to enforce agent-type tool whitelists.
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(&str) -> bool,
+    {
+        let mut predicate = f;
+        self.tools.retain(|name, _| predicate(name.as_str()));
+    }
 }
 
 impl Default for ToolRegistry {
@@ -164,5 +174,39 @@ mod tests {
             .execute("missing", serde_json::json!({}), &ToolContext::default())
             .await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_retain_filters_tools() {
+        let mut reg = ToolRegistry::new();
+        reg.register(Box::new(DummyTool));
+
+        // Create a second dummy tool with a different name.
+        struct OtherTool;
+        #[async_trait]
+        impl Tool for OtherTool {
+            fn name(&self) -> &str { "other" }
+            fn description(&self) -> &str { "Another tool" }
+            fn schema(&self) -> ToolSchema {
+                ToolSchema {
+                    name: "other".into(),
+                    description: "Another tool".into(),
+                    input_schema: serde_json::json!({"type": "object", "properties": {}}),
+                }
+            }
+            fn permission_level(&self) -> PermissionLevel { PermissionLevel::ReadOnly }
+            async fn execute(&self, _: serde_json::Value, _: &ToolContext) -> OxiResult<ToolResult> {
+                Ok(ToolResult::success("ok"))
+            }
+        }
+
+        reg.register(Box::new(OtherTool));
+        assert_eq!(reg.len(), 2);
+
+        // Retain only "dummy".
+        reg.retain(|name| name == "dummy");
+        assert_eq!(reg.len(), 1);
+        assert!(reg.get("dummy").is_some());
+        assert!(reg.get("other").is_none());
     }
 }

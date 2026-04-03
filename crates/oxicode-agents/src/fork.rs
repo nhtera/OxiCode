@@ -89,6 +89,9 @@ pub async fn run_fork_agent(repo_path: &Path, config: &ForkConfig) -> OxiResult<
         permission_mode: "default".to_string(),
         timeout: std::time::Duration::from_secs(config.timeout_secs),
         inherit_env: true,
+        agent_type: None,
+        allowed_tools: None,
+        model_override: false,
     };
 
     let agent_result = spawn_agent(&agent_config).await?;

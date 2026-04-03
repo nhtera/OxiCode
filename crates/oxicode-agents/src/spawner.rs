@@ -9,6 +9,8 @@ use tracing::{debug, info};
 
 use oxicode_common::{OxiError, OxiResult};
 
+use crate::built_in::AgentType;
+
 /// Configuration passed to a spawned subagent process.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -19,6 +21,15 @@ pub struct AgentConfig {
     pub permission_mode: String,
     pub timeout: Duration,
     pub inherit_env: bool,
+    /// Optional specialized agent type — restricts tools and injects a tailored prompt.
+    #[serde(default)]
+    pub agent_type: Option<AgentType>,
+    /// Optional tool whitelist — when set, only these tools are available to the subagent.
+    #[serde(default)]
+    pub allowed_tools: Option<Vec<String>>,
+    /// True when the caller explicitly set the model (prevents agent type from overriding it).
+    #[serde(default)]
+    pub model_override: bool,
 }
 
 impl Default for AgentConfig {
@@ -31,6 +42,33 @@ impl Default for AgentConfig {
             permission_mode: "default".to_string(),
             timeout: Duration::from_secs(300),
             inherit_env: true,
+            agent_type: None,
+            allowed_tools: None,
+            model_override: false,
+        }
+    }
+}
+
+impl AgentConfig {
+    /// Apply agent type defaults: inject system prompt prefix, set model, populate tool whitelist.
+    ///
+    /// Model is only overridden when `model_override` is false (caller didn't explicitly set one).
+    pub fn apply_agent_type(&mut self) {
+        if let Some(at) = self.agent_type {
+            // Prepend the type-specific system prompt to the user's task prompt.
+            let sys = at.system_prompt();
+            self.prompt = format!("{sys}\n\n---\n\n{}", self.prompt);
+
+            // Use the type's default model unless caller explicitly overrode it.
+            if !self.model_override {
+                self.model = at.default_model().to_string();
+            }
+
+            // Set tool whitelist from the agent type (General = no restriction).
+            if self.allowed_tools.is_none() {
+                self.allowed_tools =
+                    at.allowed_tools().map(|t| t.iter().map(|s| (*s).to_string()).collect());
+            }
         }
     }
 }
@@ -211,6 +249,8 @@ mod tests {
         assert_eq!(cfg.permission_mode, "default");
         assert_eq!(cfg.timeout, Duration::from_secs(300));
         assert!(cfg.inherit_env);
+        assert!(cfg.agent_type.is_none());
+        assert!(cfg.allowed_tools.is_none());
     }
 
     #[test]
@@ -223,12 +263,64 @@ mod tests {
             permission_mode: "restricted".to_string(),
             timeout: Duration::from_secs(60),
             inherit_env: false,
+            agent_type: Some(AgentType::Explore),
+            allowed_tools: None,
+            model_override: true,
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: AgentConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.name, "tester");
         assert_eq!(parsed.timeout, Duration::from_secs(60));
         assert!(!parsed.inherit_env);
+        assert_eq!(parsed.agent_type, Some(AgentType::Explore));
+    }
+
+    #[test]
+    fn test_apply_agent_type_sets_tools_and_prompt() {
+        let mut cfg = AgentConfig {
+            prompt: "find all TODO comments".to_string(),
+            agent_type: Some(AgentType::Explore),
+            ..Default::default()
+        };
+        cfg.apply_agent_type();
+
+        // System prompt is prepended.
+        assert!(cfg.prompt.contains("exploration agent"));
+        assert!(cfg.prompt.contains("find all TODO comments"));
+
+        // Model updated to Explore's default (haiku).
+        assert!(cfg.model.contains("haiku"));
+
+        // Tool whitelist populated.
+        let tools = cfg.allowed_tools.unwrap();
+        assert!(tools.contains(&"glob".to_string()));
+        assert!(tools.contains(&"grep".to_string()));
+        assert!(!tools.contains(&"file_write".to_string()));
+    }
+
+    #[test]
+    fn test_apply_agent_type_general_no_restrictions() {
+        let mut cfg = AgentConfig {
+            prompt: "do anything".to_string(),
+            agent_type: Some(AgentType::General),
+            ..Default::default()
+        };
+        cfg.apply_agent_type();
+        assert!(cfg.allowed_tools.is_none());
+    }
+
+    #[test]
+    fn test_apply_agent_type_preserves_custom_model() {
+        let mut cfg = AgentConfig {
+            prompt: "plan something".to_string(),
+            model: "claude-opus-4".to_string(),
+            model_override: true,
+            agent_type: Some(AgentType::Plan),
+            ..Default::default()
+        };
+        cfg.apply_agent_type();
+        // Custom model should be preserved (not overridden by type default).
+        assert_eq!(cfg.model, "claude-opus-4");
     }
 
     #[test]

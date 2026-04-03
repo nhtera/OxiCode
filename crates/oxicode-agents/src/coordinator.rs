@@ -23,6 +23,15 @@ pub fn filter_tools(tool_names: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Filters `tool_names` against an explicit whitelist (used for agent-type restrictions).
+pub fn filter_tools_by_whitelist(tool_names: &[String], whitelist: &[String]) -> Vec<String> {
+    tool_names
+        .iter()
+        .filter(|n| whitelist.iter().any(|w| w == n.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// Lifecycle status of a managed subagent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentStatus {

@@ -28,12 +28,14 @@
 //! ```
 
 pub mod activation;
+pub mod bundled;
 pub mod discovery;
 pub mod executor;
 pub mod parser;
 
 // Key re-exports for external crate consumers.
 pub use activation::{ActivationContext, SkillActivator};
+pub use bundled::bundled_skills;
 pub use discovery::SkillDiscovery;
 pub use executor::{SkillExecutor, SkillInfo};
 pub use parser::{parse_skill, ActivationRule, InjectMode, Skill, SkillMetadata};

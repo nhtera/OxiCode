@@ -136,6 +136,9 @@ mod tests {
             permission_mode: "default".to_string(),
             timeout: Duration::from_secs(5),
             inherit_env: false,
+            agent_type: None,
+            allowed_tools: None,
+            model_override: false,
         }
     }
 
