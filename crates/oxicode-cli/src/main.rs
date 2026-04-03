@@ -1,5 +1,6 @@
 mod commands;
 mod completions;
+mod onboarding;
 mod server;
 mod server_handler;
 mod server_protocol;
@@ -72,6 +73,10 @@ struct Cli {
     /// Run as a long-running JSON-RPC server for IDE integration.
     #[arg(long)]
     server: bool,
+
+    /// Skip first-run onboarding wizard.
+    #[arg(long)]
+    no_onboard: bool,
 }
 
 #[tokio::main]
@@ -93,6 +98,11 @@ async fn main() -> Result<()> {
     if cli.man_page {
         completions::generate_man_page(&mut std::io::stdout())?;
         return Ok(());
+    }
+
+    // First-run onboarding wizard (skip with --no-onboard or non-interactive modes).
+    if !cli.no_onboard && cli.prompt.is_none() && !cli.server && onboarding::should_onboard() {
+        onboarding::run_onboarding();
     }
 
     // Setup tracing
@@ -366,7 +376,7 @@ async fn run_tui(
     engine: Arc<QueryEngine>,
     state_store: Arc<StateStore>,
     session: &mut Session,
-    _settings: &Settings,
+    settings: &Settings,
 ) -> Result<()> {
     let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(32);
     let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(256);
@@ -376,6 +386,16 @@ async fn run_tui(
     }
 
     let mut app = App::new(&state_store, ui_tx, core_rx);
+
+    // Wire editor mode from settings.
+    if settings.editor_mode == "vim" || settings.features.vim_mode {
+        app.set_vim_mode(true);
+    }
+
+    // Load user keybindings if file exists.
+    let keybindings_path = oxicode_config::config_dir(settings.config_dir.as_deref())
+        .join("keybindings.toml");
+    app.load_keybindings(&keybindings_path);
 
     let engine_clone = engine.clone();
     let core_tx_clone = core_tx.clone();

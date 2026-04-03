@@ -73,6 +73,12 @@ fn merge_settings(target: &mut Settings, source: &Settings) {
     if source.permission_mode != defaults.permission_mode {
         target.permission_mode.clone_from(&source.permission_mode);
     }
+    if source.editor_mode != defaults.editor_mode {
+        target.editor_mode.clone_from(&source.editor_mode);
+    }
+    if source.output_style != defaults.output_style {
+        target.output_style.clone_from(&source.output_style);
+    }
     // Always take features from TOML — they are fully deserialized with defaults.
     target.features = source.features.clone();
 }

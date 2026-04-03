@@ -12,9 +12,12 @@ use ratatui::Terminal;
 use tokio::sync::{mpsc, watch};
 
 use crate::events::{CoreEvent, UiEvent};
+use crate::keybindings::{Action, KeybindingRegistry};
+use crate::vim_mode::{self, VimAction, VimState};
 use crate::widgets::{
     ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageView, Notification,
-    NotificationWidget, PermissionDialog, SplitPane, StatusBar, TaskInfo, TaskPanel,
+    NotificationWidget, PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel,
+    ShortcutsState, SplitPane, StatusBar, TaskInfo, TaskPanel,
 };
 
 /// A tool call in progress (between ToolUseStart and ToolResult events).
@@ -54,6 +57,20 @@ pub struct App {
     active_tools: Vec<ActiveToolCall>,
     /// Permission dialog state (blocks input while active).
     pending_permission: Option<PendingPermission>,
+    /// Vim mode state machine.
+    vim: VimState,
+    /// Keybinding registry.
+    keybindings: KeybindingRegistry,
+    /// Search overlay state.
+    search: SearchOverlay,
+    /// Shortcuts panel visibility.
+    shortcuts: ShortcutsState,
+    /// Command history (most recent last).
+    history: Vec<String>,
+    /// Current position in history navigation (-1 = not navigating).
+    history_index: Option<usize>,
+    /// Saved input before history navigation started.
+    history_saved_input: String,
 }
 
 impl App {
@@ -62,6 +79,8 @@ impl App {
         ui_tx: mpsc::Sender<UiEvent>,
         core_rx: mpsc::Receiver<CoreEvent>,
     ) -> Self {
+        let keybindings = KeybindingRegistry::with_defaults();
+
         Self {
             state_rx: state_store.subscribe(),
             ui_tx,
@@ -75,7 +94,24 @@ impl App {
             notifications: Vec::new(),
             active_tools: Vec::new(),
             pending_permission: None,
+            vim: VimState::new(false),
+            keybindings,
+            search: SearchOverlay::new(),
+            shortcuts: ShortcutsState::new(),
+            history: Vec::new(),
+            history_index: None,
+            history_saved_input: String::new(),
         }
+    }
+
+    /// Enable vim mode at runtime.
+    pub fn set_vim_mode(&mut self, enabled: bool) {
+        self.vim.set_enabled(enabled);
+    }
+
+    /// Load user keybindings from a TOML file.
+    pub fn load_keybindings(&mut self, path: &std::path::Path) {
+        self.keybindings.load_from_file(path);
     }
 
     /// Run the TUI event loop.
@@ -135,22 +171,40 @@ impl App {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn draw(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
         let state = self.state_rx.borrow().clone();
+        let vim_enabled = self.vim.enabled;
+        let vim_badge = if vim_enabled {
+            self.vim.mode.badge()
+        } else {
+            ""
+        };
+        let search_active = self.search.is_active();
+        let shortcuts_visible = self.shortcuts.is_visible();
+        let command_buf = if vim_enabled
+            && self.vim.mode == crate::vim_mode::Mode::Command
+        {
+            Some(self.vim.command_buffer().to_string())
+        } else {
+            None
+        };
 
         terminal.draw(|frame| {
+            let input_height = if search_active { 5u16 } else { 3u16 };
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1), // Status bar
-                    Constraint::Min(5),    // Message view
-                    Constraint::Length(3), // Input box
+                    Constraint::Length(1),          // Status bar
+                    Constraint::Min(5),             // Message view
+                    Constraint::Length(input_height), // Input box (+ search bar)
                 ])
                 .split(frame.area());
 
-            // Status bar
+            // Status bar with vim badge.
             let status_bar =
-                StatusBar::new(&state.current_model, &state.total_usage, state.is_streaming);
+                StatusBar::new(&state.current_model, &state.total_usage, state.is_streaming)
+                    .with_vim_badge(vim_badge);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
@@ -216,6 +270,11 @@ impl App {
                 frame.render_widget(notif_widget, content_area);
             }
 
+            // Shortcuts panel overlay (drawn on top of content area).
+            if shortcuts_visible {
+                frame.render_widget(ShortcutsPanel, content_area);
+            }
+
             // Permission dialog overlay (drawn on top of everything).
             if let Some(ref perm) = self.pending_permission {
                 let dialog = PermissionDialog::new(
@@ -227,10 +286,33 @@ impl App {
                 frame.render_widget(dialog, content_area);
             }
 
-            // Input box — convert char cursor to byte offset for widget
-            let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
-            let input = InputBox::new(&self.input_text, byte_cursor, true);
-            frame.render_widget(input, chunks[2]);
+            // Input box area — may include search bar below.
+            if search_active {
+                let input_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Length(2)])
+                    .split(chunks[2]);
+
+                let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
+                let mut input = InputBox::new(&self.input_text, byte_cursor, true);
+                if vim_enabled {
+                    input = input.with_vim_badge(vim_badge);
+                }
+                frame.render_widget(input, input_chunks[0]);
+
+                let search_bar = SearchBar::new(&self.search);
+                frame.render_widget(search_bar, input_chunks[1]);
+            } else {
+                let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
+                let mut input = InputBox::new(&self.input_text, byte_cursor, true);
+                if vim_enabled {
+                    input = input.with_vim_badge(vim_badge);
+                }
+                if let Some(ref cmd) = command_buf {
+                    input = input.with_command_line(cmd);
+                }
+                frame.render_widget(input, chunks[2]);
+            }
         })?;
 
         Ok(())
@@ -243,26 +325,38 @@ impl App {
             return;
         }
 
+        // Search overlay captures keys when active.
+        if self.search.is_active() {
+            self.handle_search_key(key);
+            return;
+        }
+
+        // Shortcuts panel: any key hides it.
+        if self.shortcuts.is_visible() {
+            self.shortcuts.hide();
+            return;
+        }
+
+        // Vim mode: dispatch through vim state machine.
+        if self.vim.enabled {
+            self.handle_vim_key(key).await;
+            return;
+        }
+
+        // Check keybinding registry first for non-vim mode.
+        if let Some(action) = self.keybindings.lookup(&key).cloned() {
+            self.execute_keybinding_action(action).await;
+            return;
+        }
+
+        // Default key handling (non-vim mode).
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
                 let _ = self.ui_tx.send(UiEvent::Quit).await;
                 self.should_quit = true;
             }
             (_, KeyCode::Enter) => {
-                if !self.input_text.is_empty() {
-                    let text = std::mem::take(&mut self.input_text);
-                    self.input_cursor = 0;
-                    if let Some(trimmed) = text.strip_prefix('/') {
-                        let trimmed = trimmed.trim();
-                        let (name, args) = match trimmed.split_once(char::is_whitespace) {
-                            Some((n, a)) => (n.to_string(), a.trim().to_string()),
-                            None => (trimmed.to_string(), String::new()),
-                        };
-                        let _ = self.ui_tx.send(UiEvent::SlashCommand { name, args }).await;
-                    } else {
-                        let _ = self.ui_tx.send(UiEvent::UserInput(text)).await;
-                    }
-                }
+                self.submit_input().await;
             }
             // H3 FIX: cursor operates on char count, insert at byte offset
             (_, KeyCode::Char(c)) => {
@@ -273,12 +367,12 @@ impl App {
             (_, KeyCode::Backspace) => {
                 if self.input_cursor > 0 {
                     self.input_cursor -= 1;
-                    let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
-                    self.input_text.remove(byte_idx);
+                    let start = char_to_byte_index(&self.input_text, self.input_cursor);
+                    let end = char_to_byte_index(&self.input_text, self.input_cursor + 1);
+                    self.input_text.replace_range(start..end, "");
                 }
             }
             // Ctrl+Left / Ctrl+Right adjust the split ratio by ±5 %.
-            // Must come before the wildcard (_, KeyCode::Left/Right) arms.
             (KeyModifiers::CONTROL, KeyCode::Left) => {
                 self.split_pane.adjust_ratio(-5);
             }
@@ -295,10 +389,10 @@ impl App {
                 }
             }
             (_, KeyCode::Up) => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                self.history_prev();
             }
             (_, KeyCode::Down) => {
-                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                self.history_next();
             }
             (_, KeyCode::Home) => {
                 self.input_cursor = 0;
@@ -311,6 +405,310 @@ impl App {
                 self.split_pane.toggle_right();
             }
             _ => {}
+        }
+    }
+
+    /// Handle vim mode key dispatch.
+    #[allow(clippy::too_many_lines)]
+    async fn handle_vim_key(&mut self, key: KeyEvent) {
+        let text_len = self.input_text.chars().count();
+        let action = self.vim.handle_key(key, text_len);
+
+        match action {
+            VimAction::Passthrough(k) => {
+                // Let Ctrl+C through for quit.
+                if k.modifiers == KeyModifiers::CONTROL && k.code == KeyCode::Char('c') {
+                    let _ = self.ui_tx.send(UiEvent::Quit).await;
+                    self.should_quit = true;
+                }
+            }
+            VimAction::Noop
+            | VimAction::SwitchToInsert
+            | VimAction::EnterCommandMode
+            | VimAction::ExecuteCommand(_) => {}
+            VimAction::InsertChar(c) => {
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.insert(byte_idx, c);
+                self.input_cursor += 1;
+            }
+            VimAction::DeleteChar => {
+                let char_count = self.input_text.chars().count();
+                if self.input_cursor < char_count {
+                    let start = char_to_byte_index(&self.input_text, self.input_cursor);
+                    let end = char_to_byte_index(&self.input_text, self.input_cursor + 1);
+                    self.input_text.replace_range(start..end, "");
+                }
+            }
+            VimAction::DeleteCharBefore => {
+                if self.input_cursor > 0 {
+                    self.input_cursor -= 1;
+                    let start = char_to_byte_index(&self.input_text, self.input_cursor);
+                    let end = char_to_byte_index(&self.input_text, self.input_cursor + 1);
+                    self.input_text.replace_range(start..end, "");
+                }
+            }
+            VimAction::MoveCursor(pos) => {
+                let char_count = self.input_text.chars().count();
+                self.input_cursor = pos.min(char_count);
+            }
+            VimAction::MoveCursorBy(offset) => {
+                let char_count = self.input_text.chars().count();
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+                let new_pos = (self.input_cursor as isize + offset).max(0) as usize;
+                self.input_cursor = new_pos.min(char_count);
+            }
+            VimAction::MoveToLineStart | VimAction::MoveToStart | VimAction::InsertAtLineStart => {
+                self.input_cursor = 0;
+            }
+            VimAction::MoveToLineEnd
+            | VimAction::MoveToEnd
+            | VimAction::AppendAtEnd
+            | VimAction::OpenLineBelow => {
+                self.input_cursor = self.input_text.chars().count();
+            }
+            VimAction::MoveWordForward => {
+                self.input_cursor = vim_mode::next_word_pos(&self.input_text, self.input_cursor);
+            }
+            VimAction::MoveWordBackward => {
+                self.input_cursor = vim_mode::prev_word_pos(&self.input_text, self.input_cursor);
+            }
+            VimAction::MoveWordEnd => {
+                self.input_cursor = vim_mode::word_end_pos(&self.input_text, self.input_cursor);
+            }
+            VimAction::DeleteLine => {
+                self.vim.yank(&self.input_text);
+                self.input_text.clear();
+                self.input_cursor = 0;
+            }
+            VimAction::YankLine => {
+                self.vim.yank(&self.input_text);
+            }
+            VimAction::Paste => {
+                let yanked = self.vim.yanked().to_string();
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.insert_str(byte_idx, &yanked);
+                self.input_cursor += yanked.chars().count();
+            }
+            VimAction::Undo => {
+                // Simplified undo: clears entire input. Full undo stack not yet implemented.
+                self.input_text.clear();
+                self.input_cursor = 0;
+            }
+            VimAction::DeleteToEnd | VimAction::ChangeToEnd => {
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                let deleted = self.input_text[byte_idx..].to_string();
+                self.vim.yank(&deleted);
+                self.input_text.truncate(byte_idx);
+            }
+            VimAction::DeleteWordForward => {
+                let next = vim_mode::next_word_pos(&self.input_text, self.input_cursor);
+                let start_byte = char_to_byte_index(&self.input_text, self.input_cursor);
+                let end_byte = char_to_byte_index(&self.input_text, next);
+                let deleted = self.input_text[start_byte..end_byte].to_string();
+                self.vim.yank(&deleted);
+                self.input_text.replace_range(start_byte..end_byte, "");
+            }
+            VimAction::DeleteWordBackward => {
+                let prev = vim_mode::prev_word_pos(&self.input_text, self.input_cursor);
+                let start_byte = char_to_byte_index(&self.input_text, prev);
+                let end_byte = char_to_byte_index(&self.input_text, self.input_cursor);
+                let deleted = self.input_text[start_byte..end_byte].to_string();
+                self.vim.yank(&deleted);
+                self.input_text.replace_range(start_byte..end_byte, "");
+                self.input_cursor = prev;
+            }
+            VimAction::AppendAfterCursor => {
+                let char_count = self.input_text.chars().count();
+                if self.input_cursor < char_count {
+                    self.input_cursor += 1;
+                }
+            }
+            VimAction::Submit => {
+                self.submit_input().await;
+            }
+            VimAction::Quit => {
+                let _ = self.ui_tx.send(UiEvent::Quit).await;
+                self.should_quit = true;
+            }
+            VimAction::EnterSearch => {
+                self.search.activate();
+            }
+        }
+    }
+
+    /// Handle search overlay key events.
+    fn handle_search_key(&mut self, key: KeyEvent) {
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) => {
+                self.search.deactivate();
+            }
+            (_, KeyCode::Enter) => {
+                // Close search, keep results.
+                self.search.deactivate();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('n')) => {
+                self.search.next_match();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
+                self.search.prev_match();
+            }
+            (_, KeyCode::Char(c)) => {
+                self.search.push_char(c);
+            }
+            (_, KeyCode::Backspace) => {
+                self.search.pop_char();
+            }
+            _ => {}
+        }
+    }
+
+    /// Execute a keybinding action.
+    async fn execute_keybinding_action(&mut self, action: Action) {
+        match action {
+            Action::Quit => {
+                let _ = self.ui_tx.send(UiEvent::Quit).await;
+                self.should_quit = true;
+            }
+            Action::Submit => {
+                self.submit_input().await;
+            }
+            Action::ToggleVim => {
+                let new_state = !self.vim.enabled;
+                self.vim.set_enabled(new_state);
+            }
+            Action::TogglePanel => {
+                self.split_pane.toggle_right();
+            }
+            Action::ScrollUp => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            }
+            Action::ScrollDown => {
+                self.scroll_offset = self.scroll_offset.saturating_add(1);
+            }
+            Action::PageUp => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(20);
+            }
+            Action::PageDown => {
+                self.scroll_offset = self.scroll_offset.saturating_add(20);
+            }
+            Action::ClearLine => {
+                self.input_text.clear();
+                self.input_cursor = 0;
+            }
+            Action::DeleteWordBackward => {
+                let prev = vim_mode::prev_word_pos(&self.input_text, self.input_cursor);
+                let start_byte = char_to_byte_index(&self.input_text, prev);
+                let end_byte = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.replace_range(start_byte..end_byte, "");
+                self.input_cursor = prev;
+            }
+            Action::DeleteToLineStart => {
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.replace_range(..byte_idx, "");
+                self.input_cursor = 0;
+            }
+            Action::OpenSearch => {
+                self.search.activate();
+            }
+            Action::ToggleShortcuts => {
+                self.shortcuts.toggle();
+            }
+            Action::CycleOutputStyle => {
+                // Handled via slash command, not inline.
+            }
+            Action::CursorHome => {
+                self.input_cursor = 0;
+            }
+            Action::CursorEnd => {
+                self.input_cursor = self.input_text.chars().count();
+            }
+            Action::CursorWordLeft => {
+                self.input_cursor = vim_mode::prev_word_pos(&self.input_text, self.input_cursor);
+            }
+            Action::CursorWordRight => {
+                self.input_cursor = vim_mode::next_word_pos(&self.input_text, self.input_cursor);
+            }
+            Action::InsertNewline => {
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.insert(byte_idx, '\n');
+                self.input_cursor += 1;
+            }
+            Action::HistoryPrev => {
+                self.history_prev();
+            }
+            Action::HistoryNext => {
+                self.history_next();
+            }
+            Action::HistorySearch => {
+                // Future: Ctrl+R search overlay. For now, just navigate history.
+                self.history_prev();
+            }
+        }
+    }
+
+    /// Submit the current input text.
+    async fn submit_input(&mut self) {
+        if !self.input_text.is_empty() {
+            let text = std::mem::take(&mut self.input_text);
+            self.input_cursor = 0;
+            self.history_index = None;
+
+            // Save to history (dedup consecutive duplicates).
+            if self.history.last().map_or(true, |last| *last != text) {
+                self.history.push(text.clone());
+            }
+
+            if let Some(trimmed) = text.strip_prefix('/') {
+                let trimmed = trimmed.trim();
+                // Handle /vim toggle inline.
+                if trimmed == "vim" {
+                    let new_state = !self.vim.enabled;
+                    self.vim.set_enabled(new_state);
+                    return;
+                }
+                let (name, args) = match trimmed.split_once(char::is_whitespace) {
+                    Some((n, a)) => (n.to_string(), a.trim().to_string()),
+                    None => (trimmed.to_string(), String::new()),
+                };
+                let _ = self.ui_tx.send(UiEvent::SlashCommand { name, args }).await;
+            } else {
+                let _ = self.ui_tx.send(UiEvent::UserInput(text)).await;
+            }
+        }
+    }
+
+    /// Navigate to previous history entry.
+    fn history_prev(&mut self) {
+        if self.history.is_empty() {
+            return;
+        }
+        let idx = match self.history_index {
+            None => {
+                self.history_saved_input = self.input_text.clone();
+                self.history.len() - 1
+            }
+            Some(0) => return,
+            Some(i) => i - 1,
+        };
+        self.history_index = Some(idx);
+        self.input_text = self.history[idx].clone();
+        self.input_cursor = self.input_text.chars().count();
+    }
+
+    /// Navigate to next history entry.
+    fn history_next(&mut self) {
+        let Some(idx) = self.history_index else {
+            return;
+        };
+        if idx + 1 >= self.history.len() {
+            // Restore saved input.
+            self.history_index = None;
+            self.input_text = std::mem::take(&mut self.history_saved_input);
+            self.input_cursor = self.input_text.chars().count();
+        } else {
+            self.history_index = Some(idx + 1);
+            self.input_text = self.history[idx + 1].clone();
+            self.input_cursor = self.input_text.chars().count();
         }
     }
 

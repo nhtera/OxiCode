@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.3.0 | **Last Updated:** 2026-04-03 | **Status:** Phase 4 Complete + Phase 2 API + Phase 3 Gap Closure
+**Version:** 0.3.0 | **Last Updated:** 2026-04-03 | **Status:** Phase 1-8 Complete (UX Polish done)
 
 ## Project Vision
 
@@ -53,12 +53,32 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **WorkflowTool** — Workflow automation and orchestration
 - **Tool Count:** Increased from 31 to 42 (of 44 in OpenClaude)
 
-### Phase 5: Forthcoming
-- User-facing agent/skill commands
-- Team UI panels (split_pane, agent_panel, task_panel)
-- Skill marketplace and versioning
-- Advanced context strategy (priority-based compaction, LLM-assisted summarization)
-- Final 2 tools for complete OpenClaude parity (44/44)
+### Phase 6: Server Mode (Complete ✓)
+**Added:** JSON-RPC 2.0 server protocol, IDE bridge, session management
+- **Server Protocol** — JSON-RPC over stdin/stdout, permission bridge flow
+- **Session Management** — Multi-session support, resumable conversations
+- **Streaming Notifications** — stream.text, tool.start, tool.result, permission.ask
+- **Cancellation** — Token-based request cancellation via CancellationToken
+
+### Phase 7: Task System + Feature Flags (Complete ✓)
+**Added:** Background task management, async execution, JSONL output streaming
+- **TaskManager** — In-process registry, status tracking
+- **TaskRunner** — Async process spawning, output redirection
+- **OutputReader** — Incremental JSONL streaming with polling
+- **Feature Flags** — Beta feature toggles, configuration-driven activation
+
+### Phase 8: UX Polish (Complete ✓)
+**Added:** 3 new modules, full vim mode, configurable keybindings, onboarding wizard
+- **Vim Mode** — Full state machine (Normal/Insert/Visual/Command), hjkl motions, operators (dd, yy, dw, etc)
+- **Keybindings** — TOML-based customization, chord sequences, defaults registry
+- **Onboarding Wizard** — First-run setup (API key, model, permissions, theme), masked input, config generation
+- **Output Styles** — markdown, plain, minimal, verbose rendering modes
+- **Enhanced Input** — Multi-line editing, command history, history search, readline shortcuts, word-level movement
+- **Test Coverage** — 59 passing tests (50 TUI + 9 config), zero clippy warnings
+
+### Phase 9+: Forthcoming
+- **Phase 9 (Enterprise):** OAuth, GitHub SSO, telemetry, audit logging
+- **Phase 10 (Extras):** Voice input, advanced bridging, community plugins
 
 ---
 

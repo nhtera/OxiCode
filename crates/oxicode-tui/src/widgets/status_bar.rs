@@ -13,6 +13,8 @@ pub struct StatusBar<'a> {
     is_streaming: bool,
     mcp_server_count: usize,
     session_name: &'a str,
+    /// Vim mode badge (e.g. "N", "I", "V", "C") or empty if disabled.
+    vim_badge: &'a str,
 }
 
 impl<'a> StatusBar<'a> {
@@ -24,6 +26,7 @@ impl<'a> StatusBar<'a> {
             is_streaming,
             mcp_server_count: 0,
             session_name: "",
+            vim_badge: "",
         }
     }
 
@@ -42,6 +45,12 @@ impl<'a> StatusBar<'a> {
     /// Set session name for display.
     pub fn with_session(mut self, name: &'a str) -> Self {
         self.session_name = name;
+        self
+    }
+
+    /// Set vim mode badge for display (e.g. "N", "I", "V", "C").
+    pub fn with_vim_badge(mut self, badge: &'a str) -> Self {
+        self.vim_badge = badge;
         self
     }
 }
@@ -124,6 +133,26 @@ impl Widget for StatusBar<'_> {
             Span::styled(format!(" [{short}] "), Style::default().fg(Color::DarkGray))
         };
 
+        // Vim mode badge.
+        let vim_span = if self.vim_badge.is_empty() {
+            Span::raw("")
+        } else {
+            let badge_color = match self.vim_badge {
+                "N" => Color::Blue,
+                "I" => Color::Green,
+                "V" => Color::Magenta,
+                "C" => Color::Yellow,
+                _ => Color::White,
+            };
+            Span::styled(
+                format!(" VIM:{} ", self.vim_badge),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(badge_color)
+                    .add_modifier(Modifier::BOLD),
+            )
+        };
+
         let line = Line::from(vec![
             status,
             provider_span,
@@ -131,6 +160,7 @@ impl Widget for StatusBar<'_> {
             tokens,
             cost_span,
             mcp_span,
+            vim_span,
             session_span,
         ]);
         buf.set_line(area.x, area.y, &line, area.width);

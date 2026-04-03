@@ -19,6 +19,10 @@ pub struct Settings {
     pub config_dir: Option<String>,
     /// Runtime feature flags.
     pub features: FeatureFlags,
+    /// Editor mode: "normal" or "vim".
+    pub editor_mode: String,
+    /// Output rendering style: "plain", "markdown", "minimal", "verbose".
+    pub output_style: String,
 }
 
 impl Default for Settings {
@@ -31,6 +35,8 @@ impl Default for Settings {
             permission_mode: "default".to_string(),
             config_dir: None,
             features: FeatureFlags::default(),
+            editor_mode: "normal".to_string(),
+            output_style: "markdown".to_string(),
         }
     }
 }
