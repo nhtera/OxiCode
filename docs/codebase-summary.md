@@ -302,17 +302,27 @@ pub fn freshness_warning(created_at) -> Option<String>;
 
 ---
 
-#### oxicode-hooks (~120 LOC)
-**Purpose:** Event hooks for custom behavior (pre-commit, post-exec, etc)
+#### oxicode-hooks (~1,050 LOC)
+**Purpose:** 29 lifecycle event hooks with 3 execution modes (command, agent, HTTP)
 
 **Key exports:**
-- `HookManager` (register, execute hooks)
-- `Hook` trait (async, can be chained)
-- Built-in hooks: BeforeTool, AfterTool, BeforeCompact, AfterCompact
+- `HookManager` (fire events, dispatch to executors)
+- `HookEvent` enum (29 events: core + extended + rate limit + cost)
+- `HookType` enum (Command | Agent | Http) — default Command for backward compat
+- `HookDef` (per-event config with type-specific settings)
+- `HookPayload` / `HookResponse` (Pass | ModifyPrompt | Abort | OverrideResult)
+
+**Modules:**
+- `config.rs` — TOML parsing, supports string + table forms, inline + nested agent/http config
+- `events.rs` — 29 event definitions with serialization
+- `executor.rs` — 3-way dispatch: shell subprocess, agent LLM call, HTTP POST
+- `manager.rs` — Central coordinator, session/model context injection
+- `agent_hook_executor.rs` — LLM-based hooks with structured output parsing, 60s timeout
+- `http_hook_executor.rs` — HTTP POST hooks with SSRF guard (private IP rejection), 10min timeout
 
 **Used by:** QueryEngine (hook points), CLI (user-defined hooks)
 
-**Quality:** Non-blocking (async), graceful error handling
+**Quality:** Fail-open design (timeout/error → Pass), comprehensive SSRF protection, 88 tests
 
 ---
 
@@ -910,7 +920,7 @@ flush_interval_secs = 60
 | oxicode-permissions | 300 | Access control |
 | oxicode-state | 150 | State management |
 | oxicode-session | 180 | Persistence |
-| oxicode-hooks | 120 | Event hooks |
+| oxicode-hooks | 1,050 | Event hooks (3 execution modes) |
 | **oxicode-context** | **450** | **Context defense (P4)** |
 | **oxicode-agents** | **280** | **Multi-agent (P4)** |
 | **oxicode-skills** | **350** | **Skills system (P4)** |

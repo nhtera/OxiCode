@@ -734,6 +734,44 @@ Emit notification: stream ends, tool results discarded
 - **`server_handler.rs`** — RequestHandler, session management, streaming
 - **`main.rs`** — `--server` flag routing
 
+### Bridge Expansion (9 modules)
+
+The bridge layer (`crates/oxicode-cli/src/bridge/`) provides IDE integration via JSON-RPC:
+
+| Module | Purpose |
+|--------|---------|
+| `mod.rs` | Transport enum (Stdio/TCP/WebSocket), protocol version, capabilities |
+| `messages.rs` | JSON-RPC method + notification definitions |
+| `session_bridge.rs` | Session create/resume/list/save lifecycle |
+| `session_ingress.rs` | HMAC-SHA256 token auth for session routing |
+| `permission_bridge.rs` | IDE permission request/response flow (60s timeout) |
+| `daemon_listener.rs` | TCP listener + lockfile for daemon mode |
+| `bridge_config.rs` | Config from `[bridge]` in settings.toml + env var overrides |
+| `bridge_debug.rs` | Message logging to `~/.oxicode/bridge-debug.log` (10MB rotation) |
+| `bridge_status.rs` | Connection state (Connected/Disconnected/Reconnecting), uptime, message counts |
+| `reconnection.rs` | Exponential backoff (1s→30s cap, ±10% jitter, max 100 attempts) |
+
+### Hook Execution Modes (3 types)
+
+The hooks system (`crates/oxicode-hooks/`) supports 3 executor types dispatched via `HookType`:
+
+```
+Event fires → HookManager.fire(event, data)
+  ↓
+  Config.get(event) → HookDef { hook_type, ... }
+  ↓
+  match hook_type:
+    Command → spawn `sh -c {command}`, JSON stdin/stdout (10s timeout)
+    Agent   → LLM call with structured output (60s timeout, stub)
+    Http    → POST to URL with SSRF guard (10min timeout)
+  ↓
+  Parse response: Pass | ModifyPrompt | Abort | OverrideResult
+  ↓
+  Any error → Pass (fail-open, never blocks user)
+```
+
+**SSRF protection:** Rejects private IPs (10.x, 172.16-31.x, 192.168.x, 127.x, ::1, fe80::/10, fc00::/7, ::ffff:private).
+
 ---
 
 ## State Management
