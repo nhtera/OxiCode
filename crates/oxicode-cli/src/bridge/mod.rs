@@ -7,9 +7,13 @@
 //! Phase B (Daemon): TCP/WebSocket listener so IDE connects to a running daemon.
 //! Gated behind `bridge` feature flag.
 
+pub mod bridge_config;
+pub mod bridge_debug;
+pub mod bridge_status;
 pub mod daemon_listener;
 pub mod messages;
 pub mod permission_bridge;
+pub mod reconnection;
 pub mod session_bridge;
 pub mod session_ingress;
 

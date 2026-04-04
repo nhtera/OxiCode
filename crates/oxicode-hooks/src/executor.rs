@@ -1,4 +1,4 @@
-//! Hook subprocess executor.
+//! Hook executor — dispatches to command (subprocess), agent (LLM), or HTTP based on type.
 //!
 //! Spawns shell scripts with JSON payload on stdin, reads JSON response from stdout.
 //! Enforces timeout (default 10s) and handles errors gracefully.
@@ -9,12 +9,43 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+use crate::agent_hook_executor::execute_agent_hook;
+use crate::config::{HookDef, HookType};
 use crate::events::{HookPayload, HookResponse};
+use crate::http_hook_executor::execute_http_hook;
 
 /// Default timeout for hook subprocess execution.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Execute a hook script as a subprocess.
+/// Execute a hook based on its type (command, agent, or http).
+///
+/// Dispatches to the appropriate executor:
+/// - `Command` → subprocess with JSON stdin/stdout
+/// - `Agent` → LLM call with structured output
+/// - `Http` → HTTP POST to URL endpoint
+///
+/// Returns `HookResponse::Pass` on any failure (fail-open).
+pub async fn execute_hook(
+    hook_def: &HookDef,
+    payload: &HookPayload,
+) -> HookResponse {
+    match hook_def.hook_type {
+        HookType::Command => {
+            let timeout = Duration::from_secs(hook_def.timeout_secs);
+            execute_hook_script(&hook_def.command, payload, Some(timeout)).await
+        }
+        HookType::Agent => {
+            let config = hook_def.agent_config();
+            execute_agent_hook(payload, &config).await
+        }
+        HookType::Http => {
+            let config = hook_def.http_config();
+            execute_http_hook(payload, &config).await
+        }
+    }
+}
+
+/// Execute a hook script as a subprocess (Command type).
 ///
 /// - Sends `payload` as JSON on stdin
 /// - Reads JSON `HookResponse` from stdout
@@ -152,8 +183,6 @@ mod tests {
         assert!(matches!(response, HookResponse::Pass));
     }
 
-    // -- New comprehensive tests --
-
     #[tokio::test]
     async fn test_abort_response() {
         let response = execute_hook_script(
@@ -181,22 +210,17 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_json_returns_pass() {
         let response = execute_hook_script("echo 'not valid json'", &test_payload(), None).await;
-        // Invalid JSON from stdout should be treated as pass (don't block app).
-        // The function returns Err which maps to Pass in the outer handler,
-        // but run_subprocess returns Err, so execute_hook_script logs and returns Pass.
         assert!(matches!(response, HookResponse::Pass));
     }
 
     #[tokio::test]
     async fn test_payload_received_by_script() {
-        // Verify the script receives the payload on stdin.
         let payload = HookPayload {
             event: HookEvent::ToolCallBefore,
             data: serde_json::json!({"tool": "bash"}),
             session_id: Some("test-session".to_string()),
             model: None,
         };
-        // Script reads stdin and checks for expected content.
         let response = execute_hook_script(
             r#"input=$(cat); echo "$input" | grep -q "tool_call_before" && echo '{"action":"pass"}' || echo '{"action":"abort","reason":"missing event"}'"#,
             &payload,
@@ -214,7 +238,6 @@ mod tests {
             Some(Duration::from_secs(2)),
         )
         .await;
-        // Command that fails to run returns Pass.
         assert!(matches!(response, HookResponse::Pass));
     }
 
@@ -226,6 +249,64 @@ mod tests {
             None,
         )
         .await;
+        assert!(matches!(response, HookResponse::Pass));
+    }
+
+    // -- Dispatch tests --
+
+    #[tokio::test]
+    async fn test_execute_hook_command_type() {
+        let hook_def = HookDef {
+            hook_type: HookType::Command,
+            command: r#"echo '{"action":"pass"}'"#.to_string(),
+            timeout_secs: 5,
+            enabled: true,
+            agent: None,
+            http: None,
+            instructions: None,
+            model: None,
+            url: None,
+            authorization: None,
+        };
+        let response = execute_hook(&hook_def, &test_payload()).await;
+        assert!(matches!(response, HookResponse::Pass));
+    }
+
+    #[tokio::test]
+    async fn test_execute_hook_agent_type() {
+        let hook_def = HookDef {
+            hook_type: HookType::Agent,
+            command: String::new(),
+            timeout_secs: 5,
+            enabled: true,
+            agent: None,
+            http: None,
+            instructions: Some("Test instructions".to_string()),
+            model: None,
+            url: None,
+            authorization: None,
+        };
+        // Agent stub returns Pass.
+        let response = execute_hook(&hook_def, &test_payload()).await;
+        assert!(matches!(response, HookResponse::Pass));
+    }
+
+    #[tokio::test]
+    async fn test_execute_hook_http_type_ssrf_blocked() {
+        let hook_def = HookDef {
+            hook_type: HookType::Http,
+            command: String::new(),
+            timeout_secs: 5,
+            enabled: true,
+            agent: None,
+            http: None,
+            instructions: None,
+            model: None,
+            url: Some("http://127.0.0.1:9999/hook".to_string()),
+            authorization: None,
+        };
+        // SSRF blocks localhost → Pass.
+        let response = execute_hook(&hook_def, &test_payload()).await;
         assert!(matches!(response, HookResponse::Pass));
     }
 }

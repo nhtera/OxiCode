@@ -1,12 +1,11 @@
 //! HookManager: central coordinator for hook lifecycle events.
 //!
 //! Loads config, fires events, collects responses.
-
-use std::time::Duration;
+//! Dispatches to command/agent/http executors based on hook type.
 
 use crate::config::HooksConfig;
 use crate::events::{HookEvent, HookPayload, HookResponse};
-use crate::executor::execute_hook_script;
+use crate::executor::execute_hook;
 
 /// Manages hook lifecycle: config + dispatch.
 pub struct HookManager {
@@ -52,6 +51,7 @@ impl HookManager {
 
     /// Fire a hook event with event-specific data.
     ///
+    /// Dispatches to command/agent/http executor based on hook type.
     /// Returns `HookResponse::Pass` if no hook is configured for this event.
     pub async fn fire(&self, event: HookEvent, data: serde_json::Value) -> HookResponse {
         let Some(hook_def) = self.config.get(event) else {
@@ -65,10 +65,14 @@ impl HookManager {
             model: self.model.clone(),
         };
 
-        let timeout = Duration::from_secs(hook_def.timeout_secs);
-        tracing::debug!("Firing hook {}: {}", event.as_str(), hook_def.command);
+        tracing::debug!(
+            "Firing hook {} (type={:?}): {}",
+            event.as_str(),
+            hook_def.hook_type,
+            hook_def.command
+        );
 
-        execute_hook_script(&hook_def.command, &payload, Some(timeout)).await
+        execute_hook(hook_def, &payload).await
     }
 
     /// Fire a simple event with no extra data.
