@@ -110,6 +110,10 @@ pub mod error_codes {
     pub const REQUEST_CANCELLED: i32 = -32002;
     /// Custom: permission denied.
     pub const PERMISSION_DENIED: i32 = -32003;
+    /// Custom: bridge protocol error.
+    pub const BRIDGE_ERROR: i32 = -32004;
+    /// Custom: connection limit reached.
+    pub const CONNECTION_LIMIT: i32 = -32005;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,20 +134,20 @@ pub struct SessionResumeParams {
 }
 
 /// `message.send` params.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MessageSendParams {
     pub session_id: String,
     pub content: String,
 }
 
 /// `message.cancel` params.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MessageCancelParams {
     pub session_id: String,
 }
 
 /// `tool.approve` / `tool.deny` params.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ToolDecisionParams {
     pub session_id: String,
     /// Permission request ID (matches the one sent in `permission.ask`).

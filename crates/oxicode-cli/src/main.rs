@@ -1,4 +1,6 @@
 pub mod auth;
+#[allow(dead_code)] // Bridge API — consumers will use these as bridge matures.
+mod bridge;
 mod commands;
 mod completions;
 pub mod github;
@@ -83,6 +85,10 @@ struct Cli {
     #[arg(long)]
     server: bool,
 
+    /// Run as a daemon: TCP listener for IDE connections (Phase B bridge).
+    #[arg(long)]
+    daemon: bool,
+
     /// Run as a headless bridge server for cloud deployment.
     #[arg(long, hide = true)]
     bridge: bool,
@@ -119,7 +125,7 @@ async fn main() -> Result<()> {
     }
 
     // First-run onboarding wizard (skip with --no-onboard or non-interactive modes).
-    if !cli.no_onboard && cli.prompt.is_none() && !cli.server && onboarding::should_onboard() {
+    if !cli.no_onboard && cli.prompt.is_none() && !cli.server && !cli.daemon && onboarding::should_onboard() {
         onboarding::run_onboarding();
     }
 
@@ -257,6 +263,46 @@ async fn main() -> Result<()> {
         let result = server::run_server(engine, settings.model).await;
         mcp_ref.shutdown_all().await;
         return result;
+    }
+
+    // Daemon mode: TCP listener for IDE connections (Phase B bridge).
+    if cli.daemon {
+        use bridge::daemon_listener;
+
+        // Check for existing daemon.
+        if let Some(existing) = daemon_listener::is_daemon_running() {
+            eprintln!(
+                "Error: Daemon already running (PID {}, port {})",
+                existing.pid, existing.port
+            );
+            std::process::exit(1);
+        }
+
+        let daemon_config = daemon_listener::DaemonConfig {
+            port: cli.port,
+            ..daemon_listener::DaemonConfig::default()
+        };
+
+        eprintln!(
+            "Daemon mode starting on {} (max {} connections)",
+            daemon_config.socket_addr(),
+            daemon_config.max_connections,
+        );
+
+        // Write lockfile (port will be updated after bind if port=0).
+        let actual_port = if daemon_config.port == 0 { 0 } else { daemon_config.port };
+        if actual_port > 0 {
+            if let Err(e) = daemon_listener::write_lockfile(actual_port, &daemon_config.bind_address) {
+                eprintln!("Warning: Failed to write lockfile: {e}");
+            }
+        }
+
+        eprintln!("Press Ctrl+C to stop.");
+        tokio::signal::ctrl_c().await.ok();
+
+        daemon_listener::remove_lockfile();
+        mcp_ref.shutdown_all().await;
+        return Ok(());
     }
 
     // TODO(gap-phase-7): implement bridge mode server with multi-session + JWT auth.

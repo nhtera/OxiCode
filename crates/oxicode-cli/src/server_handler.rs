@@ -19,6 +19,7 @@ use oxicode_core::{Conversation, QueryEngine, TurnEvent};
 use oxicode_session::Session;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
+use crate::bridge;
 use crate::server_protocol::{
     error_codes, CompactParams, ErrorNotificationParams, MessageCancelParams, MessageSendParams,
     PermissionAskParams, RpcId, RpcNotification, RpcRequest, RpcResponse, SessionCreateParams,
@@ -76,10 +77,188 @@ impl ServerHandler {
             "tool.deny" => self.handle_tool_decision(req.id, req.params, false).await,
             "compact" => self.handle_compact(req.id, req.params).await,
             "shutdown" => self.handle_shutdown(req.id).await,
+            // Bridge protocol methods (IDE-specific).
+            m if m.starts_with("bridge.") => self.handle_bridge_method(req.id, m, req.params).await,
             _ => RpcResponse::err(
                 req.id,
                 error_codes::METHOD_NOT_FOUND,
                 format!("Unknown method: {}", req.method),
+            ),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Bridge protocol handlers (IDE integration)
+    // -----------------------------------------------------------------------
+
+    async fn handle_bridge_method(
+        &self,
+        id: RpcId,
+        method: &str,
+        params: serde_json::Value,
+    ) -> RpcResponse {
+        use bridge::messages::*;
+
+        match method {
+            METHOD_INITIALIZE => {
+                let params: InitializeParams = match serde_json::from_value(params) {
+                    Ok(p) => p,
+                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                };
+
+                tracing::info!(
+                    protocol = %params.protocol_version,
+                    ide = ?params.ide_name,
+                    "bridge.initialize"
+                );
+
+                // Create a session for this IDE connection.
+                let session = Session::new(&self.model);
+                let session_id = session.id.clone();
+                let state = SessionState {
+                    session,
+                    conversation: Conversation::new(),
+                    cancel_tx: None,
+                    active_perms: Arc::new(Mutex::new(HashMap::new())),
+                };
+                self.sessions.lock().await.insert(session_id.clone(), state);
+
+                let result = InitializeResult {
+                    protocol_version: bridge::PROTOCOL_VERSION.to_string(),
+                    session_id,
+                    model: self.model.clone(),
+                    capabilities: bridge::server_capabilities(),
+                };
+                RpcResponse::ok(id, serde_json::to_value(result).unwrap_or_default())
+            }
+
+            METHOD_GET_STATUS => {
+                let params: GetStatusParams = match serde_json::from_value(params) {
+                    Ok(p) => p,
+                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                };
+
+                let sessions = self.sessions.lock().await;
+                let Some(state) = sessions.get(&params.session_id) else {
+                    return RpcResponse::err(id, error_codes::SESSION_NOT_FOUND, "Session not found");
+                };
+
+                let is_streaming = state.cancel_tx.is_some();
+                let perm_pending = !state.active_perms.try_lock()
+                    .map_or(false, |p| p.is_empty());
+
+                let status_str = if is_streaming {
+                    "streaming"
+                } else if perm_pending {
+                    "awaiting_permission"
+                } else {
+                    "idle"
+                };
+
+                let result = GetStatusResult {
+                    session_id: params.session_id,
+                    state: status_str.to_string(),
+                    model: self.model.clone(),
+                    message_count: state.session.messages.len(),
+                };
+                RpcResponse::ok(id, serde_json::to_value(result).unwrap_or_default())
+            }
+
+            METHOD_GET_CONVERSATION => {
+                let params: GetConversationParams = match serde_json::from_value(params) {
+                    Ok(p) => p,
+                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                };
+
+                let sessions = self.sessions.lock().await;
+                let Some(state) = sessions.get(&params.session_id) else {
+                    return RpcResponse::err(id, error_codes::SESSION_NOT_FOUND, "Session not found");
+                };
+
+                let messages = &state.session.messages;
+                let start = params.after_index.unwrap_or(0);
+                let slice: Vec<serde_json::Value> = messages
+                    .iter()
+                    .skip(start)
+                    .enumerate()
+                    .map(|(i, msg)| {
+                        serde_json::json!({
+                            "index": start + i,
+                            "role": format!("{:?}", msg.role).to_lowercase(),
+                            "text": msg.text(),
+                        })
+                    })
+                    .collect();
+
+                RpcResponse::ok(id, serde_json::json!({
+                    "session_id": params.session_id,
+                    "messages": slice,
+                    "total": messages.len(),
+                }))
+            }
+
+            METHOD_SEND_MESSAGE => {
+                // Delegate to existing message.send handler via params adaptation.
+                let params: SendMessageParams = match serde_json::from_value(params) {
+                    Ok(p) => p,
+                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                };
+                let adapted = serde_json::to_value(MessageSendParams {
+                    session_id: params.session_id,
+                    content: params.content,
+                }).unwrap_or_default();
+                self.handle_message_send(id, adapted).await
+            }
+
+            METHOD_APPROVE_PERMISSION => {
+                let params: ApprovePermissionParams = match serde_json::from_value(params) {
+                    Ok(p) => p,
+                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                };
+                let adapted = serde_json::to_value(ToolDecisionParams {
+                    session_id: params.session_id,
+                    permission_id: params.permission_id,
+                    always: params.always,
+                }).unwrap_or_default();
+                self.handle_tool_decision(id, adapted, params.approve).await
+            }
+
+            METHOD_CANCEL_TURN => {
+                let params: CancelTurnParams = match serde_json::from_value(params) {
+                    Ok(p) => p,
+                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                };
+                let adapted = serde_json::to_value(MessageCancelParams {
+                    session_id: params.session_id,
+                }).unwrap_or_default();
+                self.handle_message_cancel(id, adapted).await
+            }
+
+            METHOD_SWITCH_MODEL => {
+                let params: SwitchModelParams = match serde_json::from_value(params) {
+                    Ok(p) => p,
+                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                };
+
+                // Just acknowledge the model switch request.
+                // Actual model switching requires engine reconfiguration (future work).
+                tracing::info!(
+                    session = %params.session_id,
+                    model = %params.model,
+                    "bridge.switchModel (acknowledged, not yet implemented)"
+                );
+                RpcResponse::ok(id, serde_json::json!({
+                    "session_id": params.session_id,
+                    "model": params.model,
+                    "switched": false,
+                    "reason": "model switching requires engine reconfiguration (planned)",
+                }))
+            }
+
+            _ => RpcResponse::err(
+                id,
+                error_codes::METHOD_NOT_FOUND,
+                format!("Unknown bridge method: {method}"),
             ),
         }
     }

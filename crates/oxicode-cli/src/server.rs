@@ -67,8 +67,8 @@ pub async fn run_server(engine: Arc<oxicode_core::QueryEngine>, model: String) -
             }
         };
 
-        // message.send is long-running — spawn as background task to keep loop free.
-        if req.method == "message.send" {
+        // message.send and bridge.sendMessage are long-running — spawn as background task.
+        if req.method == "message.send" || req.method == "bridge.sendMessage" {
             let handler = handler.clone();
             let stdout = stdout.clone();
             tokio::spawn(async move {
