@@ -63,6 +63,12 @@ pub enum HookEvent {
     PermissionGrant,
     /// Fires when a permission is denied.
     PermissionDeny,
+
+    // ── Rate limit events (Phase 2 gap-closure) ──
+    /// Fires when approaching rate limit threshold.
+    RateLimitWarning,
+    /// Fires when rate limit is exceeded (429).
+    RateLimitExceeded,
 }
 
 impl HookEvent {
@@ -96,6 +102,9 @@ impl HookEvent {
         Self::BashExecute,
         Self::PermissionGrant,
         Self::PermissionDeny,
+        // Rate limit
+        Self::RateLimitWarning,
+        Self::RateLimitExceeded,
     ];
 
     /// Event name as used in config keys.
@@ -127,6 +136,8 @@ impl HookEvent {
             Self::BashExecute => "bash_execute",
             Self::PermissionGrant => "permission_grant",
             Self::PermissionDeny => "permission_deny",
+            Self::RateLimitWarning => "rate_limit_warning",
+            Self::RateLimitExceeded => "rate_limit_exceeded",
         }
     }
 }
@@ -168,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_all_events_count() {
-        assert_eq!(HookEvent::ALL.len(), 26);
+        assert_eq!(HookEvent::ALL.len(), 28);
     }
 
     #[test]

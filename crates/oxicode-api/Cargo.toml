@@ -24,7 +24,9 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 chrono = { workspace = true }
+dirs = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 wiremock = "0.6"
+uuid = { workspace = true }

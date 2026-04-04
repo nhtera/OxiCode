@@ -2,9 +2,12 @@
 //!
 //! Anthropic returns `anthropic-ratelimit-*` headers + `retry-after`.
 //! OpenAI-compat APIs return `x-ratelimit-*` headers + `retry-after`.
+//! Anthropic also returns `anthropic-ratelimit-unified-*` for the new unified system.
 
 use chrono::{DateTime, Utc};
 use oxicode_common::{RateLimitInfo, RateLimitType};
+
+use crate::rate_limit_state::UnifiedRateLimitInfo;
 
 /// Parse rate limit headers from an Anthropic 429 response.
 pub fn parse_anthropic_headers(headers: &reqwest::header::HeaderMap) -> RateLimitInfo {
@@ -120,6 +123,18 @@ fn build_rate_limit_message(retry_after: Option<f64>, limit_type: &RateLimitType
     }
 }
 
+/// Parse unified rate limit headers from an Anthropic response.
+///
+/// Returns both the legacy `RateLimitInfo` and the new `UnifiedRateLimitInfo`.
+/// If unified headers are present, the legacy message is enriched with state info.
+pub fn parse_anthropic_with_unified(
+    headers: &reqwest::header::HeaderMap,
+) -> (RateLimitInfo, UnifiedRateLimitInfo) {
+    let legacy = parse_anthropic_headers(headers);
+    let unified = UnifiedRateLimitInfo::from_headers(headers);
+    (legacy, unified)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,5 +235,45 @@ mod tests {
     fn test_build_rate_limit_message_without_retry_after() {
         let msg = build_rate_limit_message(None, &RateLimitType::Unknown);
         assert_eq!(msg, "Rate limited (unknown)");
+    }
+
+    #[test]
+    fn test_parse_anthropic_with_unified_both() {
+        let mut headers = HeaderMap::new();
+        // Legacy headers
+        headers.insert(
+            "anthropic-ratelimit-tokens-remaining",
+            HeaderValue::from_static("100"),
+        );
+        headers.insert("retry-after", HeaderValue::from_static("60"));
+        // Unified headers
+        headers.insert(
+            "anthropic-ratelimit-unified-status",
+            HeaderValue::from_static("warning"),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-utilization",
+            HeaderValue::from_static("0.85"),
+        );
+
+        let (legacy, unified) = parse_anthropic_with_unified(&headers);
+        assert_eq!(legacy.retry_after_secs, Some(60.0));
+        assert!(unified.has_unified());
+        assert_eq!(unified.status.as_deref(), Some("warning"));
+        assert_eq!(unified.utilization, Some(0.85));
+    }
+
+    #[test]
+    fn test_parse_anthropic_with_unified_legacy_only() {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", HeaderValue::from_static("30"));
+        headers.insert(
+            "anthropic-ratelimit-tokens-remaining",
+            HeaderValue::from_static("0"),
+        );
+
+        let (legacy, unified) = parse_anthropic_with_unified(&headers);
+        assert_eq!(legacy.retry_after_secs, Some(30.0));
+        assert!(!unified.has_unified());
     }
 }
