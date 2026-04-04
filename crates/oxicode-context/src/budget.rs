@@ -5,7 +5,10 @@ use oxicode_common::{Message, OxiResult};
 
 use crate::{
     auto_compact::AutoCompactor, context_collapse::ContextCollapse,
-    microcompact::microcompact_messages, reactive_compact::ReactiveCompactor,
+    microcompact::microcompact_messages,
+    post_compact_cleanup::{self, RestoreContext},
+    reactive_compact::ReactiveCompactor,
+    snip_compact::{self, SnipConfig},
     token_counter::TokenCounter, truncation::truncate_messages,
 };
 
@@ -114,29 +117,48 @@ impl BudgetManager {
 
             BudgetStatus::NeedsL1Truncation => {
                 let budget = self.l1_budget();
-                Ok(truncate_messages(messages, budget, &mut self.counter))
+                let mut result = truncate_messages(messages, budget, &mut self.counter);
+                // L1.5: snip old tool results.
+                snip_compact::snip_compact(&mut result, &SnipConfig::default());
+                Ok(result)
             }
 
             BudgetStatus::NeedsL2Microcompact => {
-                // L1 first, then L2.
+                // L1 + L1.5 + L2.
                 let budget = self.l1_budget();
                 let mut result = truncate_messages(messages, budget, &mut self.counter);
+                snip_compact::snip_compact(&mut result, &SnipConfig::default());
                 microcompact_messages(&mut result);
                 self.counter.clear_cache();
                 Ok(result)
             }
 
             BudgetStatus::NeedsL3AutoCompact => {
-                // L1 + L2 + L3 in sequence.
+                // L1 + L1.5 + L2 + L3 + post-compact restore.
                 let budget = self.l1_budget();
                 let mut result = truncate_messages(messages, budget, &mut self.counter);
+                snip_compact::snip_compact(&mut result, &SnipConfig::default());
                 microcompact_messages(&mut result);
                 self.counter.clear_cache();
+
+                // Extract context before compaction for post-compact restore.
+                let recent_tools =
+                    post_compact_cleanup::extract_recent_tools(&result, 5);
+                let restore_ctx = RestoreContext {
+                    working_dir: Some(working_dir.to_string_lossy().to_string()),
+                    recent_tools,
+                    ..Default::default()
+                };
 
                 match AutoCompactor::compact(&result, provider, model).await {
                     Ok(summary_msg) => {
                         tracing::info!("L3: replaced {} messages with summary", result.len());
-                        Ok(vec![summary_msg])
+                        let mut compacted = vec![summary_msg];
+                        post_compact_cleanup::post_compact_restore(
+                            &mut compacted,
+                            &restore_ctx,
+                        );
+                        Ok(compacted)
                     }
                     Err(e) => {
                         tracing::warn!("L3: auto-compact failed ({e}), using L1+L2 result");
