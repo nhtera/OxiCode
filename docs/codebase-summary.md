@@ -1,6 +1,6 @@
 # OxiCode — Codebase Summary
 
-**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Scope:** Phase 7 Complete (Voice, Bridge, Telemetry & GitHub Integration) | **Total:** 20 crates, 46 oxicode-tools files, ~156K tokens
+**Version:** 0.5.0 | **Last Updated:** 2026-04-05 | **Scope:** Phase 7 Complete + MCP SDK Parity Migration | **Total:** 20 crates, 46 oxicode-tools files, ~158K tokens
 
 ---
 
@@ -740,17 +740,43 @@ flush_interval_secs = 60
 
 ---
 
-#### oxicode-mcp (~200 LOC)
-**Purpose:** MCP (Model Context Protocol) server wrapper for external tools
+#### oxicode-mcp (~250 LOC)
+**Purpose:** MCP (Model Context Protocol) client & server via rmcp SDK
 
 **Key exports:**
-- `McpServer` — communicates with external MCP servers via stdin/stdout
-- `McpTool` — wrapper implementing Tool trait for MCP endpoints
-- MCP request/response serialization
+- `McpServerManager` — manages multiple MCP client connections (stdio, HTTP/SSE transports)
+- `list_mcp_tools()`, `call_mcp_tool()` — query external MCP tool catalog & invoke
+- `list_mcp_resources()`, `read_mcp_resource()` — access MCP resource URIs
+- `list_prompts()`, `get_prompt()` — query MCP prompt catalog
+- `OxiMcpServer` + `OxiMcpServerBuilder` — expose OxiCode as MCP server to external clients
+- Type bridge: `mcp_tool_to_schema()`, `mcp_resource_to_toolschema()`
 
-**Used by:** ToolRegistry (external tool bridging)
+**Transport support (via rmcp):**
+- Stdio (child process JSON-RPC)
+- HTTP + SSE (streaming HTTP for WebSocket-like semantics)
 
-**Quality:** Proper process management, JSON serialization
+**Files:**
+- manager.rs — McpServerManager lifecycle (spawn, shutdown, multi-client storage)
+- server.rs — OxiMcpServer impl, ServerHandler trait for tool/resource/prompt dispatch
+- config.rs — McpTransportType enum (Stdio, Http), TOML parsing
+- types.rs — Type bridges between rmcp and oxicode-tools models
+- doctor.rs — Health checks for MCP connections
+
+**Features (Phase 2):**
+- Prompts API: query external server prompts + parameters
+- Roots declaration: declare resources owned by client
+- Streamable HTTP: alias for HTTP/SSE transport type
+
+**Server mode (Phase 3):**
+- `oxicode --mcp` spawns server listening on stdio
+- Dynamic tool dispatch via ToolRegistry
+- Demo read_file tool handler
+
+**Used by:** ToolRegistry (external tool bridging), oxicode-core (MCP queries), CLI (mcp-servers, mcp-connect commands)
+
+**Dependency:** rmcp v1.3+ (Rust MCP SDK)
+
+**Quality:** Zero unsafe code, comprehensive tests (8 new), zero clippy warnings
 
 ---
 
@@ -894,10 +920,10 @@ flush_interval_secs = 60
 | **oxicode-remote** | **420** | **WebSocket bridge + session pool (P7)** |
 | **oxicode-telemetry** | **380** | **OTLP event collection (P7)** |
 | **oxicode-github** | **380** | **GitHub App + workflows (P7)** |
-| oxicode-mcp | 200 | MCP bridging |
+| oxicode-mcp | 250 | MCP SDK (rmcp) client & server |
 | oxicode-tui | 800 | Terminal UI (P6: +200 LOC for vim depth + dialogs) |
 | oxicode-cli | 400 | Commands/REPL (P6: +16 new commands) |
-| **Total** | **~10,360** | **20 crates + Phase 7 enhancements** |
+| **Total** | **~10,410** | **20 crates + Phase 7 enhancements + rmcp migration** |
 
 ---
 

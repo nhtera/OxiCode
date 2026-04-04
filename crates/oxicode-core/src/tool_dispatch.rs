@@ -40,7 +40,7 @@ impl QueryEngine {
                 let text: String = result
                     .content
                     .iter()
-                    .filter_map(|c| c.as_text())
+                    .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join("\n");
                 let has_non_text = result.content.iter().any(|c| c.as_text().is_none());
@@ -54,7 +54,7 @@ impl QueryEngine {
                         "\n[Note: non-text content (images/resources) was returned but omitted]",
                     );
                 }
-                if result.is_error {
+                if result.is_error.unwrap_or(false) {
                     Some(oxicode_tools::ToolResult::error(output))
                 } else {
                     Some(oxicode_tools::ToolResult::success(output))

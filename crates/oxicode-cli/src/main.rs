@@ -100,6 +100,10 @@ struct Cli {
     /// Skip first-run onboarding wizard.
     #[arg(long)]
     no_onboard: bool,
+
+    /// Run as an MCP server (expose tools via stdio JSON-RPC).
+    #[arg(long)]
+    mcp: bool,
 }
 
 #[tokio::main]
@@ -122,6 +126,11 @@ async fn main() -> Result<()> {
     if cli.man_page {
         completions::generate_man_page(&mut std::io::stdout())?;
         return Ok(());
+    }
+
+    // Fast-exit: MCP server mode (expose tools via stdio JSON-RPC)
+    if cli.mcp {
+        return run_mcp_server_mode().await;
     }
 
     // First-run onboarding wizard (skip with --no-onboard or non-interactive modes).
@@ -800,5 +809,48 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
         "duration_ms": started.elapsed().as_millis() as u64
     });
     println!("{result}");
+    Ok(())
+}
+
+/// Run OxiCode as an MCP server over stdio.
+///
+/// Exposes a `read_file` demo tool; full tool wiring is future work.
+async fn run_mcp_server_mode() -> Result<()> {
+    use oxicode_mcp::server::OxiMcpServerBuilder;
+    use oxicode_mcp::{McpContent, McpToolResult};
+    use std::sync::Arc;
+
+    let read_file_handler: oxicode_mcp::server::AsyncToolHandler =
+        Arc::new(|args: serde_json::Value| {
+            Box::pin(async move {
+                let path = args
+                    .get("file_path")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                match tokio::fs::read_to_string(path).await {
+                    Ok(content) => McpToolResult::success(vec![McpContent::text(content)]),
+                    Err(e) => McpToolResult::error(vec![McpContent::text(format!(
+                        "Failed to read file: {e}"
+                    ))]),
+                }
+            })
+        });
+
+    let server = OxiMcpServerBuilder::new()
+        .add_tool(
+            "read_file",
+            "Read a file from the filesystem",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "file_path": { "type": "string", "description": "Absolute path to file" }
+                },
+                "required": ["file_path"]
+            }),
+            read_file_handler,
+        )
+        .build();
+
+    oxicode_mcp::run_mcp_server(server).await?;
     Ok(())
 }

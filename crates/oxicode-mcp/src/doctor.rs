@@ -1,15 +1,15 @@
 //! MCP server diagnostics: test connectivity, report capabilities and latency.
 //!
 //! Used by `/mcp doctor` command to verify server health.
+//! Uses rmcp transports for connectivity testing.
 
 use std::fmt;
 use std::time::{Duration, Instant};
 
+use rmcp::ServiceExt;
+use rmcp::transport::TokioChildProcess;
+
 use crate::config::{McpConfig, McpServerConfig, McpTransportType};
-use crate::protocol::ServerCapabilities;
-use crate::sse_transport::SseTransport;
-use crate::stdio_transport::StdioTransport;
-use crate::websocket_transport::WebSocketTransport;
 
 /// Timeout for a single server diagnostic (5 seconds).
 const DIAG_TIMEOUT: Duration = Duration::from_secs(5);
@@ -20,7 +20,6 @@ pub struct DiagResult {
     pub server_name: String,
     pub status: DiagStatus,
     pub latency: Option<Duration>,
-    pub capabilities: Option<ServerCapabilities>,
     /// Whether the server advertises tools capability.
     pub has_tools: bool,
     pub error_detail: Option<String>,
@@ -60,15 +59,9 @@ impl fmt::Display for DiagResult {
     }
 }
 
-/// Diagnose a single MCP server: attempt connection, initialize, list tools.
-#[allow(clippy::too_many_lines)] // diagnostic function with necessary transport-specific branches
+/// Diagnose a single MCP server: attempt connection and initialize via rmcp.
 async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResult {
     let start = Instant::now();
-    let init_params = serde_json::json!({
-        "protocolVersion": "2024-11-05",
-        "capabilities": {},
-        "clientInfo": { "name": "oxicode-doctor", "version": env!("CARGO_PKG_VERSION") }
-    });
 
     let result = match &config.transport {
         McpTransportType::Stdio => {
@@ -77,105 +70,88 @@ async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResu
                     server_name: name.to_string(),
                     status: DiagStatus::Error,
                     latency: None,
-                    capabilities: None,
                     has_tools: false,
                     error_detail: Some("No command configured".to_string()),
                 };
             };
-            let env: Vec<(String, String)> = config
-                .env
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            let transport = match StdioTransport::spawn(command, &config.args, &env) {
+
+            let mut cmd = tokio::process::Command::new(command);
+            cmd.args(&config.args);
+            for (k, v) in &config.env {
+                cmd.env(k, v);
+            }
+
+            let transport = match TokioChildProcess::new(cmd) {
                 Ok(t) => t,
                 Err(e) => {
                     return DiagResult {
                         server_name: name.to_string(),
                         status: DiagStatus::Error,
                         latency: Some(start.elapsed()),
-                        capabilities: None,
                         has_tools: false,
                         error_detail: Some(format!("Spawn failed: {e}")),
                     };
                 }
             };
-            let res = transport.request("initialize", Some(init_params)).await;
-            let () = transport.shutdown().await;
-            res
+
+            match ().serve(transport).await {
+                Ok(client) => {
+                    let has_tools = !client
+                        .list_all_tools()
+                        .await
+                        .map(|t| t.is_empty())
+                        .unwrap_or(true);
+                    let _ = client.cancel().await;
+                    Ok(has_tools)
+                }
+                Err(e) => Err(e.to_string()),
+            }
         }
-        McpTransportType::Sse => {
+        McpTransportType::Sse | McpTransportType::Http => {
             let Some(ref url) = config.url else {
                 return DiagResult {
                     server_name: name.to_string(),
                     status: DiagStatus::Error,
                     latency: None,
-                    capabilities: None,
                     has_tools: false,
                     error_detail: Some("No URL configured".to_string()),
                 };
             };
-            SseTransport::new(url)
-                .request("initialize", Some(init_params))
-                .await
-        }
-        McpTransportType::WebSocket => {
-            let Some(ref url) = config.url else {
-                return DiagResult {
-                    server_name: name.to_string(),
-                    status: DiagStatus::Error,
-                    latency: None,
-                    capabilities: None,
-                    has_tools: false,
-                    error_detail: Some("No WebSocket URL configured".to_string()),
-                };
-            };
-            match WebSocketTransport::connect(url).await {
-                Ok(t) => {
-                    let res = t.request("initialize", Some(init_params)).await;
-                    t.close().await;
-                    res
+
+            let transport =
+                rmcp::transport::StreamableHttpClientTransport::from_uri(url.as_str());
+
+            match ().serve(transport).await {
+                Ok(client) => {
+                    let has_tools = !client
+                        .list_all_tools()
+                        .await
+                        .map(|t| t.is_empty())
+                        .unwrap_or(true);
+                    let _ = client.cancel().await;
+                    Ok(has_tools)
                 }
-                Err(e) => Err(e),
+                Err(e) => Err(e.to_string()),
             }
-        }
-        McpTransportType::InProcess => {
-            // In-process transport is always healthy — no external connection to test.
-            return DiagResult {
-                server_name: name.to_string(),
-                status: DiagStatus::Ok,
-                latency: Some(start.elapsed()),
-                capabilities: None,
-                has_tools: false,
-                error_detail: None,
-            };
         }
     };
 
     let latency = start.elapsed();
 
     match result {
-        Ok(value) => {
-            let capabilities: ServerCapabilities =
-                serde_json::from_value(value.get("capabilities").cloned().unwrap_or_default())
-                    .unwrap_or_default();
-            let has_tools = capabilities.tools.is_some();
-            DiagResult {
-                server_name: name.to_string(),
-                status: DiagStatus::Ok,
-                latency: Some(latency),
-                capabilities: Some(capabilities),
-                has_tools,
-                error_detail: None,
-            }
-        }
+        Ok(has_tools) => DiagResult {
+            server_name: name.to_string(),
+            status: DiagStatus::Ok,
+            latency: Some(latency),
+            has_tools,
+            error_detail: None,
+        },
         Err(e) => DiagResult {
             server_name: name.to_string(),
             status: DiagStatus::Error,
             latency: Some(latency),
-            capabilities: None,
             has_tools: false,
-            error_detail: Some(e.to_string()),
+            error_detail: Some(e),
         },
     }
 }
@@ -188,7 +164,6 @@ pub async fn diagnose_server(name: &str, config: &McpServerConfig) -> DiagResult
             server_name: name.to_string(),
             status: DiagStatus::Timeout,
             latency: Some(DIAG_TIMEOUT),
-            capabilities: None,
             has_tools: false,
             error_detail: Some(format!("Timed out after {DIAG_TIMEOUT:?}")),
         },
@@ -221,7 +196,6 @@ mod tests {
             server_name: "test-server".to_string(),
             status: DiagStatus::Ok,
             latency: Some(Duration::from_millis(42)),
-            capabilities: None,
             has_tools: true,
             error_detail: None,
         };
@@ -237,7 +211,6 @@ mod tests {
             server_name: "broken".to_string(),
             status: DiagStatus::Error,
             latency: None,
-            capabilities: None,
             has_tools: false,
             error_detail: Some("Connection refused".to_string()),
         };

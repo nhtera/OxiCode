@@ -1,194 +1,116 @@
 //! McpServerManager: lifecycle management for MCP server connections.
 //!
-//! Starts configured servers, discovers tools/resources/prompts, handles shutdown.
+//! Uses the rmcp crate for protocol handling — no manual JSON-RPC.
+//! Manages multiple MCP server connections, tool discovery, and execution.
 
 use std::collections::HashMap;
 
 use oxicode_common::{OxiError, OxiResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult, GetPromptRequestParams, Prompt, Tool};
+use rmcp::service::RunningService;
+use rmcp::transport::TokioChildProcess;
+use rmcp::{RoleClient, ServiceExt};
 
 use crate::config::{McpConfig, McpServerConfig, McpTransportType};
-use crate::in_process_transport::InProcessTransport;
-use crate::protocol::{McpToolDef, McpToolResult, ServerCapabilities};
-use crate::sse_transport::SseTransport;
-use crate::stdio_transport::StdioTransport;
-use crate::websocket_transport::WebSocketTransport;
 
-/// Active transport for a running MCP server.
-enum ActiveTransport {
-    Stdio(StdioTransport),
-    Sse(SseTransport),
-    WebSocket(WebSocketTransport),
-    InProcess(InProcessTransport),
-}
+/// Type-erased rmcp client for storing heterogeneous transports in a HashMap.
+type DynClient = RunningService<RoleClient, Box<dyn rmcp::service::DynService<RoleClient>>>;
 
-impl ActiveTransport {
-    async fn request(
-        &self,
-        method: &str,
-        params: Option<serde_json::Value>,
-    ) -> OxiResult<serde_json::Value> {
-        match self {
-            Self::Stdio(t) => t.request(method, params).await,
-            Self::Sse(t) => t.request(method, params).await,
-            Self::WebSocket(t) => t.request(method, params).await,
-            Self::InProcess(t) => t.request(method, params).await,
-        }
-    }
-}
-
-/// A running MCP server with its discovered capabilities.
-struct RunningServer {
-    transport: ActiveTransport,
-    #[allow(dead_code)]
-    capabilities: ServerCapabilities,
-    tools: Vec<McpToolDef>,
+/// A running MCP server client with cached tool list.
+struct ManagedClient {
+    client: DynClient,
+    tools: Vec<Tool>,
     /// Original config for channel permission filtering.
     config: McpServerConfig,
 }
 
-/// Manages multiple MCP server connections.
+/// Manages multiple MCP server connections via rmcp.
+///
+/// Handles lifecycle (start/shutdown), tool discovery, and tool execution.
+/// All clients are type-erased via `DynService` for uniform storage.
 pub struct McpServerManager {
-    servers: HashMap<String, RunningServer>,
+    clients: HashMap<String, ManagedClient>,
 }
 
 impl McpServerManager {
     /// Create an empty manager (no servers started yet).
     pub fn new() -> Self {
         Self {
-            servers: HashMap::new(),
+            clients: HashMap::new(),
         }
     }
 
-    /// Start all enabled servers from config.
+    /// Start all enabled servers from config. Returns names of successfully started servers.
     pub async fn start_from_config(&mut self, config: &McpConfig) -> Vec<String> {
         let mut started = Vec::new();
 
         for (name, server_config) in config.enabled_servers() {
-            let transport = match &server_config.transport {
-                McpTransportType::Stdio => {
-                    let Some(command) = &server_config.command else {
-                        tracing::warn!("MCP server '{name}' has no command");
-                        continue;
-                    };
-                    let env: Vec<(String, String)> = server_config
-                        .env
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
-
-                    match StdioTransport::spawn(command, &server_config.args, &env) {
-                        Ok(t) => ActiveTransport::Stdio(t),
-                        Err(e) => {
-                            tracing::error!("Failed to start MCP server '{name}': {e}");
-                            continue;
-                        }
-                    }
-                }
-                McpTransportType::Sse => {
-                    let Some(url) = &server_config.url else {
-                        tracing::warn!("MCP server '{name}' has no URL");
-                        continue;
-                    };
-                    ActiveTransport::Sse(SseTransport::new(url))
-                }
-                McpTransportType::WebSocket => {
-                    let Some(url) = &server_config.url else {
-                        tracing::warn!("MCP server '{name}' has no WebSocket URL");
-                        continue;
-                    };
-                    match WebSocketTransport::connect(url).await {
-                        Ok(t) => ActiveTransport::WebSocket(t),
-                        Err(e) => {
-                            tracing::error!("Failed to connect WebSocket MCP server '{name}': {e}");
-                            continue;
-                        }
-                    }
-                }
-                McpTransportType::InProcess => {
-                    // TODO: In-process transport currently creates a pair but drops the server
-                    // side. Full integration requires a bundled MCP server handler that takes
-                    // ownership of the server transport. For now, this serves as scaffolding
-                    // for the transport plumbing — actual in-process servers will be added
-                    // when bundled tool servers are implemented.
-                    let (client, _server) = InProcessTransport::pair();
-                    tracing::warn!(
-                        "MCP server '{name}' uses in-process transport (server-side not yet wired)"
-                    );
-                    ActiveTransport::InProcess(client)
-                }
-            };
-
-            // Initialize the server.
-            match self
-                .initialize_server(name, transport, server_config.clone())
-                .await
-            {
+            match self.start_server(name, server_config).await {
                 Ok(()) => started.push(name.to_string()),
-                Err(e) => tracing::error!("Failed to initialize MCP server '{name}': {e}"),
+                Err(e) => tracing::error!("Failed to start MCP server '{name}': {e}"),
             }
         }
 
         started
     }
 
-    /// Initialize a server: send initialize, list tools.
-    async fn initialize_server(
-        &mut self,
-        name: &str,
-        transport: ActiveTransport,
-        server_config: McpServerConfig,
-    ) -> OxiResult<()> {
-        let init_params = serde_json::json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {
-                "name": "oxicode",
-                "version": env!("CARGO_PKG_VERSION"),
-            }
-        });
+    /// Start a single server: create transport, initialize via rmcp, discover tools.
+    async fn start_server(&mut self, name: &str, config: &McpServerConfig) -> OxiResult<()> {
+        let client: DynClient = match &config.transport {
+            McpTransportType::Stdio => {
+                let command = config.command.as_deref().ok_or_else(|| {
+                    OxiError::Other(format!("MCP server '{name}' has no command"))
+                })?;
 
-        let result = transport.request("initialize", Some(init_params)).await?;
-
-        let capabilities: ServerCapabilities =
-            serde_json::from_value(result.get("capabilities").cloned().unwrap_or_default())
-                .unwrap_or_default();
-
-        // Send initialized notification (stdio and in-process).
-        match &transport {
-            ActiveTransport::Stdio(ref stdio) => {
-                let _ = stdio.notify("notifications/initialized", None).await;
-            }
-            ActiveTransport::InProcess(ref inp) => {
-                let _ = inp.notify("notifications/initialized", None).await;
-            }
-            _ => {}
-        }
-
-        // Discover tools.
-        let tools = if capabilities.tools.is_some() {
-            match transport.request("tools/list", None).await {
-                Ok(result) => {
-                    let tools_array = result.get("tools").cloned().unwrap_or_default();
-                    serde_json::from_value::<Vec<McpToolDef>>(tools_array).unwrap_or_default()
+                let mut cmd = tokio::process::Command::new(command);
+                cmd.args(&config.args);
+                for (k, v) in &config.env {
+                    cmd.env(k, v);
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to list tools for MCP server '{name}': {e}");
-                    Vec::new()
-                }
+
+                let transport = TokioChildProcess::new(cmd)
+                    .map_err(|e| OxiError::Other(format!("Failed to spawn '{name}': {e}")))?;
+
+                ()
+                    .into_dyn()
+                    .serve(transport)
+                    .await
+                    .map_err(|e| OxiError::Other(format!("Failed to initialize '{name}': {e}")))?
             }
-        } else {
-            Vec::new()
+            McpTransportType::Http | McpTransportType::Sse => {
+                // StreamableHttpClientTransport handles both SSE and Streamable HTTP.
+                let url = config.url.as_deref().ok_or_else(|| {
+                    OxiError::Other(format!("MCP server '{name}' has no URL"))
+                })?;
+
+                let transport =
+                    rmcp::transport::StreamableHttpClientTransport::from_uri(url);
+
+                ()
+                    .into_dyn()
+                    .serve(transport)
+                    .await
+                    .map_err(|e| OxiError::Other(format!("Failed to initialize '{name}': {e}")))?
+            }
+        };
+
+        // Discover tools (rmcp handles capabilities check + auto-pagination).
+        let tools = match client.list_all_tools().await {
+            Ok(tools) => tools,
+            Err(e) => {
+                tracing::warn!("Failed to list tools for '{name}': {e}");
+                Vec::new()
+            }
         };
 
         tracing::info!("MCP server '{name}' initialized with {} tools", tools.len());
 
-        self.servers.insert(
+        self.clients.insert(
             name.to_string(),
-            RunningServer {
-                transport,
-                capabilities,
+            ManagedClient {
+                client,
                 tools,
-                config: server_config,
+                config: config.clone(),
             },
         );
 
@@ -197,15 +119,13 @@ impl McpServerManager {
 
     /// Get all discovered tools across all servers, prefixed with server name.
     /// Tools are filtered by per-server channel permissions (allow/block lists).
-    pub fn all_tools(&self) -> Vec<(String, &McpToolDef)> {
+    pub fn all_tools(&self) -> Vec<(String, &Tool)> {
         let mut tools = Vec::new();
-        for (server_name, server) in &self.servers {
-            for tool in &server.tools {
-                // Apply channel permission filtering.
-                if !server.config.is_tool_allowed(&tool.name) {
+        for (server_name, managed) in &self.clients {
+            for tool in &managed.tools {
+                if !managed.config.is_tool_allowed(&tool.name) {
                     continue;
                 }
-                // Prefix tool name: "server_name__tool_name"
                 let prefixed = format!("{server_name}__{}", tool.name);
                 tools.push((prefixed, tool));
             }
@@ -219,20 +139,23 @@ impl McpServerManager {
         server_name: &str,
         tool_name: &str,
         arguments: serde_json::Value,
-    ) -> OxiResult<McpToolResult> {
-        let server = self
-            .servers
-            .get(server_name)
-            .ok_or_else(|| OxiError::Other(format!("MCP server '{server_name}' not found")))?;
+    ) -> OxiResult<CallToolResult> {
+        let managed = self.clients.get(server_name).ok_or_else(|| {
+            OxiError::Other(format!("MCP server '{server_name}' not found"))
+        })?;
 
-        let params = serde_json::json!({
-            "name": tool_name,
-            "arguments": arguments,
-        });
+        let args_map: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_value(arguments)
+                .map_err(|e| OxiError::Other(format!("Invalid tool arguments: {e}")))?;
 
-        let result = server.transport.request("tools/call", Some(params)).await?;
-        serde_json::from_value(result)
-            .map_err(|e| OxiError::Other(format!("Failed to parse tool result: {e}")))
+        let params = CallToolRequestParams::new(tool_name.to_string())
+            .with_arguments(args_map);
+
+        managed
+            .client
+            .call_tool(params)
+            .await
+            .map_err(|e| OxiError::Other(format!("Tool call failed: {e}")))
     }
 
     /// Resolve a prefixed tool name ("server__tool") to (server_name, tool_name).
@@ -242,34 +165,25 @@ impl McpServerManager {
 
     /// List connected server names.
     pub fn server_names(&self) -> Vec<&str> {
-        self.servers.keys().map(String::as_str).collect()
+        self.clients.keys().map(String::as_str).collect()
     }
 
     /// Number of connected servers.
     pub fn server_count(&self) -> usize {
-        self.servers.len()
+        self.clients.len()
     }
 
-    /// List resources from all connected servers that advertise resource capability.
-    ///
-    /// Returns `(server_name, Vec<McpResource>)` pairs.
-    pub async fn list_resources(&self) -> Vec<(String, Vec<crate::protocol::McpResource>)> {
+    /// List resources from all connected servers.
+    pub async fn list_resources(&self) -> Vec<(String, Vec<rmcp::model::Resource>)> {
         let mut results = Vec::new();
-        for (name, server) in &self.servers {
-            if server.capabilities.resources.is_none() {
-                continue;
-            }
-            match server.transport.request("resources/list", None).await {
-                Ok(result) => {
-                    let arr = result.get("resources").cloned().unwrap_or_default();
-                    let resources: Vec<crate::protocol::McpResource> =
-                        serde_json::from_value(arr).unwrap_or_default();
-                    if !resources.is_empty() {
-                        results.push((name.clone(), resources));
-                    }
+        for (name, managed) in &self.clients {
+            match managed.client.list_all_resources().await {
+                Ok(resources) if !resources.is_empty() => {
+                    results.push((name.clone(), resources));
                 }
+                Ok(_) => {}
                 Err(e) => {
-                    tracing::warn!("Failed to list resources from MCP server '{name}': {e}");
+                    tracing::warn!("Failed to list resources from '{name}': {e}");
                 }
             }
         }
@@ -281,33 +195,73 @@ impl McpServerManager {
         &self,
         server_name: &str,
         uri: &str,
-    ) -> OxiResult<Vec<crate::protocol::McpContent>> {
-        let server = self
-            .servers
-            .get(server_name)
-            .ok_or_else(|| OxiError::Other(format!("MCP server '{server_name}' not found")))?;
+    ) -> OxiResult<rmcp::model::ReadResourceResult> {
+        let managed = self.clients.get(server_name).ok_or_else(|| {
+            OxiError::Other(format!("MCP server '{server_name}' not found"))
+        })?;
 
-        let params = serde_json::json!({ "uri": uri });
-        let result = server
-            .transport
-            .request("resources/read", Some(params))
-            .await?;
+        let params = rmcp::model::ReadResourceRequestParams::new(uri);
 
-        let contents_arr = result.get("contents").cloned().unwrap_or_default();
-        serde_json::from_value(contents_arr)
-            .map_err(|e| OxiError::Other(format!("Failed to parse resource contents: {e}")))
+        managed
+            .client
+            .read_resource(params)
+            .await
+            .map_err(|e| OxiError::Other(format!("Failed to read resource: {e}")))
     }
 
-    /// Shut down all servers gracefully.
-    pub async fn shutdown_all(&self) {
-        for (name, server) in &self.servers {
-            tracing::info!("Shutting down MCP server '{name}'");
-            match &server.transport {
-                ActiveTransport::Stdio(stdio) => stdio.shutdown().await,
-                ActiveTransport::WebSocket(ws) => ws.close().await,
-                ActiveTransport::InProcess(inp) => inp.shutdown().await,
-                ActiveTransport::Sse(_) => {} // SSE has no shutdown protocol.
+    /// List prompts from all connected servers.
+    pub async fn list_prompts(&self) -> Vec<(String, Vec<Prompt>)> {
+        let mut results = Vec::new();
+        for (name, managed) in &self.clients {
+            match managed.client.list_all_prompts().await {
+                Ok(prompts) if !prompts.is_empty() => {
+                    results.push((name.clone(), prompts));
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("Failed to list prompts from '{name}': {e}");
+                }
             }
+        }
+        results
+    }
+
+    /// Get a specific prompt with optional arguments from a server.
+    pub async fn get_prompt(
+        &self,
+        server_name: &str,
+        prompt_name: &str,
+        arguments: Option<HashMap<String, String>>,
+    ) -> OxiResult<rmcp::model::GetPromptResult> {
+        let managed = self.clients.get(server_name).ok_or_else(|| {
+            OxiError::Other(format!("MCP server '{server_name}' not found"))
+        })?;
+
+        let mut params = GetPromptRequestParams::new(prompt_name);
+        if let Some(args) = arguments {
+            let map: serde_json::Map<String, serde_json::Value> = args
+                .into_iter()
+                .map(|(k, v)| (k, serde_json::Value::String(v)))
+                .collect();
+            params = params.with_arguments(map);
+        }
+
+        managed
+            .client
+            .get_prompt(params)
+            .await
+            .map_err(|e| OxiError::Other(format!("Failed to get prompt: {e}")))
+    }
+
+    /// Shut down all servers gracefully via cancellation tokens.
+    ///
+    /// Uses cancellation tokens so it works through `&self` (no need for mutable borrow).
+    /// Preserves API compatibility with callers using `Arc<McpServerManager>`.
+    #[allow(clippy::unused_async)]
+    pub async fn shutdown_all(&self) {
+        for (name, managed) in &self.clients {
+            tracing::info!("Shutting down MCP server '{name}'");
+            managed.client.cancellation_token().cancel();
         }
     }
 }

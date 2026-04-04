@@ -17,11 +17,11 @@ use crate::env_expansion;
 #[serde(rename_all = "lowercase")]
 pub enum McpTransportType {
     Stdio,
+    /// SSE (deprecated in MCP spec — maps to StreamableHttp internally).
     Sse,
-    #[serde(alias = "ws", alias = "websocket")]
-    WebSocket,
-    #[serde(alias = "in_process", alias = "in-process")]
-    InProcess,
+    /// Streamable HTTP — modern MCP transport.
+    #[serde(alias = "streamable-http", alias = "streamable_http")]
+    Http,
 }
 
 /// Configuration for a single MCP server.
@@ -38,7 +38,7 @@ pub struct McpServerConfig {
     #[serde(default)]
     pub args: Vec<String>,
 
-    /// For SSE/WebSocket: the server URL.
+    /// For SSE/HTTP: the server URL.
     #[serde(default)]
     pub url: Option<String>,
 
@@ -295,6 +295,37 @@ url = "http://localhost:3000/mcp"
         };
         assert!(cfg.is_tool_allowed("read_file"));
         assert!(!cfg.is_tool_allowed("dangerous_tool"));
+    }
+
+    #[test]
+    fn test_http_config_deser() {
+        let toml_str = r#"
+transport = "http"
+url = "http://localhost:8000/mcp"
+"#;
+        let config: McpServerConfig = toml::from_str(toml_str).unwrap();
+        assert!(matches!(config.transport, McpTransportType::Http));
+        assert_eq!(config.url.unwrap(), "http://localhost:8000/mcp");
+    }
+
+    #[test]
+    fn test_http_alias_streamable_http() {
+        let toml_str = r#"
+transport = "streamable-http"
+url = "http://localhost:8000/mcp"
+"#;
+        let config: McpServerConfig = toml::from_str(toml_str).unwrap();
+        assert!(matches!(config.transport, McpTransportType::Http));
+    }
+
+    #[test]
+    fn test_http_alias_streamable_http_underscore() {
+        let toml_str = r#"
+transport = "streamable_http"
+url = "http://localhost:8000/mcp"
+"#;
+        let config: McpServerConfig = toml::from_str(toml_str).unwrap();
+        assert!(matches!(config.transport, McpTransportType::Http));
     }
 
     #[test]

@@ -60,7 +60,7 @@ impl Tool for ListMcpResourcesTool {
             }
             let _ = writeln!(output, "## Server: {server_name}");
             for res in resources {
-                let name = res.name.as_deref().unwrap_or("(unnamed)");
+                let name = &res.name;
                 let desc = res
                     .description
                     .as_deref()
@@ -134,19 +134,30 @@ impl Tool for ReadMcpResourceTool {
             .as_str()
             .ok_or_else(|| oxicode_common::OxiError::Other("Missing 'uri' parameter".into()))?;
 
-        let contents = ctx.mcp_manager.read_resource(server, uri).await?;
+        let result = ctx.mcp_manager.read_resource(server, uri).await?;
+        let contents = &result.contents;
 
         if contents.is_empty() {
             return Ok(ToolResult::success("(empty resource)"));
         }
 
-        // Collect text content, note non-text items.
+        // Collect text content from resource contents.
         let text: String = contents
             .iter()
-            .filter_map(|c| c.as_text())
+            .filter_map(|c| match c {
+                oxicode_mcp::McpResourceContents::TextResourceContents { text, .. } => {
+                    Some(text.as_str())
+                }
+                oxicode_mcp::McpResourceContents::BlobResourceContents { .. } => None,
+            })
             .collect::<Vec<_>>()
             .join("\n");
-        let has_non_text = contents.iter().any(|c| c.as_text().is_none());
+        let has_non_text = contents.iter().any(|c| {
+            matches!(
+                c,
+                oxicode_mcp::McpResourceContents::BlobResourceContents { .. }
+            )
+        });
 
         let mut output = if text.is_empty() {
             "(no text content)".to_string()
