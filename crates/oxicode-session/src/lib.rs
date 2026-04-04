@@ -1,4 +1,7 @@
+pub mod memdir;
 pub mod memory;
+pub mod memory_scanner;
+pub mod memory_types;
 
 use std::fs;
 use std::path::{Path, PathBuf};

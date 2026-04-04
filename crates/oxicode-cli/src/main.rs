@@ -183,6 +183,7 @@ async fn main() -> Result<()> {
         global_md.as_deref(),
         project_md.as_deref(),
         skills_prompt.as_deref(),
+        None, // TODO(phase-4): inject project memory
     );
 
     let state_store = Arc::new(StateStore::new(AppState {
@@ -670,6 +671,7 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
     let system_prompt = oxicode_core::system_prompt::assemble_system_prompt(
         global_md.as_deref(),
         project_md.as_deref(),
+        None,
         None,
     );
 

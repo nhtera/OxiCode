@@ -17,6 +17,7 @@ fn bench_system_prompt_assembly(c: &mut Criterion) {
                 Some("# Global instructions"),
                 Some("# Project instructions"),
                 None,
+                None,
             );
         });
     });
