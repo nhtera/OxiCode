@@ -86,10 +86,7 @@ fn derive_machine_key() -> [u8; 32] {
     // Append hostname.
     if let Ok(hostname) = std::env::var("HOSTNAME")
         .or_else(|_| std::env::var("COMPUTERNAME"))
-        .or_else(|_| {
-            std::fs::read_to_string("/etc/hostname")
-                .map(|s| s.trim().to_string())
-        })
+        .or_else(|_| std::fs::read_to_string("/etc/hostname").map(|s| s.trim().to_string()))
     {
         seed.push_str(&hostname);
     }
@@ -100,9 +97,8 @@ fn derive_machine_key() -> [u8; 32] {
     }
 
     // Hash the seed to get a fixed-size key using SHA-256 for better mixing.
-    let seed_hash = super::pkce::base64_url_encode(
-        &super::pkce::simple_sha256_pub(seed.as_bytes()),
-    );
+    let seed_hash =
+        super::pkce::base64_url_encode(&super::pkce::simple_sha256_pub(seed.as_bytes()));
     let mut key = [0u8; 32];
     let key_bytes = seed_hash.as_bytes();
     for (i, byte) in key.iter_mut().enumerate() {

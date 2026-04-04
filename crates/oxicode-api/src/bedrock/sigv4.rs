@@ -50,9 +50,8 @@ pub fn sign_request(params: &SignParams<'_>) -> Vec<(String, String)> {
         signed_headers.push_str(";x-amz-security-token");
     }
 
-    let canonical_request = format!(
-        "POST\n{path}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
-    );
+    let canonical_request =
+        format!("POST\n{path}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
 
     let credential_scope = format!(
         "{datestamp}/{}/{}/aws4_request",
@@ -60,9 +59,8 @@ pub fn sign_request(params: &SignParams<'_>) -> Vec<(String, String)> {
     );
     let canonical_request_hash = hex::encode(Sha256::digest(canonical_request.as_bytes()));
 
-    let string_to_sign = format!(
-        "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{canonical_request_hash}"
-    );
+    let string_to_sign =
+        format!("AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{canonical_request_hash}");
 
     // Derive signing key.
     let k_date = hmac_sha256(
@@ -122,10 +120,7 @@ mod tests {
         assert!(header_names.contains(&"x-amz-date"));
         assert!(header_names.contains(&"x-amz-content-sha256"));
 
-        let auth = headers
-            .iter()
-            .find(|(k, _)| k == "authorization")
-            .unwrap();
+        let auth = headers.iter().find(|(k, _)| k == "authorization").unwrap();
         assert!(auth.1.starts_with("AWS4-HMAC-SHA256"));
     }
 

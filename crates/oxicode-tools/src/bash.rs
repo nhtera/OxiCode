@@ -108,10 +108,8 @@ impl Tool for BashTool {
 
         // --- Step 2: Background mode ---
         if run_in_background {
-            let runner = BackgroundRunner::new(
-                ctx.task_manager.clone(),
-                ctx.task_abort_handles.clone(),
-            );
+            let runner =
+                BackgroundRunner::new(ctx.task_manager.clone(), ctx.task_abort_handles.clone());
             let task_id = runner.spawn(command, &ctx.working_dir);
             let output_path = runner.output_path(&task_id);
             return Ok(ToolResult::success(format!(
@@ -345,10 +343,7 @@ mod tests {
         let ctx = ToolContext::default();
 
         let result = tool
-            .execute(
-                serde_json::json!({"command": "sudo echo hello"}),
-                &ctx,
-            )
+            .execute(serde_json::json!({"command": "sudo echo hello"}), &ctx)
             .await
             .unwrap();
 

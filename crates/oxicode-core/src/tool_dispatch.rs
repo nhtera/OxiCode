@@ -237,10 +237,7 @@ fn summarize_tool_input(tool_name: &str, input: &serde_json::Value) -> String {
             .and_then(|v| v.as_str())
             .map(String::from),
         "grep" => {
-            let pattern = input
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
+            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
             let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
             Some(format!("{pattern} in {path}"))
         }
@@ -259,5 +256,101 @@ fn summarize_tool_input(tool_name: &str, input: &serde_json::Value) -> String {
         format!("{}...", &s[..idx])
     } else {
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- summarize_tool_input tests --
+
+    #[test]
+    fn test_summarize_bash() {
+        let input = serde_json::json!({"command": "cargo test"});
+        let result = summarize_tool_input("bash", &input);
+        assert_eq!(result, "cargo test");
+    }
+
+    #[test]
+    fn test_summarize_file_read() {
+        let input = serde_json::json!({"file_path": "/tmp/test.rs"});
+        let result = summarize_tool_input("file_read", &input);
+        assert_eq!(result, "/tmp/test.rs");
+    }
+
+    #[test]
+    fn test_summarize_file_write() {
+        let input = serde_json::json!({"file_path": "/tmp/out.txt"});
+        let result = summarize_tool_input("file_write", &input);
+        assert_eq!(result, "/tmp/out.txt");
+    }
+
+    #[test]
+    fn test_summarize_file_edit() {
+        let input = serde_json::json!({"file_path": "/src/main.rs"});
+        let result = summarize_tool_input("file_edit", &input);
+        assert_eq!(result, "/src/main.rs");
+    }
+
+    #[test]
+    fn test_summarize_grep() {
+        let input = serde_json::json!({"pattern": "TODO", "path": "src/"});
+        let result = summarize_tool_input("grep", &input);
+        assert_eq!(result, "TODO in src/");
+    }
+
+    #[test]
+    fn test_summarize_grep_defaults() {
+        let input = serde_json::json!({});
+        let result = summarize_tool_input("grep", &input);
+        assert_eq!(result, "? in .");
+    }
+
+    #[test]
+    fn test_summarize_glob() {
+        let input = serde_json::json!({"pattern": "**/*.rs"});
+        let result = summarize_tool_input("glob", &input);
+        assert_eq!(result, "**/*.rs");
+    }
+
+    #[test]
+    fn test_summarize_unknown_tool() {
+        let input = serde_json::json!({"url": "https://example.com"});
+        let result = summarize_tool_input("web_fetch", &input);
+        // web_fetch is not a recognized tool, so falls through to generic serde_json output.
+        assert!(result.contains("url"));
+        assert!(result.contains("https://example.com"));
+    }
+
+    #[test]
+    fn test_summarize_unknown_empty_input() {
+        let input = serde_json::json!({});
+        let result = summarize_tool_input("unknown_tool", &input);
+        assert_eq!(result, "{}");
+    }
+
+    #[test]
+    fn test_summarize_truncates_long_input() {
+        let long_cmd = "a".repeat(100);
+        let input = serde_json::json!({"command": long_cmd});
+        let result = summarize_tool_input("bash", &input);
+        assert!(result.len() < 100);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_summarize_bash_missing_command() {
+        let input = serde_json::json!({"timeout": 30});
+        let result = summarize_tool_input("bash", &input);
+        // Falls through to serde_json::to_string since "command" key missing.
+        assert!(result.contains("timeout"));
+    }
+
+    #[test]
+    fn test_summarize_non_object_input() {
+        let input = serde_json::json!("just a string");
+        let result = summarize_tool_input("unknown", &input);
+        assert!(result.contains("just a string"));
     }
 }

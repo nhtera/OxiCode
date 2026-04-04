@@ -23,14 +23,22 @@ pub struct PowerShellTool;
 fn powershell_exe() -> &'static str {
     if cfg!(target_os = "windows") {
         // Prefer pwsh (PowerShell 7+), fall back to powershell.exe (Windows PowerShell 5.1)
-        if which_exists("pwsh") { "pwsh" } else { "powershell.exe" }
+        if which_exists("pwsh") {
+            "pwsh"
+        } else {
+            "powershell.exe"
+        }
     } else {
         "pwsh"
     }
 }
 
 fn which_exists(name: &str) -> bool {
-    let cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    let cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
     std::process::Command::new(cmd)
         .arg(name)
         .stdout(std::process::Stdio::null())

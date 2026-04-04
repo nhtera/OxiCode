@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use oxicode_common::OxiResult;
 use oxicode_agents::TeamManager;
+use oxicode_common::OxiResult;
 use oxicode_mcp::McpServerManager;
 use oxicode_skills::SkillExecutor;
 use oxicode_tasks::TaskManager;
@@ -117,4 +117,79 @@ pub trait Tool: Send + Sync {
 
     /// Execute the tool with the given JSON input and context.
     async fn execute(&self, input: serde_json::Value, ctx: &ToolContext) -> OxiResult<ToolResult>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_result_success() {
+        let result = ToolResult::success("output");
+        assert!(!result.is_error);
+        assert_eq!(result.content, "output");
+    }
+
+    #[test]
+    fn tool_result_error() {
+        let result = ToolResult::error("something went wrong");
+        assert!(result.is_error);
+        assert_eq!(result.content, "something went wrong");
+    }
+
+    #[test]
+    fn tool_result_serde_roundtrip() {
+        let result = ToolResult::success("data");
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: ToolResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.content, "data");
+        assert!(!parsed.is_error);
+    }
+
+    #[test]
+    fn permission_level_serde() {
+        let levels = [
+            PermissionLevel::ReadOnly,
+            PermissionLevel::FileWrite,
+            PermissionLevel::ShellExec,
+            PermissionLevel::System,
+        ];
+        for level in levels {
+            let json = serde_json::to_string(&level).unwrap();
+            let parsed: PermissionLevel = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, level);
+        }
+    }
+
+    #[test]
+    fn tool_context_default() {
+        let ctx = ToolContext::default();
+        assert!(!ctx.working_dir.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn tool_context_debug() {
+        let ctx = ToolContext::default();
+        let debug = format!("{ctx:?}");
+        assert!(debug.contains("ToolContext"));
+        assert!(debug.contains("working_dir"));
+    }
+
+    #[test]
+    fn tool_schema_construction() {
+        let schema = ToolSchema {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+        };
+        assert_eq!(schema.name, "test_tool");
+        assert_eq!(schema.description, "A test tool");
+    }
+
+    #[test]
+    fn tool_result_empty_content() {
+        let result = ToolResult::success("");
+        assert!(!result.is_error);
+        assert!(result.content.is_empty());
+    }
 }

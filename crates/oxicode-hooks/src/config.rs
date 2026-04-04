@@ -148,4 +148,128 @@ enabled = false
         let config = HooksConfig::from_toml_value(&value);
         assert!(config.get(HookEvent::SessionStart).is_none());
     }
+
+    // -- New comprehensive tests --
+
+    #[test]
+    fn test_empty_config() {
+        let config = HooksConfig::default();
+        assert!(config.hooks.is_empty());
+        assert!(config.get(HookEvent::SessionStart).is_none());
+    }
+
+    #[test]
+    fn test_from_non_table_value() {
+        let value: toml::Value = toml::Value::String("not a table".to_string());
+        let config = HooksConfig::from_toml_value(&value);
+        assert!(config.hooks.is_empty());
+    }
+
+    #[test]
+    fn test_default_timeout() {
+        let toml_str = r#"session_start = "echo hello""#;
+        let value: toml::Value = toml_str.parse().unwrap();
+        let config = HooksConfig::from_toml_value(&value);
+        let hook = config.get(HookEvent::SessionStart).unwrap();
+        assert_eq!(hook.timeout_secs, 10);
+    }
+
+    #[test]
+    fn test_custom_timeout() {
+        let toml_str = r#"
+[tool_call_before]
+command = "security-check.sh"
+timeout_secs = 30
+"#;
+        let value: toml::Value = toml_str.parse().unwrap();
+        let config = HooksConfig::from_toml_value(&value);
+        let hook = config.get(HookEvent::ToolCallBefore).unwrap();
+        assert_eq!(hook.timeout_secs, 30);
+    }
+
+    #[test]
+    fn test_table_default_enabled() {
+        let toml_str = r#"
+[error]
+command = "log-error.sh"
+"#;
+        let value: toml::Value = toml_str.parse().unwrap();
+        let config = HooksConfig::from_toml_value(&value);
+        let hook = config.get(HookEvent::Error).unwrap();
+        assert!(hook.enabled);
+    }
+
+    #[test]
+    fn test_multiple_hooks() {
+        let toml_str = r#"
+session_start = "init.sh"
+session_end = "cleanup.sh"
+pre_query = "pre.sh"
+post_sampling = "post.sh"
+tool_call_before = "check.sh"
+"#;
+        let value: toml::Value = toml_str.parse().unwrap();
+        let config = HooksConfig::from_toml_value(&value);
+        assert_eq!(config.hooks.len(), 5);
+        assert!(config.get(HookEvent::SessionStart).is_some());
+        assert!(config.get(HookEvent::SessionEnd).is_some());
+        assert!(config.get(HookEvent::PreQuery).is_some());
+        assert!(config.get(HookEvent::PostSampling).is_some());
+        assert!(config.get(HookEvent::ToolCallBefore).is_some());
+    }
+
+    #[test]
+    fn test_unknown_event_key_stored_but_not_retrievable() {
+        let toml_str = r#"unknown_event = "noop.sh""#;
+        let value: toml::Value = toml_str.parse().unwrap();
+        let config = HooksConfig::from_toml_value(&value);
+        assert_eq!(config.hooks.len(), 1);
+        // Can't retrieve it via HookEvent since "unknown_event" doesn't match any event.
+        // All known events should return None.
+        assert!(config.get(HookEvent::SessionStart).is_none());
+    }
+
+    #[test]
+    fn test_non_string_non_table_value_skipped() {
+        let toml_str = r#"session_start = 42"#;
+        let value: toml::Value = toml_str.parse().unwrap();
+        let config = HooksConfig::from_toml_value(&value);
+        assert!(config.hooks.is_empty());
+    }
+
+    #[test]
+    fn test_hook_def_serde_roundtrip() {
+        let def = HookDef {
+            command: "echo test".to_string(),
+            timeout_secs: 15,
+            enabled: true,
+        };
+        let json = serde_json::to_string(&def).unwrap();
+        let parsed: HookDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.command, "echo test");
+        assert_eq!(parsed.timeout_secs, 15);
+        assert!(parsed.enabled);
+    }
+
+    #[test]
+    fn test_all_29_events_retrievable() {
+        // Build a config with all 29 events configured.
+        let mut hooks = HashMap::new();
+        for event in HookEvent::ALL {
+            hooks.insert(
+                event.as_str().to_string(),
+                HookDef {
+                    command: format!("hook-{}.sh", event.as_str()),
+                    timeout_secs: 10,
+                    enabled: true,
+                },
+            );
+        }
+        let config = HooksConfig { hooks };
+        for event in HookEvent::ALL {
+            let hook = config.get(*event);
+            assert!(hook.is_some(), "Event {:?} should be retrievable", event);
+            assert!(hook.unwrap().command.contains(event.as_str()));
+        }
+    }
 }

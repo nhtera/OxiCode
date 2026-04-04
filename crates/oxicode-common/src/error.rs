@@ -134,9 +134,7 @@ mod tests {
         assert!(err.is_retryable());
         match err {
             OxiError::Api {
-                status,
-                retryable,
-                ..
+                status, retryable, ..
             } => {
                 assert_eq!(status, Some(429));
                 assert!(retryable);

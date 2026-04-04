@@ -163,8 +163,8 @@ mod tests {
     #[test]
     fn test_inner_word_basic() {
         let text = "hello world foo";
-        assert_eq!(inner_word(text, 0), Some((0, 5)));  // "hello"
-        assert_eq!(inner_word(text, 2), Some((0, 5)));  // still "hello"
+        assert_eq!(inner_word(text, 0), Some((0, 5))); // "hello"
+        assert_eq!(inner_word(text, 2), Some((0, 5))); // still "hello"
         assert_eq!(inner_word(text, 6), Some((6, 11))); // "world"
         assert_eq!(inner_word(text, 12), Some((12, 15))); // "foo"
     }
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_a_word_basic() {
         let text = "hello world foo";
-        assert_eq!(a_word(text, 0), Some((0, 6)));  // "hello " (with trailing space)
+        assert_eq!(a_word(text, 0), Some((0, 6))); // "hello " (with trailing space)
         assert_eq!(a_word(text, 6), Some((6, 12))); // "world " (with trailing space)
         assert_eq!(a_word(text, 12), Some((12, 15))); // "foo" (no trailing space)
     }

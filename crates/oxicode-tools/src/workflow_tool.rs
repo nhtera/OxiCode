@@ -65,13 +65,13 @@ impl Tool for WorkflowTool {
         match action {
             "list" => {
                 if !wf_dir.exists() {
-                    return Ok(ToolResult::success(serde_json::to_string_pretty(
-                        &serde_json::json!({
+                    return Ok(ToolResult::success(
+                        serde_json::to_string_pretty(&serde_json::json!({
                             "workflows": [],
                             "message": "No .oxicode/workflows/ directory found"
-                        }),
-                    )
-                    .unwrap_or_default()));
+                        }))
+                        .unwrap_or_default(),
+                    ));
                 }
 
                 let mut workflows = Vec::new();

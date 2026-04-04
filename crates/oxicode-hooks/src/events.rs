@@ -249,4 +249,176 @@ mod tests {
             assert_eq!(format!("\"{s}\""), serialized);
         }
     }
+
+    // -- New comprehensive tests --
+
+    #[test]
+    fn test_all_core_events_serialize() {
+        let core_events = [
+            (HookEvent::SessionStart, "session_start"),
+            (HookEvent::SessionEnd, "session_end"),
+            (HookEvent::PreQuery, "pre_query"),
+            (HookEvent::PostSampling, "post_sampling"),
+            (HookEvent::ToolCallBefore, "tool_call_before"),
+            (HookEvent::ToolCallAfter, "tool_call_after"),
+            (HookEvent::PermissionRequest, "permission_request"),
+            (HookEvent::ContextCompact, "context_compact"),
+            (HookEvent::ModelSwitch, "model_switch"),
+            (HookEvent::Error, "error"),
+        ];
+        for (event, expected_str) in core_events {
+            assert_eq!(event.as_str(), expected_str, "Core event {event:?} as_str");
+            let json = serde_json::to_string(&event).unwrap();
+            let parsed: HookEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, event, "Core event {event:?} roundtrip");
+        }
+    }
+
+    #[test]
+    fn test_all_extended_events_serialize() {
+        let extended_events = [
+            (HookEvent::CompactComplete, "compact_complete"),
+            (HookEvent::AgentSpawn, "agent_spawn"),
+            (HookEvent::AgentComplete, "agent_complete"),
+            (HookEvent::SkillActivate, "skill_activate"),
+            (HookEvent::PluginInit, "plugin_init"),
+            (HookEvent::PluginShutdown, "plugin_shutdown"),
+            (HookEvent::SessionSave, "session_save"),
+            (HookEvent::SessionLoad, "session_load"),
+            (HookEvent::ThemeChange, "theme_change"),
+            (HookEvent::CommandExecute, "command_execute"),
+            (HookEvent::FileRead, "file_read"),
+            (HookEvent::FileWrite, "file_write"),
+            (HookEvent::FileEdit, "file_edit"),
+            (HookEvent::BashExecute, "bash_execute"),
+            (HookEvent::PermissionGrant, "permission_grant"),
+            (HookEvent::PermissionDeny, "permission_deny"),
+        ];
+        for (event, expected_str) in extended_events {
+            assert_eq!(
+                event.as_str(),
+                expected_str,
+                "Extended event {event:?} as_str"
+            );
+            let json = serde_json::to_string(&event).unwrap();
+            let parsed: HookEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, event, "Extended event {event:?} roundtrip");
+        }
+    }
+
+    #[test]
+    fn test_rate_limit_events_serialize() {
+        let events = [
+            (HookEvent::RateLimitWarning, "rate_limit_warning"),
+            (HookEvent::RateLimitExceeded, "rate_limit_exceeded"),
+        ];
+        for (event, expected_str) in events {
+            assert_eq!(event.as_str(), expected_str);
+            let json = serde_json::to_string(&event).unwrap();
+            let parsed: HookEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, event);
+        }
+    }
+
+    #[test]
+    fn test_cost_event_serialize() {
+        assert_eq!(HookEvent::CostUpdate.as_str(), "cost_update");
+        let json = serde_json::to_string(&HookEvent::CostUpdate).unwrap();
+        let parsed: HookEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, HookEvent::CostUpdate);
+    }
+
+    #[test]
+    fn test_all_events_unique_str() {
+        let mut seen = std::collections::HashSet::new();
+        for event in HookEvent::ALL {
+            let s = event.as_str();
+            assert!(seen.insert(s), "Duplicate event string: {s}");
+        }
+    }
+
+    #[test]
+    fn test_payload_with_null_data() {
+        let payload = HookPayload {
+            event: HookEvent::SessionStart,
+            data: serde_json::Value::Null,
+            session_id: None,
+            model: None,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        let parsed: HookPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.event, HookEvent::SessionStart);
+        assert!(parsed.data.is_null());
+    }
+
+    #[test]
+    fn test_payload_default_data() {
+        // Test that missing "data" field defaults to null/empty.
+        let json = r#"{"event":"session_start"}"#;
+        let parsed: HookPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.event, HookEvent::SessionStart);
+        assert!(parsed.session_id.is_none());
+        assert!(parsed.model.is_none());
+    }
+
+    #[test]
+    fn test_payload_full_fields() {
+        let payload = HookPayload {
+            event: HookEvent::ToolCallBefore,
+            data: serde_json::json!({"tool": "bash", "args": {"command": "ls"}}),
+            session_id: Some("sess_abc".to_string()),
+            model: Some("claude-sonnet-4-20250514".to_string()),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        let parsed: HookPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.event, HookEvent::ToolCallBefore);
+        assert_eq!(parsed.session_id.as_deref(), Some("sess_abc"));
+        assert_eq!(parsed.model.as_deref(), Some("claude-sonnet-4-20250514"));
+        assert!(parsed.data.get("tool").is_some());
+    }
+
+    #[test]
+    fn test_hook_response_override_result() {
+        let json = r#"{"action":"override_result","text":"custom output"}"#;
+        let resp: HookResponse = serde_json::from_str(json).unwrap();
+        assert!(matches!(resp, HookResponse::OverrideResult { text } if text == "custom output"));
+    }
+
+    #[test]
+    fn test_hook_response_default() {
+        let resp = HookResponse::default();
+        assert!(matches!(resp, HookResponse::Pass));
+    }
+
+    #[test]
+    fn test_hook_response_serialize_roundtrip() {
+        let responses = [
+            HookResponse::Pass,
+            HookResponse::ModifyPrompt {
+                text: "inject this".to_string(),
+            },
+            HookResponse::OverrideResult {
+                text: "replaced".to_string(),
+            },
+            HookResponse::Abort {
+                reason: "blocked".to_string(),
+            },
+        ];
+        for resp in &responses {
+            let json = serde_json::to_string(resp).unwrap();
+            let parsed: HookResponse = serde_json::from_str(&json).unwrap();
+            // Compare via serialization since HookResponse doesn't derive PartialEq.
+            let re_json = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(json, re_json);
+        }
+    }
+
+    #[test]
+    fn test_event_all_contains_all_variants() {
+        // Verify ALL array has exactly one of each variant.
+        // We check count and uniqueness via Hash.
+        let set: std::collections::HashSet<_> = HookEvent::ALL.iter().collect();
+        assert_eq!(set.len(), HookEvent::ALL.len());
+        assert_eq!(set.len(), 29);
+    }
 }

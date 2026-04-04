@@ -218,10 +218,7 @@ mod tests {
     #[test]
     fn test_from_str_loose_valid() {
         assert_eq!(AgentType::from_str_loose("plan"), Some(AgentType::Plan));
-        assert_eq!(
-            AgentType::from_str_loose("planner"),
-            Some(AgentType::Plan)
-        );
+        assert_eq!(AgentType::from_str_loose("planner"), Some(AgentType::Plan));
         assert_eq!(
             AgentType::from_str_loose("explore"),
             Some(AgentType::Explore)
@@ -230,14 +227,8 @@ mod tests {
             AgentType::from_str_loose("explorer"),
             Some(AgentType::Explore)
         );
-        assert_eq!(
-            AgentType::from_str_loose("VERIFY"),
-            Some(AgentType::Verify)
-        );
-        assert_eq!(
-            AgentType::from_str_loose("review"),
-            Some(AgentType::Verify)
-        );
+        assert_eq!(AgentType::from_str_loose("VERIFY"), Some(AgentType::Verify));
+        assert_eq!(AgentType::from_str_loose("review"), Some(AgentType::Verify));
         assert_eq!(
             AgentType::from_str_loose("General"),
             Some(AgentType::General)

@@ -53,9 +53,7 @@ pub fn expand_env_with(input: &str, lookup: impl Fn(&str) -> Option<String>) -> 
                 // $VAR — scan word characters
                 let start = i + 1;
                 let mut end = start;
-                while end < len
-                    && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
-                {
+                while end < len && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
                     end += 1;
                 }
                 let var_name = &input[start..end];
@@ -106,13 +104,19 @@ mod tests {
     #[test]
     fn test_braced_var() {
         let lookup = mock_lookup(&[("HOME", "/Users/test")]);
-        assert_eq!(expand_env_with("${HOME}/.oxicode", lookup), "/Users/test/.oxicode");
+        assert_eq!(
+            expand_env_with("${HOME}/.oxicode", lookup),
+            "/Users/test/.oxicode"
+        );
     }
 
     #[test]
     fn test_unbraced_var() {
         let lookup = mock_lookup(&[("HOME", "/Users/test")]);
-        assert_eq!(expand_env_with("$HOME/.oxicode", lookup), "/Users/test/.oxicode");
+        assert_eq!(
+            expand_env_with("$HOME/.oxicode", lookup),
+            "/Users/test/.oxicode"
+        );
     }
 
     #[test]

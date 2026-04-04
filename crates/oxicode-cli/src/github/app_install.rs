@@ -2,17 +2,14 @@
 //!
 //! Steps: authenticate → list repos → select repo → check existing → generate → commit.
 
-use super::{get_github_token, list_user_repos, RepoInfo};
 use super::workflow_gen;
+use super::{get_github_token, list_user_repos, RepoInfo};
 
 /// Result of the install wizard.
 #[derive(Debug)]
 pub enum InstallResult {
     /// Successfully installed workflow.
-    Success {
-        repo: String,
-        workflow_path: String,
-    },
+    Success { repo: String, workflow_path: String },
     /// User cancelled.
     Cancelled,
     /// Error during installation.

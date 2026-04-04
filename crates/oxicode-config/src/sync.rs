@@ -14,8 +14,7 @@ use crate::settings::Settings;
 pub fn export_settings(settings: &Settings) -> Result<String, String> {
     let mut export = settings.clone();
     export.api_key = None; // Never export API keys.
-    serde_json::to_string_pretty(&export)
-        .map_err(|e| format!("Failed to serialize settings: {e}"))
+    serde_json::to_string_pretty(&export).map_err(|e| format!("Failed to serialize settings: {e}"))
 }
 
 /// Export settings to a JSON file.

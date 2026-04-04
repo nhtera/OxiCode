@@ -95,16 +95,14 @@ impl SessionMemory {
 
 /// Get the persistence path for a session's compact summaries.
 pub fn session_memory_path(session_id: &str) -> PathBuf {
-    let base = std::env::var("OXICODE_DATA_DIR")
-        .ok()
-        .map_or_else(
-            || {
-                dirs::home_dir()
-                    .unwrap_or_else(|| PathBuf::from("."))
-                    .join(".oxicode")
-            },
-            PathBuf::from,
-        );
+    let base = std::env::var("OXICODE_DATA_DIR").ok().map_or_else(
+        || {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".oxicode")
+        },
+        PathBuf::from,
+    );
     base.join("sessions")
         .join(session_id)
         .join("compact-summaries.json")
@@ -123,8 +121,7 @@ pub fn save_session_memory(path: &Path, memory: &SessionMemory) -> Result<(), St
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
     }
-    let json =
-        serde_json::to_string_pretty(memory).map_err(|e| format!("serialize: {e}"))?;
+    let json = serde_json::to_string_pretty(memory).map_err(|e| format!("serialize: {e}"))?;
     std::fs::write(path, json).map_err(|e| format!("write: {e}"))
 }
 

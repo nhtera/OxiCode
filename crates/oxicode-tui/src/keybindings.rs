@@ -244,7 +244,8 @@ impl KeybindingRegistry {
         };
 
         for (key_str, action_str) in &table {
-            if let (Some(combo), Some(action)) = (parse_key_combo(key_str), parse_action(action_str))
+            if let (Some(combo), Some(action)) =
+                (parse_key_combo(key_str), parse_action(action_str))
             {
                 self.bindings.insert(combo, action);
             } else {

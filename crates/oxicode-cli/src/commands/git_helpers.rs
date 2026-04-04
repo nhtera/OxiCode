@@ -6,12 +6,8 @@ use std::process::Command;
 pub fn run_git(args: &[&str]) -> Result<String, String> {
     match Command::new("git").args(args).output() {
         Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr)
-                .trim()
-                .to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             if output.status.success() {
                 Ok(stdout)
             } else {
@@ -26,12 +22,8 @@ pub fn run_git(args: &[&str]) -> Result<String, String> {
 pub fn run_command(cmd: &str, args: &[&str]) -> Result<String, String> {
     match Command::new(cmd).args(args).output() {
         Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr)
-                .trim()
-                .to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             if output.status.success() {
                 Ok(stdout)
             } else {

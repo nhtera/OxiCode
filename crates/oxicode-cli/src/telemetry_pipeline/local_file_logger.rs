@@ -55,8 +55,7 @@ impl LocalFileLogger {
         }
 
         // Ensure log directory exists.
-        fs::create_dir_all(&self.log_dir)
-            .map_err(|e| format!("Failed to create log dir: {e}"))?;
+        fs::create_dir_all(&self.log_dir).map_err(|e| format!("Failed to create log dir: {e}"))?;
 
         // Check if rotation is needed before writing.
         self.maybe_rotate()?;
@@ -71,8 +70,7 @@ impl LocalFileLogger {
         let mut written = 0;
         for event in events {
             if let Ok(json) = serde_json::to_string(event) {
-                writeln!(file, "{json}")
-                    .map_err(|e| format!("Failed to write event: {e}"))?;
+                writeln!(file, "{json}").map_err(|e| format!("Failed to write event: {e}"))?;
                 written += 1;
             }
         }
@@ -117,8 +115,7 @@ impl LocalFileLogger {
 
         // Rotate current -> .1
         let first_rotated = self.rotated_path(1);
-        fs::rename(&path, &first_rotated)
-            .map_err(|e| format!("Failed to rotate log file: {e}"))?;
+        fs::rename(&path, &first_rotated).map_err(|e| format!("Failed to rotate log file: {e}"))?;
 
         Ok(())
     }
@@ -137,8 +134,8 @@ impl Default for LocalFileLogger {
 
 #[cfg(test)]
 mod tests {
+    use super::super::event_collector::{now_unix_secs, TelemetryEvent};
     use super::*;
-    use super::super::event_collector::{TelemetryEvent, now_unix_secs};
     use tempfile::TempDir;
 
     fn make_logger(dir: &TempDir) -> LocalFileLogger {

@@ -65,7 +65,10 @@ impl Tool for VerifyPlanExecutionTool {
 
         for line in content.lines() {
             let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix("- [x]").or_else(|| trimmed.strip_prefix("- [X]")) {
+            if let Some(rest) = trimmed
+                .strip_prefix("- [x]")
+                .or_else(|| trimmed.strip_prefix("- [X]"))
+            {
                 total += 1;
                 completed += 1;
                 completed_items.push(rest.trim().to_string());
@@ -77,7 +80,9 @@ impl Tool for VerifyPlanExecutionTool {
 
         let pct = if total > 0 {
             #[allow(clippy::cast_sign_loss)]
-            { (f64::from(completed) / f64::from(total) * 100.0) as u32 }
+            {
+                (f64::from(completed) / f64::from(total) * 100.0) as u32
+            }
         } else {
             0
         };

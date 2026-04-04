@@ -63,7 +63,9 @@ impl Tool for McpAuthTool {
             if let Ok(contents) = std::fs::read_to_string(&token_path) {
                 if let Ok(token_data) = serde_json::from_str::<serde_json::Value>(&contents) {
                     // Check if token hasn't expired
-                    if let Some(expires_at) = token_data.get("expires_at").and_then(serde_json::Value::as_i64)
+                    if let Some(expires_at) = token_data
+                        .get("expires_at")
+                        .and_then(serde_json::Value::as_i64)
                     {
                         let now = chrono::Utc::now().timestamp();
                         if now < expires_at {

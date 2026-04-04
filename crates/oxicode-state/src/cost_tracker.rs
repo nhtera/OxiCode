@@ -40,56 +40,110 @@ fn default_rates() -> Vec<(&'static str, ModelRate)> {
         // Haiku 3.5: $0.80 / $4
         (
             "claude-3-5-haiku",
-            ModelRate { input: 0.80, output: 4.0, cache_read: 0.08, cache_write: 1.0 },
+            ModelRate {
+                input: 0.80,
+                output: 4.0,
+                cache_read: 0.08,
+                cache_write: 1.0,
+            },
         ),
         // Haiku 4.5: $1 / $5
         (
             "claude-haiku-4",
-            ModelRate { input: 1.0, output: 5.0, cache_read: 0.1, cache_write: 1.25 },
+            ModelRate {
+                input: 1.0,
+                output: 5.0,
+                cache_read: 0.1,
+                cache_write: 1.25,
+            },
         ),
         // Sonnet family: $3 / $15
         (
             "claude-sonnet",
-            ModelRate { input: 3.0, output: 15.0, cache_read: 0.3, cache_write: 3.75 },
+            ModelRate {
+                input: 3.0,
+                output: 15.0,
+                cache_read: 0.3,
+                cache_write: 3.75,
+            },
         ),
         (
             "claude-3-5-sonnet",
-            ModelRate { input: 3.0, output: 15.0, cache_read: 0.3, cache_write: 3.75 },
+            ModelRate {
+                input: 3.0,
+                output: 15.0,
+                cache_read: 0.3,
+                cache_write: 3.75,
+            },
         ),
         (
             "claude-3-7-sonnet",
-            ModelRate { input: 3.0, output: 15.0, cache_read: 0.3, cache_write: 3.75 },
+            ModelRate {
+                input: 3.0,
+                output: 15.0,
+                cache_read: 0.3,
+                cache_write: 3.75,
+            },
         ),
         // Opus 4/4.1: $15 / $75
         (
             "claude-opus-4",
-            ModelRate { input: 15.0, output: 75.0, cache_read: 1.5, cache_write: 18.75 },
+            ModelRate {
+                input: 15.0,
+                output: 75.0,
+                cache_read: 1.5,
+                cache_write: 18.75,
+            },
         ),
         // Opus 4.5+: $5 / $25
         (
             "claude-opus-4-5",
-            ModelRate { input: 5.0, output: 25.0, cache_read: 0.5, cache_write: 6.25 },
+            ModelRate {
+                input: 5.0,
+                output: 25.0,
+                cache_read: 0.5,
+                cache_write: 6.25,
+            },
         ),
         (
             "claude-opus-4-6",
-            ModelRate { input: 5.0, output: 25.0, cache_read: 0.5, cache_write: 6.25 },
+            ModelRate {
+                input: 5.0,
+                output: 25.0,
+                cache_read: 0.5,
+                cache_write: 6.25,
+            },
         ),
         // GPT-4o approx
         (
             "gpt-4o",
-            ModelRate { input: 2.5, output: 10.0, cache_read: 1.25, cache_write: 2.5 },
+            ModelRate {
+                input: 2.5,
+                output: 10.0,
+                cache_read: 1.25,
+                cache_write: 2.5,
+            },
         ),
         // Gemini 1.5 Pro approx
         (
             "gemini",
-            ModelRate { input: 1.25, output: 5.0, cache_read: 0.3, cache_write: 1.0 },
+            ModelRate {
+                input: 1.25,
+                output: 5.0,
+                cache_read: 0.3,
+                cache_write: 1.0,
+            },
         ),
     ]
 }
 
 /// Fallback: Sonnet pricing for unknown models.
-const FALLBACK_RATE: ModelRate =
-    ModelRate { input: 3.0, output: 15.0, cache_read: 0.3, cache_write: 3.75 };
+const FALLBACK_RATE: ModelRate = ModelRate {
+    input: 3.0,
+    output: 15.0,
+    cache_read: 0.3,
+    cache_write: 3.75,
+};
 
 /// Look up rate by longest-prefix match on model name.
 pub fn get_rate(model: &str) -> ModelRate {
@@ -167,7 +221,11 @@ impl CostTracker {
     /// Per-model summary sorted by cost descending.
     pub fn summary(&self) -> Vec<(&str, &ModelUsage)> {
         let mut entries: Vec<_> = self.models.iter().map(|(k, v)| (k.as_str(), v)).collect();
-        entries.sort_by(|a, b| b.1.cost_usd.partial_cmp(&a.1.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+        entries.sort_by(|a, b| {
+            b.1.cost_usd
+                .partial_cmp(&a.1.cost_usd)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         entries
     }
 
@@ -218,8 +276,16 @@ mod tests {
         Usage {
             input_tokens: input,
             output_tokens: output,
-            cache_read_input_tokens: if cache_read > 0 { Some(cache_read) } else { None },
-            cache_creation_input_tokens: if cache_write > 0 { Some(cache_write) } else { None },
+            cache_read_input_tokens: if cache_read > 0 {
+                Some(cache_read)
+            } else {
+                None
+            },
+            cache_creation_input_tokens: if cache_write > 0 {
+                Some(cache_write)
+            } else {
+                None
+            },
         }
     }
 
@@ -317,7 +383,10 @@ mod tests {
     fn tracker_summary_sorted() {
         let mut tracker = CostTracker::new("sess1".to_string());
         tracker.record("cheap-model", &make_usage(100, 50, 0, 0));
-        tracker.record("claude-opus-4-20260101", &make_usage(1_000_000, 500_000, 0, 0));
+        tracker.record(
+            "claude-opus-4-20260101",
+            &make_usage(1_000_000, 500_000, 0, 0),
+        );
         let summary = tracker.summary();
         assert_eq!(summary.len(), 2);
         // Opus should be first (most expensive)

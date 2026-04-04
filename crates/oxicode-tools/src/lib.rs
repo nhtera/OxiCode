@@ -16,11 +16,11 @@ pub mod glob_tool;
 pub mod grep_tool;
 
 // Secondary tools
+pub mod agent_tool;
 pub mod ask_user;
 pub mod config_tool;
 pub mod notebook_edit;
 pub mod send_message;
-pub mod agent_tool;
 pub mod tool_search;
 
 // Task tools
@@ -124,4 +124,64 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(workflow_tool::WorkflowTool));
 
     reg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_registry_has_tools() {
+        let reg = default_registry();
+        assert!(
+            reg.len() > 30,
+            "Should have at least 30 tools, got {}",
+            reg.len()
+        );
+    }
+
+    #[test]
+    fn default_registry_has_core_tools() {
+        let reg = default_registry();
+        let core_tools = [
+            "file_read",
+            "file_write",
+            "file_edit",
+            "glob",
+            "grep",
+            "bash",
+            "ask_user",
+            "tool_search",
+            "web_fetch",
+            "web_search",
+        ];
+        for name in core_tools {
+            assert!(reg.get(name).is_some(), "Missing core tool: {name}");
+        }
+    }
+
+    #[test]
+    fn default_registry_schemas_not_empty() {
+        let reg = default_registry();
+        let schemas = reg.schemas_json();
+        assert!(!schemas.is_empty());
+        // Every schema should have name, description, input_schema.
+        for s in &schemas {
+            assert!(s["name"].is_string(), "Schema missing name");
+            assert!(s["description"].is_string(), "Schema missing description");
+            assert!(s["input_schema"].is_object(), "Schema missing input_schema");
+        }
+    }
+
+    #[test]
+    fn default_registry_no_duplicate_names() {
+        let reg = default_registry();
+        let names = reg.names();
+        let unique: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(
+            names.len(),
+            unique.len(),
+            "Duplicate tool names in registry"
+        );
+    }
 }

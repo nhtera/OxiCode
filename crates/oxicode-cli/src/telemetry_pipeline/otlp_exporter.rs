@@ -119,8 +119,8 @@ impl OtlpExporter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::event_collector::now_unix_secs;
+    use super::*;
 
     #[test]
     fn test_default_config() {

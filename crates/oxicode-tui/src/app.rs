@@ -16,9 +16,9 @@ use crate::keybindings::{Action, KeybindingRegistry};
 use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
-    ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageView, Notification,
-    NotificationWidget, PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel,
-    ShortcutsState, SplitPane, StatusBar, TaskInfo, TaskPanel,
+    ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageView, Notification, NotificationWidget,
+    PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel, ShortcutsState, SplitPane,
+    StatusBar, TaskInfo, TaskPanel,
 };
 
 /// A tool call in progress (between ToolUseStart and ToolResult events).
@@ -183,9 +183,7 @@ impl App {
         };
         let search_active = self.search.is_active();
         let shortcuts_visible = self.shortcuts.is_visible();
-        let command_buf = if vim_enabled
-            && self.vim.mode == crate::vim_mode::Mode::Command
-        {
+        let command_buf = if vim_enabled && self.vim.mode == crate::vim_mode::Mode::Command {
             Some(self.vim.command_buffer().to_string())
         } else {
             None
@@ -196,8 +194,8 @@ impl App {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1),          // Status bar
-                    Constraint::Min(5),             // Message view
+                    Constraint::Length(1),            // Status bar
+                    Constraint::Min(5),               // Message view
                     Constraint::Length(input_height), // Input box (+ search bar)
                 ])
                 .split(frame.area());
@@ -229,8 +227,12 @@ impl App {
                     result: t.result.as_ref().map(|(c, e)| (c.as_str(), *e)),
                 })
                 .collect();
-            let message_view =
-                MessageView::new(&state.messages, streaming, &active_tool_info, self.scroll_offset);
+            let message_view = MessageView::new(
+                &state.messages,
+                streaming,
+                &active_tool_info,
+                self.scroll_offset,
+            );
             frame.render_widget(message_view, left_area);
 
             // Right pane: agent panel (top) + task panel (bottom)
@@ -281,12 +283,9 @@ impl App {
 
             // Permission dialog overlay (drawn on top of everything).
             if let Some(ref perm) = self.pending_permission {
-                let dialog = PermissionDialog::new(
-                    &perm.tool_name,
-                    &perm.input_summary,
-                    &perm.prompt,
-                )
-                .with_selected(perm.selected);
+                let dialog =
+                    PermissionDialog::new(&perm.tool_name, &perm.input_summary, &perm.prompt)
+                        .with_selected(perm.selected);
                 frame.render_widget(dialog, content_area);
             }
 
@@ -491,8 +490,7 @@ impl App {
             }
             VimAction::MoveWordEnd(count) => {
                 for _ in 0..count {
-                    self.input_cursor =
-                        vim_mode::word_end_pos(&self.input_text, self.input_cursor);
+                    self.input_cursor = vim_mode::word_end_pos(&self.input_text, self.input_cursor);
                 }
             }
             VimAction::DeleteLine => {
@@ -957,7 +955,12 @@ impl App {
                     reply_tx,
                 });
             }
-            CoreEvent::RateLimited { message, attempt, max_retries, retry_in_secs } => {
+            CoreEvent::RateLimited {
+                message,
+                attempt,
+                max_retries,
+                retry_in_secs,
+            } => {
                 let notif_msg = format!(
                     "Rate limited. Retrying in {retry_in_secs:.0}s... ({attempt}/{max_retries})"
                 );

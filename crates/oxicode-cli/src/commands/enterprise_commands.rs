@@ -67,9 +67,7 @@ impl SlashCommand for SettingsCommand {
         "Export or import settings"
     }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        let (sub, rest) = args
-            .split_once(' ')
-            .unwrap_or((args.trim(), ""));
+        let (sub, rest) = args.split_once(' ').unwrap_or((args.trim(), ""));
         match sub {
             "export" => {
                 let settings = oxicode_config::load_settings(None);
@@ -78,48 +76,32 @@ impl SlashCommand for SettingsCommand {
                 } else {
                     rest.trim().to_string()
                 };
-                match oxicode_config::sync::export_to_file(
-                    &settings,
-                    std::path::Path::new(&path),
-                ) {
-                    Ok(()) => {
-                        CommandOutput::Message(format!("Settings exported to: {path}"))
-                    }
+                match oxicode_config::sync::export_to_file(&settings, std::path::Path::new(&path)) {
+                    Ok(()) => CommandOutput::Message(format!("Settings exported to: {path}")),
                     Err(e) => CommandOutput::Error(format!("Export failed: {e}")),
                 }
             }
             "import" => {
                 let path = rest.trim();
                 if path.is_empty() {
-                    return CommandOutput::Error(
-                        "Usage: /settings import <file.json>".into(),
-                    );
+                    return CommandOutput::Error("Usage: /settings import <file.json>".into());
                 }
                 match oxicode_config::sync::import_from_file(std::path::Path::new(path)) {
                     Ok(result) => {
                         // Persist imported settings to settings.toml.
                         let config_dir = oxicode_config::config_dir(None);
                         let toml_path = config_dir.join("settings.toml");
-                        let persist_msg =
-                            match toml::to_string_pretty(&result.settings) {
-                                Ok(toml_str) => {
-                                    match std::fs::write(&toml_path, toml_str) {
-                                        Ok(()) => format!(
-                                            "\nSaved to: {}",
-                                            toml_path.display()
-                                        ),
-                                        Err(e) => format!(
-                                            "\n⚠ Failed to save: {e}"
-                                        ),
-                                    }
-                                }
-                                Err(e) => {
-                                    format!("\n⚠ Failed to serialize: {e}")
-                                }
-                            };
+                        let persist_msg = match toml::to_string_pretty(&result.settings) {
+                            Ok(toml_str) => match std::fs::write(&toml_path, toml_str) {
+                                Ok(()) => format!("\nSaved to: {}", toml_path.display()),
+                                Err(e) => format!("\n⚠ Failed to save: {e}"),
+                            },
+                            Err(e) => {
+                                format!("\n⚠ Failed to serialize: {e}")
+                            }
+                        };
 
-                        let mut msg =
-                            format!("Settings imported from: {path}{persist_msg}");
+                        let mut msg = format!("Settings imported from: {path}{persist_msg}");
                         if !result.warnings.is_empty() {
                             msg.push_str("\n\nWarnings:");
                             for w in &result.warnings {
@@ -134,9 +116,7 @@ impl SlashCommand for SettingsCommand {
             "show" | "" => {
                 let settings = oxicode_config::load_settings(None);
                 match oxicode_config::sync::export_settings(&settings) {
-                    Ok(json) => CommandOutput::Message(format!(
-                        "Current settings:\n{json}"
-                    )),
+                    Ok(json) => CommandOutput::Message(format!("Current settings:\n{json}")),
                     Err(e) => CommandOutput::Error(format!("Failed to display: {e}")),
                 }
             }
@@ -164,16 +144,11 @@ impl SlashCommand for AuthCommand {
         "Manage authentication and credentials"
     }
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
-        let (sub, rest) = args
-            .split_once(' ')
-            .unwrap_or((args.trim(), ""));
+        let (sub, rest) = args.split_once(' ').unwrap_or((args.trim(), ""));
         match sub {
             "status" | "" => {
                 let mgr = crate::auth::AuthManager::new();
-                CommandOutput::Message(format!(
-                    "Authentication status:\n{}",
-                    mgr.status_summary()
-                ))
+                CommandOutput::Message(format!("Authentication status:\n{}", mgr.status_summary()))
             }
             "login" => {
                 let provider = if rest.trim().is_empty() {

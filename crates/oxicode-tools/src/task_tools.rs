@@ -6,7 +6,9 @@ use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSche
 
 /// Lock a mutex, recovering from poison (the data is still usable).
 fn lock_mutex<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Truncate a string to at most `max_bytes` bytes, appending "..." if truncated.
@@ -161,8 +163,7 @@ impl Tool for TaskCreateTool {
         });
 
         // Store abort handle for TaskStop.
-        lock_mutex(&ctx.task_abort_handles)
-            .insert(task_id.clone(), handle.abort_handle());
+        lock_mutex(&ctx.task_abort_handles).insert(task_id.clone(), handle.abort_handle());
 
         Ok(ToolResult::success(format!(
             "Task {task_id} created and running: {description}"
@@ -250,11 +251,7 @@ impl Tool for TaskListTool {
         PermissionLevel::ReadOnly
     }
 
-    async fn execute(
-        &self,
-        _input: serde_json::Value,
-        ctx: &ToolContext,
-    ) -> OxiResult<ToolResult> {
+    async fn execute(&self, _input: serde_json::Value, ctx: &ToolContext) -> OxiResult<ToolResult> {
         let mgr = lock_mutex(&ctx.task_manager);
         let tasks = mgr.list_tasks();
 
@@ -541,10 +538,7 @@ mod tests {
         let ctx = ToolContext::default();
         let tool = TaskListTool;
 
-        let result = tool
-            .execute(serde_json::json!({}), &ctx)
-            .await
-            .unwrap();
+        let result = tool.execute(serde_json::json!({}), &ctx).await.unwrap();
 
         assert!(!result.is_error);
         assert!(result.content.contains("No background tasks"));

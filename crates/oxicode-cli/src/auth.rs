@@ -214,8 +214,7 @@ fn credential_store_delete(account: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let content =
-        std::fs::read_to_string(&cred_path).map_err(|e| format!("Read error: {e}"))?;
+    let content = std::fs::read_to_string(&cred_path).map_err(|e| format!("Read error: {e}"))?;
     let mut table: toml::Table = content.parse().unwrap_or_default();
     table.remove(account);
 

@@ -237,9 +237,7 @@ impl PluginManager {
         let entry = entries
             .iter()
             .find(|e| e.name.eq_ignore_ascii_case(name))
-            .ok_or_else(|| {
-                OxiError::Config(format!("Plugin '{name}' not found in registry"))
-            })?;
+            .ok_or_else(|| OxiError::Config(format!("Plugin '{name}' not found in registry")))?;
 
         // Check trust level — reject Unverified, warn for Community.
         let trust = security::assess_trust(&entry.trust);
@@ -282,16 +280,18 @@ impl PluginManager {
             .into_iter()
             .find(|p| p.name.eq_ignore_ascii_case(name))
             .ok_or_else(|| {
-                OxiError::Config(format!(
-                    "Plugin '{name}' installed but manifest not found"
-                ))
+                OxiError::Config(format!("Plugin '{name}' installed but manifest not found"))
             })?;
 
         // Load it into the manager.
         let result = plugin.clone();
         self.load_plugin(plugin).await?;
 
-        tracing::info!("Installed plugin '{}' v{} from registry", result.name, result.version);
+        tracing::info!(
+            "Installed plugin '{}' v{} from registry",
+            result.name,
+            result.version
+        );
         Ok(result)
     }
 
@@ -307,18 +307,19 @@ impl PluginManager {
         let mut archive = tar::Archive::new(gz);
 
         std::fs::create_dir_all(target)?;
-        let canonical_target = target.canonicalize().map_err(|e| {
-            OxiError::Other(format!("Cannot canonicalize target dir: {e}"))
-        })?;
+        let canonical_target = target
+            .canonicalize()
+            .map_err(|e| OxiError::Other(format!("Cannot canonicalize target dir: {e}")))?;
 
         let mut total_size: u64 = 0;
 
         // Extract all entries, stripping the top-level directory if present.
-        for entry_result in archive.entries().map_err(|e| {
-            OxiError::Other(format!("Failed to read archive entries: {e}"))
-        })? {
-            let mut entry = entry_result
-                .map_err(|e| OxiError::Other(format!("Bad archive entry: {e}")))?;
+        for entry_result in archive
+            .entries()
+            .map_err(|e| OxiError::Other(format!("Failed to read archive entries: {e}")))?
+        {
+            let mut entry =
+                entry_result.map_err(|e| OxiError::Other(format!("Bad archive entry: {e}")))?;
             let path = entry
                 .path()
                 .map_err(|e| OxiError::Other(format!("Bad path in archive: {e}")))?

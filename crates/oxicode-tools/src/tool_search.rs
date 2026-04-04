@@ -48,3 +48,48 @@ impl Tool for ToolSearchTool {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name_and_description() {
+        let tool = ToolSearchTool;
+        assert_eq!(tool.name(), "tool_search");
+        assert!(!tool.description().is_empty());
+    }
+
+    #[test]
+    fn test_schema_has_query_required() {
+        let tool = ToolSearchTool;
+        let schema = tool.schema();
+        assert_eq!(schema.name, "tool_search");
+        let required = schema.input_schema["required"].as_array().unwrap();
+        assert!(required.iter().any(|v| v == "query"));
+    }
+
+    #[test]
+    fn test_permission_level() {
+        let tool = ToolSearchTool;
+        assert_eq!(tool.permission_level(), PermissionLevel::ReadOnly);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_query() {
+        let tool = ToolSearchTool;
+        let input = serde_json::json!({"query": "bash"});
+        let result = tool.execute(input, &ToolContext::default()).await.unwrap();
+        assert!(!result.is_error);
+        assert!(result.content.contains("bash"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_empty_query() {
+        let tool = ToolSearchTool;
+        let input = serde_json::json!({});
+        let result = tool.execute(input, &ToolContext::default()).await.unwrap();
+        assert!(!result.is_error);
+        assert!(result.content.contains("TOOL_SEARCH"));
+    }
+}

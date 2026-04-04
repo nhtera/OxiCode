@@ -83,10 +83,14 @@ impl SlashCommand for PermissionsCommand {
 
         if !args.trim().is_empty() {
             let info = match args.trim() {
-                "bypass" => "bypass: Skips all permission checks except hard security denials.\n\
-                             WARNING: All tools auto-approved, including shell execution.",
-                "default" => "default: Asks approval for file writes and shell execution.\n\
-                              Read-only tools (glob, grep, read) are auto-approved.",
+                "bypass" => {
+                    "bypass: Skips all permission checks except hard security denials.\n\
+                             WARNING: All tools auto-approved, including shell execution."
+                }
+                "default" => {
+                    "default: Asks approval for file writes and shell execution.\n\
+                              Read-only tools (glob, grep, read) are auto-approved."
+                }
                 "approval_only" => {
                     "approval_only: Asks for every non-readonly tool invocation.\n\
                      Most restrictive mode for maximum control."
@@ -212,7 +216,10 @@ impl SlashCommand for CostCommand {
         let mut output = String::new();
         let _ = writeln!(output, "Total cost: {}", CostTracker::format_cost(total));
         if tracker.has_unknown_model {
-            let _ = writeln!(output, "(costs may be inaccurate — unknown model pricing used)");
+            let _ = writeln!(
+                output,
+                "(costs may be inaccurate — unknown model pricing used)"
+            );
         }
         let _ = writeln!(output, "Tokens: {total_in} in / {total_out} out");
 

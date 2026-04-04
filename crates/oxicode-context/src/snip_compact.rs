@@ -88,9 +88,7 @@ pub fn snip_compact(messages: &mut [Message], config: &SnipConfig) -> SnipResult
             let old_len = content.len();
             if old_len > 100 {
                 // Only snip if content is substantial.
-                let placeholder = format!(
-                    "[Tool result snipped: {tool_name} — {old_len} bytes]"
-                );
+                let placeholder = format!("[Tool result snipped: {tool_name} — {old_len} bytes]");
                 result.bytes_freed += old_len.saturating_sub(placeholder.len());
                 result.snipped_count += 1;
                 *content = placeholder;
@@ -157,9 +155,9 @@ mod tests {
 
         // Final assistant response.
         let mut final_msg = Message::assistant();
-        final_msg
-            .content
-            .push(ContentBlock::Text { text: "Done.".to_string() });
+        final_msg.content.push(ContentBlock::Text {
+            text: "Done.".to_string(),
+        });
         msgs.push(final_msg);
         msgs
     }

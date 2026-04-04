@@ -155,11 +155,7 @@ pub async fn run_dream(
         if evaluate_conditions(&config.conditions, wake_count, None) {
             // Rate limit check.
             if last_trigger.elapsed() < rate_limit {
-                write_line(
-                    &mut out_file,
-                    "stderr",
-                    "trigger suppressed by rate limit",
-                )?;
+                write_line(&mut out_file, "stderr", "trigger suppressed by rate limit")?;
                 continue;
             }
 

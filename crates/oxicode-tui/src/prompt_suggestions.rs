@@ -21,10 +21,7 @@ pub struct PromptSuggestion {
 pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
     let mut suggestions = Vec::new();
 
-    let last_assistant = messages
-        .iter()
-        .rev()
-        .find(|m| m.role == Role::Assistant);
+    let last_assistant = messages.iter().rev().find(|m| m.role == Role::Assistant);
 
     let Some(msg) = last_assistant else {
         return default_suggestions();
@@ -35,9 +32,10 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         .content
         .iter()
         .any(|b| matches!(b, ContentBlock::ToolUse { .. }));
-    let has_error = msg.content.iter().any(|b| {
-        matches!(b, ContentBlock::ToolResult { is_error, .. } if *is_error)
-    });
+    let has_error = msg
+        .content
+        .iter()
+        .any(|b| matches!(b, ContentBlock::ToolResult { is_error, .. } if *is_error));
 
     // Error context → suggest debugging.
     if has_error || text.contains("error") || text.contains("failed") {

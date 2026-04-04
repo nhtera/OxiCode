@@ -241,10 +241,7 @@ impl PluginRegistry {
     /// Only compares major.minor.patch (ignores pre-release).
     fn version_satisfies(current: &str, required: &str) -> bool {
         let parse = |v: &str| -> (u32, u32, u32) {
-            let parts: Vec<u32> = v
-                .split('.')
-                .filter_map(|p| p.parse().ok())
-                .collect();
+            let parts: Vec<u32> = v.split('.').filter_map(|p| p.parse().ok()).collect();
             (
                 parts.first().copied().unwrap_or(0),
                 parts.get(1).copied().unwrap_or(0),

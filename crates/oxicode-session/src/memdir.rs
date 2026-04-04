@@ -22,16 +22,14 @@ pub const ENTRYPOINT_NAME: &str = "MEMORY.md";
 
 /// Get the base directory for all project memory dirs.
 pub fn memory_base_dir() -> PathBuf {
-    let base = std::env::var("OXICODE_MEMORY_DIR")
-        .ok()
-        .map_or_else(
-            || {
-                dirs::home_dir()
-                    .unwrap_or_else(|| PathBuf::from("."))
-                    .join(CONFIG_DIR_NAME)
-            },
-            PathBuf::from,
-        );
+    let base = std::env::var("OXICODE_MEMORY_DIR").ok().map_or_else(
+        || {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(CONFIG_DIR_NAME)
+        },
+        PathBuf::from,
+    );
     base.join("projects")
 }
 
@@ -45,7 +43,13 @@ pub fn project_key(git_root: &Path) -> String {
     // Sanitize: keep alphanumeric, dash, underscore.
     let sanitized: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let mut hasher = DefaultHasher::new();
     git_root.to_string_lossy().hash(&mut hasher);
@@ -55,9 +59,7 @@ pub fn project_key(git_root: &Path) -> String {
 
 /// Get the memory directory for a project.
 pub fn project_memory_dir(git_root: &Path) -> PathBuf {
-    memory_base_dir()
-        .join(project_key(git_root))
-        .join("memory")
+    memory_base_dir().join(project_key(git_root)).join("memory")
 }
 
 /// Ensure the memory directory exists (create if needed).
@@ -246,5 +248,54 @@ mod tests {
     fn read_entrypoint_missing_file() {
         let dir = tempfile::tempdir().unwrap();
         assert!(read_entrypoint(dir.path()).is_none());
+    }
+
+    #[test]
+    fn read_entrypoint_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("MEMORY.md"), "").unwrap();
+        assert!(read_entrypoint(dir.path()).is_none());
+    }
+
+    #[test]
+    fn write_then_read_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let mem_dir = dir.path().join("mem");
+        write_entrypoint(&mem_dir, "# Test Memory\n\nFact: Rust is fast.").unwrap();
+        let (content, truncated) = read_entrypoint(&mem_dir).unwrap();
+        assert!(!truncated);
+        assert!(content.contains("Rust is fast"));
+    }
+
+    #[test]
+    fn truncate_exactly_at_line_limit() {
+        let lines: Vec<String> = (0..200).map(|i| format!("Line {i}")).collect();
+        let content = lines.join("\n");
+        let (_, truncated) = truncate_entrypoint(&content);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn truncate_one_over_line_limit() {
+        let lines: Vec<String> = (0..201).map(|i| format!("Line {i}")).collect();
+        let content = lines.join("\n");
+        let (result, truncated) = truncate_entrypoint(&content);
+        assert!(truncated);
+        assert!(result.contains("Truncated"));
+    }
+
+    #[test]
+    fn project_key_handles_root_path() {
+        let key = project_key(Path::new("/"));
+        // Should not panic. The dirname of "/" is empty/root.
+        assert!(!key.is_empty());
+    }
+
+    #[test]
+    fn ensure_memory_dir_creates_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("a/b/c");
+        ensure_memory_dir(&nested).unwrap();
+        assert!(nested.exists());
     }
 }

@@ -65,7 +65,9 @@ impl Tool for TeamCreateTool {
             "description": description,
             "status": "created",
         });
-        Ok(ToolResult::success(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ToolResult::success(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 
@@ -119,7 +121,9 @@ impl Tool for TeamDeleteTool {
             "team_name": name,
             "status": "deleted",
         });
-        Ok(ToolResult::success(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ToolResult::success(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 

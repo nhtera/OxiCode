@@ -61,17 +61,11 @@ pub enum ServerMessage {
 pub enum ClientMessage {
     /// Send a user message for processing.
     #[serde(rename = "message.send")]
-    MessageSend {
-        session_id: String,
-        text: String,
-    },
+    MessageSend { session_id: String, text: String },
 
     /// Permission response (approve/deny a tool execution).
     #[serde(rename = "permission.response")]
-    PermissionResponse {
-        request_id: String,
-        approved: bool,
-    },
+    PermissionResponse { request_id: String, approved: bool },
 
     /// Cancel the current turn.
     #[serde(rename = "message.cancel")]
@@ -179,7 +173,8 @@ mod tests {
 
     #[test]
     fn test_client_message_session_create() {
-        let json = r#"{"type":"session.create","model":"claude-sonnet-4-20250514","working_dir":"/tmp"}"#;
+        let json =
+            r#"{"type":"session.create","model":"claude-sonnet-4-20250514","working_dir":"/tmp"}"#;
         let msg = decode_client_message(json).unwrap();
         match msg {
             ClientMessage::SessionCreate { model, working_dir } => {

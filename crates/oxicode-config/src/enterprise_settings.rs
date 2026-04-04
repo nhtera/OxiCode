@@ -142,8 +142,8 @@ impl EnterpriseSettingsClient {
             .map_err(|e| format!("HMAC key error: {e}"))?;
         mac.update(payload.as_bytes());
 
-        let expected_sig = hex::decode(&response.signature)
-            .map_err(|e| format!("Invalid signature hex: {e}"))?;
+        let expected_sig =
+            hex::decode(&response.signature).map_err(|e| format!("Invalid signature hex: {e}"))?;
 
         mac.verify_slice(&expected_sig)
             .map_err(|_| "Enterprise settings signature verification failed".to_string())
@@ -154,11 +154,7 @@ impl EnterpriseSettingsClient {
         let mut settings = HashMap::new();
 
         for (key, value) in &response.settings {
-            let locked = response
-                .locked
-                .get(key)
-                .copied()
-                .unwrap_or(true); // Default: locked.
+            let locked = response.locked.get(key).copied().unwrap_or(true); // Default: locked.
 
             settings.insert(
                 key.clone(),
@@ -193,8 +189,7 @@ impl EnterpriseSettingsClient {
         };
         let json = serde_json::to_string_pretty(&cached)
             .map_err(|e| format!("Cache serialization failed: {e}"))?;
-        std::fs::write(self.cache_path(), json)
-            .map_err(|e| format!("Cache write failed: {e}"))
+        std::fs::write(self.cache_path(), json).map_err(|e| format!("Cache write failed: {e}"))
     }
 
     /// Path to the cache file.
@@ -217,11 +212,7 @@ pub fn load_enterprise_settings_from_env() -> Option<ManagedSettings> {
         .join(".oxicode")
         .join("cache");
 
-    let client = EnterpriseSettingsClient::new(
-        &endpoint,
-        signing_key.as_deref(),
-        &cache_dir,
-    );
+    let client = EnterpriseSettingsClient::new(&endpoint, signing_key.as_deref(), &cache_dir);
 
     // Block on async fetch — only called during startup.
     let rt = tokio::runtime::Handle::try_current();
@@ -254,20 +245,14 @@ mod tests {
                 ("model".into(), "claude-opus-4-20250514".into()),
                 ("permission_mode".into(), "default".into()),
             ]),
-            locked: HashMap::from([
-                ("model".into(), true),
-                ("permission_mode".into(), false),
-            ]),
+            locked: HashMap::from([("model".into(), true), ("permission_mode".into(), false)]),
             signature: String::new(),
             version_ts: None,
         };
 
         let cache_dir = tempfile::tempdir().unwrap();
-        let client = EnterpriseSettingsClient::new(
-            "https://example.com/settings",
-            None,
-            cache_dir.path(),
-        );
+        let client =
+            EnterpriseSettingsClient::new("https://example.com/settings", None, cache_dir.path());
 
         let managed = client.to_managed_settings(&response);
         assert_eq!(managed.get("model"), Some("claude-opus-4-20250514"));
@@ -288,10 +273,7 @@ mod tests {
         ]);
 
         // Generate valid signature.
-        let mut pairs: Vec<String> = settings
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect();
+        let mut pairs: Vec<String> = settings.iter().map(|(k, v)| format!("{k}={v}")).collect();
         pairs.sort();
         let payload = pairs.join("\n");
 
@@ -307,11 +289,8 @@ mod tests {
         };
 
         let cache_dir = tempfile::tempdir().unwrap();
-        let client = EnterpriseSettingsClient::new(
-            "https://example.com",
-            Some(key),
-            cache_dir.path(),
-        );
+        let client =
+            EnterpriseSettingsClient::new("https://example.com", Some(key), cache_dir.path());
 
         assert!(client.validate_signature(&response).is_ok());
     }
@@ -326,11 +305,8 @@ mod tests {
         };
 
         let cache_dir = tempfile::tempdir().unwrap();
-        let client = EnterpriseSettingsClient::new(
-            "https://example.com",
-            Some("secret"),
-            cache_dir.path(),
-        );
+        let client =
+            EnterpriseSettingsClient::new("https://example.com", Some("secret"), cache_dir.path());
 
         assert!(client.validate_signature(&response).is_err());
     }
@@ -345,11 +321,8 @@ mod tests {
         };
 
         let cache_dir = tempfile::tempdir().unwrap();
-        let client = EnterpriseSettingsClient::new(
-            "https://example.com",
-            Some("secret"),
-            cache_dir.path(),
-        );
+        let client =
+            EnterpriseSettingsClient::new("https://example.com", Some("secret"), cache_dir.path());
 
         assert!(client.validate_signature(&response).is_err());
     }
@@ -357,11 +330,7 @@ mod tests {
     #[test]
     fn test_cache_roundtrip() {
         let cache_dir = tempfile::tempdir().unwrap();
-        let client = EnterpriseSettingsClient::new(
-            "https://example.com",
-            None,
-            cache_dir.path(),
-        );
+        let client = EnterpriseSettingsClient::new("https://example.com", None, cache_dir.path());
 
         let response = EnterpriseSettingsResponse {
             settings: HashMap::from([("model".into(), "opus".into())]),
@@ -385,11 +354,7 @@ mod tests {
         };
 
         let cache_dir = tempfile::tempdir().unwrap();
-        let client = EnterpriseSettingsClient::new(
-            "https://example.com",
-            None,
-            cache_dir.path(),
-        );
+        let client = EnterpriseSettingsClient::new("https://example.com", None, cache_dir.path());
 
         let managed = client.to_managed_settings(&response);
         assert!(managed.is_locked("model")); // Default: locked.

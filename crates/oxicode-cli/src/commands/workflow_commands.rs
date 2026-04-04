@@ -12,16 +12,10 @@ use super::{CommandContext, CommandOutput, SlashCommand};
 /// Helper: detect project and run the appropriate command for a workflow step.
 /// `step_name` is "test", "lint", etc. for error messages.
 /// `extra_args` are appended to the detected command args.
-fn run_detected(
-    step: &str,
-    extra_args: &[&str],
-    fallback_msg: &str,
-) -> CommandOutput {
+fn run_detected(step: &str, extra_args: &[&str], fallback_msg: &str) -> CommandOutput {
     let cwd = std::env::current_dir().unwrap_or_default();
     let Some(project) = detect_project(&cwd) else {
-        return CommandOutput::Error(format!(
-            "No project detected. {fallback_msg}"
-        ));
+        return CommandOutput::Error(format!("No project detected. {fallback_msg}"));
     };
 
     let (cmd, base_args) = match step {
@@ -32,13 +26,11 @@ fn run_detected(
         "deploy" => match project.deploy {
             Some(d) => d,
             None => {
-                return CommandOutput::Message(
-                    format!(
-                        "No deploy config found for {} project.\n\
+                return CommandOutput::Message(format!(
+                    "No deploy config found for {} project.\n\
                          Use /run to execute custom deploy scripts.",
-                        project.project_type
-                    )
-                );
+                    project.project_type
+                ));
             }
         },
         _ => return CommandOutput::Error(format!("Unknown workflow step: {step}")),
@@ -150,7 +142,11 @@ impl SlashCommand for DeployCommand {
     }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let extra: Vec<&str> = args.split_whitespace().collect();
-        run_detected("deploy", &extra, "Add fly.toml, vercel.json, Dockerfile, etc.")
+        run_detected(
+            "deploy",
+            &extra,
+            "Add fly.toml, vercel.json, Dockerfile, etc.",
+        )
     }
 }
 
@@ -167,9 +163,7 @@ impl SlashCommand for SearchCommand {
             return CommandOutput::Error("Usage: /search <pattern>".into());
         }
         match run_command("rg", &["--count", "--color=never", "--", args.trim()]) {
-            Ok(out) if out.is_empty() => {
-                CommandOutput::Message(format!("No matches for: {args}"))
-            }
+            Ok(out) if out.is_empty() => CommandOutput::Message(format!("No matches for: {args}")),
             Ok(out) => {
                 let preview: String = out.lines().take(30).collect::<Vec<_>>().join("\n");
                 let total = out.lines().count();

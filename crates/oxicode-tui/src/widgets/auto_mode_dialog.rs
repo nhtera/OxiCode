@@ -46,9 +46,7 @@ impl Widget for AutoModeDialog {
             .border_style(Style::default().fg(Color::Red))
             .title(Span::styled(
                 " \u{26a0} Bypass Permissions ",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ))
             .title_alignment(Alignment::Center);
 
@@ -74,7 +72,11 @@ impl Widget for AutoModeDialog {
             } else {
                 Style::default()
             };
-            let prefix = if i == self.selected { "\u{25b8} " } else { "  " };
+            let prefix = if i == self.selected {
+                "\u{25b8} "
+            } else {
+                "  "
+            };
             lines.push(Line::from(Span::styled(format!("{prefix}{option}"), style)));
         }
 

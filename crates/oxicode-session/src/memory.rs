@@ -43,11 +43,7 @@ impl MemoryEntry {
     }
 
     /// Create an auto-extracted memory entry.
-    pub fn auto_extracted(
-        content: impl Into<String>,
-        tags: Vec<String>,
-        session_id: &str,
-    ) -> Self {
+    pub fn auto_extracted(content: impl Into<String>, tags: Vec<String>, session_id: &str) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             content: content.into(),
@@ -217,7 +213,10 @@ fn infer_tags(content: &str) -> Vec<String> {
     let lower = content.to_lowercase();
 
     let tag_map = [
-        (&["prefer", "preference", "always", "never"][..], "preference"),
+        (
+            &["prefer", "preference", "always", "never"][..],
+            "preference",
+        ),
         (&["code", "function", "variable", "class"][..], "code"),
         (&["project", "repo", "repository"][..], "project"),
         (&["tool", "editor", "ide"][..], "tooling"),

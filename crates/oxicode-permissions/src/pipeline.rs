@@ -87,9 +87,7 @@ impl PermissionPipeline {
         if let Some(reason) = self.dangerous_detector.check(tool_name, input) {
             // In bypass mode, log warning but allow (Ask becomes Allow).
             if self.mode == PermissionMode::Bypass {
-                tracing::warn!(
-                    "Bypass mode: dangerous pattern detected for {tool_name}: {reason}"
-                );
+                tracing::warn!("Bypass mode: dangerous pattern detected for {tool_name}: {reason}");
                 return PermissionDecision::Allow;
             }
             return PermissionDecision::Ask(reason);

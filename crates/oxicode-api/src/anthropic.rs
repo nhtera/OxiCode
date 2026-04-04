@@ -350,8 +350,7 @@ mod tests {
     #[test]
     fn test_no_thinking_by_default() {
         let provider = make_provider();
-        let request =
-            MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")]);
+        let request = MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")]);
 
         let body = provider.build_request_body(&request);
         assert!(body.get("thinking").is_none());
@@ -368,8 +367,7 @@ mod tests {
 
     #[test]
     fn test_beta_header_empty_when_no_features() {
-        let request =
-            MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")]);
+        let request = MessageRequest::new("claude-sonnet-4-20250514", vec![Message::user("hi")]);
 
         let beta = AnthropicProvider::build_beta_header(&request);
         assert!(beta.is_none());

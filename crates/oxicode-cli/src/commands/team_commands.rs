@@ -55,7 +55,9 @@ impl SlashCommand for TeamCommand {
                     CommandOutput::Message(output)
                 }
             }
-            other => CommandOutput::Error(format!("Unknown: /team {other}. Use: create, delete, list")),
+            other => {
+                CommandOutput::Error(format!("Unknown: /team {other}. Use: create, delete, list"))
+            }
         }
     }
     fn completions(&self, partial: &str, _ctx: &CommandContext) -> Vec<String> {

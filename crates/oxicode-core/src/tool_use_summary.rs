@@ -68,7 +68,10 @@ impl ToolUseSummary {
         let mut lines = vec![format!("Tool calls ({}):", self.tool_count)];
         for entry in &self.entries {
             let icon = if entry.is_error { "✗" } else { "✓" };
-            lines.push(format!("  {icon} {} — {}", entry.tool_name, entry.description));
+            lines.push(format!(
+                "  {icon} {} — {}",
+                entry.tool_name, entry.description
+            ));
         }
         lines.join("\n")
     }
@@ -116,32 +119,20 @@ fn summarize_tool_input(name: &str, input: &serde_json::Value) -> String {
             format!("edit {path}")
         }
         "bash" | "Bash" => {
-            let cmd = input
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
+            let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let preview: String = cmd.chars().take(60).collect();
             format!("$ {preview}")
         }
         "grep" | "Grep" => {
-            let pattern = input
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
+            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
             format!("grep \"{pattern}\"")
         }
         "glob" | "Glob" => {
-            let pattern = input
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
+            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
             format!("glob \"{pattern}\"")
         }
         "web_search" | "WebSearch" => {
-            let query = input
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
+            let query = input.get("query").and_then(|v| v.as_str()).unwrap_or("?");
             format!("search \"{query}\"")
         }
         _ => {
@@ -251,5 +242,134 @@ mod tests {
         assert_eq!(summary.tool_count, 0);
         assert!(summary.display().is_empty());
         assert!(summary.display_compact().is_empty());
+    }
+
+    #[test]
+    fn test_text_only_blocks() {
+        let blocks = vec![ContentBlock::Text {
+            text: "Hello".to_string(),
+        }];
+        let summary = ToolUseSummary::from_content_blocks(&blocks);
+        assert_eq!(summary.tool_count, 0);
+    }
+
+    #[test]
+    fn test_tool_use_without_result() {
+        let blocks = vec![ContentBlock::ToolUse {
+            id: "t1".to_string(),
+            name: "file_read".to_string(),
+            input: serde_json::json!({"file_path": "/tmp/test.rs"}),
+        }];
+        let summary = ToolUseSummary::from_content_blocks(&blocks);
+        assert_eq!(summary.tool_count, 1);
+        assert!(!summary.entries[0].is_error);
+    }
+
+    #[test]
+    fn test_multiple_errors() {
+        let blocks = vec![
+            ContentBlock::ToolUse {
+                id: "t1".to_string(),
+                name: "bash".to_string(),
+                input: serde_json::json!({"command": "fail1"}),
+            },
+            ContentBlock::ToolResult {
+                tool_use_id: "t1".to_string(),
+                content: "error 1".to_string(),
+                is_error: true,
+            },
+            ContentBlock::ToolUse {
+                id: "t2".to_string(),
+                name: "bash".to_string(),
+                input: serde_json::json!({"command": "fail2"}),
+            },
+            ContentBlock::ToolResult {
+                tool_use_id: "t2".to_string(),
+                content: "error 2".to_string(),
+                is_error: true,
+            },
+        ];
+        let summary = ToolUseSummary::from_content_blocks(&blocks);
+        assert_eq!(summary.tool_count, 2);
+        assert!(summary.entries[0].is_error);
+        assert!(summary.entries[1].is_error);
+        assert!(summary.display_compact().contains("2 failed"));
+    }
+
+    #[test]
+    fn test_summarize_web_search() {
+        let blocks = vec![ContentBlock::ToolUse {
+            id: "t1".to_string(),
+            name: "web_search".to_string(),
+            input: serde_json::json!({"query": "rust async patterns"}),
+        }];
+        let summary = ToolUseSummary::from_content_blocks(&blocks);
+        assert!(summary.entries[0]
+            .description
+            .contains("rust async patterns"));
+    }
+
+    #[test]
+    fn test_summarize_grep() {
+        let blocks = vec![ContentBlock::ToolUse {
+            id: "t1".to_string(),
+            name: "grep".to_string(),
+            input: serde_json::json!({"pattern": "TODO"}),
+        }];
+        let summary = ToolUseSummary::from_content_blocks(&blocks);
+        assert!(summary.entries[0].description.contains("TODO"));
+    }
+
+    #[test]
+    fn test_summarize_glob() {
+        let blocks = vec![ContentBlock::ToolUse {
+            id: "t1".to_string(),
+            name: "glob".to_string(),
+            input: serde_json::json!({"pattern": "**/*.rs"}),
+        }];
+        let summary = ToolUseSummary::from_content_blocks(&blocks);
+        assert!(summary.entries[0].description.contains("**/*.rs"));
+    }
+
+    #[test]
+    fn test_summarize_unknown_tool_first_key() {
+        let blocks = vec![ContentBlock::ToolUse {
+            id: "t1".to_string(),
+            name: "custom_tool".to_string(),
+            input: serde_json::json!({"url": "https://example.com"}),
+        }];
+        let summary = ToolUseSummary::from_content_blocks(&blocks);
+        assert!(summary.entries[0].description.contains("url="));
+    }
+
+    #[test]
+    fn test_display_format() {
+        let summary = ToolUseSummary {
+            tool_count: 1,
+            entries: vec![ToolSummaryEntry {
+                tool_name: "bash".to_string(),
+                description: "$ cargo test".to_string(),
+                is_error: false,
+            }],
+        };
+        let display = summary.display();
+        assert!(display.contains("Tool calls (1):"));
+        assert!(display.contains("✓"));
+        assert!(display.contains("bash"));
+    }
+
+    #[test]
+    fn test_display_compact_no_errors() {
+        let summary = ToolUseSummary {
+            tool_count: 1,
+            entries: vec![ToolSummaryEntry {
+                tool_name: "file_read".to_string(),
+                description: "read /tmp/x".to_string(),
+                is_error: false,
+            }],
+        };
+        let compact = summary.display_compact();
+        assert!(compact.contains("[1 tools:"));
+        assert!(!compact.contains("failed"));
     }
 }

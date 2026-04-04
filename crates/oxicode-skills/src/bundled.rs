@@ -8,13 +8,31 @@ use crate::parser::{parse_skill, Skill};
 
 /// Embedded SKILL.md content for each bundled skill.
 static BUNDLED_SKILLS: &[(&str, &str)] = &[
-    ("debug", include_str!("../../../assets/skills/debug/SKILL.md")),
-    ("remember", include_str!("../../../assets/skills/remember/SKILL.md")),
-    ("simplify", include_str!("../../../assets/skills/simplify/SKILL.md")),
-    ("verify", include_str!("../../../assets/skills/verify/SKILL.md")),
+    (
+        "debug",
+        include_str!("../../../assets/skills/debug/SKILL.md"),
+    ),
+    (
+        "remember",
+        include_str!("../../../assets/skills/remember/SKILL.md"),
+    ),
+    (
+        "simplify",
+        include_str!("../../../assets/skills/simplify/SKILL.md"),
+    ),
+    (
+        "verify",
+        include_str!("../../../assets/skills/verify/SKILL.md"),
+    ),
     ("loop", include_str!("../../../assets/skills/loop/SKILL.md")),
-    ("schedule", include_str!("../../../assets/skills/schedule/SKILL.md")),
-    ("batch", include_str!("../../../assets/skills/batch/SKILL.md")),
+    (
+        "schedule",
+        include_str!("../../../assets/skills/schedule/SKILL.md"),
+    ),
+    (
+        "batch",
+        include_str!("../../../assets/skills/batch/SKILL.md"),
+    ),
 ];
 
 /// Load all bundled skills from embedded content.

@@ -439,7 +439,10 @@ fn test_full_message_flow_protocol() {
     for (kind, msg) in &messages {
         let line = serde_json::to_string(msg).unwrap();
         let parsed = parse_json(&line);
-        assert_eq!(parsed["jsonrpc"], "2.0", "Missing jsonrpc version in {kind}");
+        assert_eq!(
+            parsed["jsonrpc"], "2.0",
+            "Missing jsonrpc version in {kind}"
+        );
 
         match *kind {
             "request" => {

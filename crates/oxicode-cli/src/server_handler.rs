@@ -103,7 +103,13 @@ impl ServerHandler {
             METHOD_INITIALIZE => {
                 let params: InitializeParams = match serde_json::from_value(params) {
                     Ok(p) => p,
-                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                    Err(e) => {
+                        return RpcResponse::err(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid params: {e}"),
+                        )
+                    }
                 };
 
                 tracing::info!(
@@ -135,16 +141,28 @@ impl ServerHandler {
             METHOD_GET_STATUS => {
                 let params: GetStatusParams = match serde_json::from_value(params) {
                     Ok(p) => p,
-                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                    Err(e) => {
+                        return RpcResponse::err(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid params: {e}"),
+                        )
+                    }
                 };
 
                 let sessions = self.sessions.lock().await;
                 let Some(state) = sessions.get(&params.session_id) else {
-                    return RpcResponse::err(id, error_codes::SESSION_NOT_FOUND, "Session not found");
+                    return RpcResponse::err(
+                        id,
+                        error_codes::SESSION_NOT_FOUND,
+                        "Session not found",
+                    );
                 };
 
                 let is_streaming = state.cancel_tx.is_some();
-                let perm_pending = !state.active_perms.try_lock()
+                let perm_pending = !state
+                    .active_perms
+                    .try_lock()
                     .map_or(false, |p| p.is_empty());
 
                 let status_str = if is_streaming {
@@ -167,12 +185,22 @@ impl ServerHandler {
             METHOD_GET_CONVERSATION => {
                 let params: GetConversationParams = match serde_json::from_value(params) {
                     Ok(p) => p,
-                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                    Err(e) => {
+                        return RpcResponse::err(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid params: {e}"),
+                        )
+                    }
                 };
 
                 let sessions = self.sessions.lock().await;
                 let Some(state) = sessions.get(&params.session_id) else {
-                    return RpcResponse::err(id, error_codes::SESSION_NOT_FOUND, "Session not found");
+                    return RpcResponse::err(
+                        id,
+                        error_codes::SESSION_NOT_FOUND,
+                        "Session not found",
+                    );
                 };
 
                 let messages = &state.session.messages;
@@ -190,54 +218,84 @@ impl ServerHandler {
                     })
                     .collect();
 
-                RpcResponse::ok(id, serde_json::json!({
-                    "session_id": params.session_id,
-                    "messages": slice,
-                    "total": messages.len(),
-                }))
+                RpcResponse::ok(
+                    id,
+                    serde_json::json!({
+                        "session_id": params.session_id,
+                        "messages": slice,
+                        "total": messages.len(),
+                    }),
+                )
             }
 
             METHOD_SEND_MESSAGE => {
                 // Delegate to existing message.send handler via params adaptation.
                 let params: SendMessageParams = match serde_json::from_value(params) {
                     Ok(p) => p,
-                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                    Err(e) => {
+                        return RpcResponse::err(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid params: {e}"),
+                        )
+                    }
                 };
                 let adapted = serde_json::to_value(MessageSendParams {
                     session_id: params.session_id,
                     content: params.content,
-                }).unwrap_or_default();
+                })
+                .unwrap_or_default();
                 self.handle_message_send(id, adapted).await
             }
 
             METHOD_APPROVE_PERMISSION => {
                 let params: ApprovePermissionParams = match serde_json::from_value(params) {
                     Ok(p) => p,
-                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                    Err(e) => {
+                        return RpcResponse::err(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid params: {e}"),
+                        )
+                    }
                 };
                 let adapted = serde_json::to_value(ToolDecisionParams {
                     session_id: params.session_id,
                     permission_id: params.permission_id,
                     always: params.always,
-                }).unwrap_or_default();
+                })
+                .unwrap_or_default();
                 self.handle_tool_decision(id, adapted, params.approve).await
             }
 
             METHOD_CANCEL_TURN => {
                 let params: CancelTurnParams = match serde_json::from_value(params) {
                     Ok(p) => p,
-                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                    Err(e) => {
+                        return RpcResponse::err(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid params: {e}"),
+                        )
+                    }
                 };
                 let adapted = serde_json::to_value(MessageCancelParams {
                     session_id: params.session_id,
-                }).unwrap_or_default();
+                })
+                .unwrap_or_default();
                 self.handle_message_cancel(id, adapted).await
             }
 
             METHOD_SWITCH_MODEL => {
                 let params: SwitchModelParams = match serde_json::from_value(params) {
                     Ok(p) => p,
-                    Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+                    Err(e) => {
+                        return RpcResponse::err(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid params: {e}"),
+                        )
+                    }
                 };
 
                 // Just acknowledge the model switch request.
@@ -247,12 +305,15 @@ impl ServerHandler {
                     model = %params.model,
                     "bridge.switchModel (acknowledged, not yet implemented)"
                 );
-                RpcResponse::ok(id, serde_json::json!({
-                    "session_id": params.session_id,
-                    "model": params.model,
-                    "switched": false,
-                    "reason": "model switching requires engine reconfiguration (planned)",
-                }))
+                RpcResponse::ok(
+                    id,
+                    serde_json::json!({
+                        "session_id": params.session_id,
+                        "model": params.model,
+                        "switched": false,
+                        "reason": "model switching requires engine reconfiguration (planned)",
+                    }),
+                )
             }
 
             _ => RpcResponse::err(
@@ -284,23 +345,35 @@ impl ServerHandler {
         };
         self.sessions.lock().await.insert(session_id.clone(), state);
 
-        RpcResponse::ok(id, serde_json::json!({"session_id": session_id, "model": model}))
+        RpcResponse::ok(
+            id,
+            serde_json::json!({"session_id": session_id, "model": model}),
+        )
     }
 
     async fn handle_session_resume(&self, id: RpcId, params: serde_json::Value) -> RpcResponse {
         let params: SessionResumeParams = match serde_json::from_value(params) {
             Ok(p) => p,
-            Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+            Err(e) => {
+                return RpcResponse::err(
+                    id,
+                    error_codes::INVALID_PARAMS,
+                    format!("Invalid params: {e}"),
+                )
+            }
         };
 
         // Already loaded?
         {
             let sessions = self.sessions.lock().await;
             if let Some(s) = sessions.get(&params.session_id) {
-                return RpcResponse::ok(id, serde_json::json!({
-                    "session_id": params.session_id,
-                    "message_count": s.session.messages.len(),
-                }));
+                return RpcResponse::ok(
+                    id,
+                    serde_json::json!({
+                        "session_id": params.session_id,
+                        "message_count": s.session.messages.len(),
+                    }),
+                );
             }
         }
 
@@ -318,10 +391,20 @@ impl ServerHandler {
                     cancel_tx: None,
                     active_perms: Arc::new(Mutex::new(HashMap::new())),
                 };
-                self.sessions.lock().await.insert(params.session_id.clone(), state);
-                RpcResponse::ok(id, serde_json::json!({"session_id": params.session_id, "message_count": msg_count}))
+                self.sessions
+                    .lock()
+                    .await
+                    .insert(params.session_id.clone(), state);
+                RpcResponse::ok(
+                    id,
+                    serde_json::json!({"session_id": params.session_id, "message_count": msg_count}),
+                )
             }
-            Err(e) => RpcResponse::err(id, error_codes::SESSION_NOT_FOUND, format!("Session not found: {e}")),
+            Err(e) => RpcResponse::err(
+                id,
+                error_codes::SESSION_NOT_FOUND,
+                format!("Session not found: {e}"),
+            ),
         }
     }
 
@@ -329,11 +412,13 @@ impl ServerHandler {
         let sessions = self.sessions.lock().await;
         let list: Vec<serde_json::Value> = sessions
             .values()
-            .map(|s| serde_json::json!({
-                "session_id": s.session.id,
-                "message_count": s.session.messages.len(),
-                "model": s.session.model,
-            }))
+            .map(|s| {
+                serde_json::json!({
+                    "session_id": s.session.id,
+                    "message_count": s.session.messages.len(),
+                    "model": s.session.model,
+                })
+            })
             .collect();
         RpcResponse::ok(id, serde_json::json!({"sessions": list}))
     }
@@ -345,7 +430,13 @@ impl ServerHandler {
     async fn handle_message_send(&self, id: RpcId, params: serde_json::Value) -> RpcResponse {
         let params: MessageSendParams = match serde_json::from_value(params) {
             Ok(p) => p,
-            Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+            Err(e) => {
+                return RpcResponse::err(
+                    id,
+                    error_codes::INVALID_PARAMS,
+                    format!("Invalid params: {e}"),
+                )
+            }
         };
         let session_id = params.session_id.clone();
 
@@ -373,9 +464,8 @@ impl ServerHandler {
         let (perm_tx, perm_rx) = mpsc::channel::<(String, oneshot::Sender<PermissionResponse>)>(16);
 
         // FIX C1: Collector writes directly to the session's active_perms Arc.
-        let forwarder = spawn_event_forwarder(
-            turn_rx, self.notify_tx.clone(), perm_tx, session_id.clone(),
-        );
+        let forwarder =
+            spawn_event_forwarder(turn_rx, self.notify_tx.clone(), perm_tx, session_id.clone());
         let collector = spawn_perm_collector(perm_rx, active_perms);
 
         // Clone conversation out for engine execution.
@@ -397,7 +487,8 @@ impl ServerHandler {
         let _ = collector.await;
 
         // FIX M1: Sync ALL new messages back to session (not just the final one).
-        self.sync_session_messages(&session_id, &conversation, msg_count_before).await;
+        self.sync_session_messages(&session_id, &conversation, msg_count_before)
+            .await;
         self.build_message_response(id, &session_id, result).await
     }
 
@@ -436,24 +527,34 @@ impl ServerHandler {
             Ok(msg) => {
                 let msg_count = {
                     let sessions = self.sessions.lock().await;
-                    sessions.get(session_id).map_or(0, |s| s.session.messages.len())
+                    sessions
+                        .get(session_id)
+                        .map_or(0, |s| s.session.messages.len())
                 };
-                let _ = self.notify_tx.send(RpcNotification::new(
-                    "session.updated",
-                    serde_json::to_value(SessionUpdatedParams {
-                        session_id: session_id.to_string(),
-                        message_count: msg_count,
-                        model: self.model.clone(),
-                    }).unwrap_or_default(),
-                )).await;
+                let _ = self
+                    .notify_tx
+                    .send(RpcNotification::new(
+                        "session.updated",
+                        serde_json::to_value(SessionUpdatedParams {
+                            session_id: session_id.to_string(),
+                            message_count: msg_count,
+                            model: self.model.clone(),
+                        })
+                        .unwrap_or_default(),
+                    ))
+                    .await;
 
-                let stop_reason = msg.stop_reason
+                let stop_reason = msg
+                    .stop_reason
                     .map_or("end_turn".to_string(), |r| format!("{r:?}").to_lowercase());
-                RpcResponse::ok(id, serde_json::json!({
-                    "session_id": session_id,
-                    "stop_reason": stop_reason,
-                    "text": msg.text(),
-                }))
+                RpcResponse::ok(
+                    id,
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "stop_reason": stop_reason,
+                        "text": msg.text(),
+                    }),
+                )
             }
             Err(e) => RpcResponse::err(id, error_codes::INTERNAL_ERROR, e.to_string()),
         }
@@ -462,7 +563,13 @@ impl ServerHandler {
     async fn handle_message_cancel(&self, id: RpcId, params: serde_json::Value) -> RpcResponse {
         let params: MessageCancelParams = match serde_json::from_value(params) {
             Ok(p) => p,
-            Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+            Err(e) => {
+                return RpcResponse::err(
+                    id,
+                    error_codes::INVALID_PARAMS,
+                    format!("Invalid params: {e}"),
+                )
+            }
         };
         let mut sessions = self.sessions.lock().await;
         if let Some(state) = sessions.get_mut(&params.session_id) {
@@ -470,7 +577,10 @@ impl ServerHandler {
                 let _ = cancel_tx.send(());
                 return RpcResponse::ok(id, serde_json::json!({"cancelled": true}));
             }
-            return RpcResponse::ok(id, serde_json::json!({"cancelled": false, "reason": "no active request"}));
+            return RpcResponse::ok(
+                id,
+                serde_json::json!({"cancelled": false, "reason": "no active request"}),
+            );
         }
         RpcResponse::err(id, error_codes::SESSION_NOT_FOUND, "Session not found")
     }
@@ -487,7 +597,13 @@ impl ServerHandler {
     ) -> RpcResponse {
         let params: ToolDecisionParams = match serde_json::from_value(params) {
             Ok(p) => p,
-            Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+            Err(e) => {
+                return RpcResponse::err(
+                    id,
+                    error_codes::INVALID_PARAMS,
+                    format!("Invalid params: {e}"),
+                )
+            }
         };
 
         // FIX C1: Look up the permission in the session's active_perms Arc,
@@ -511,7 +627,11 @@ impl ServerHandler {
             let sent = reply_tx.send(response).is_ok();
             RpcResponse::ok(id, serde_json::json!({"acknowledged": sent}))
         } else {
-            RpcResponse::err(id, error_codes::INVALID_PARAMS, "Permission request not found or already answered")
+            RpcResponse::err(
+                id,
+                error_codes::INVALID_PARAMS,
+                "Permission request not found or already answered",
+            )
         }
     }
 
@@ -522,7 +642,13 @@ impl ServerHandler {
     async fn handle_compact(&self, id: RpcId, params: serde_json::Value) -> RpcResponse {
         let params: CompactParams = match serde_json::from_value(params) {
             Ok(p) => p,
-            Err(e) => return RpcResponse::err(id, error_codes::INVALID_PARAMS, format!("Invalid params: {e}")),
+            Err(e) => {
+                return RpcResponse::err(
+                    id,
+                    error_codes::INVALID_PARAMS,
+                    format!("Invalid params: {e}"),
+                )
+            }
         };
         let mut sessions = self.sessions.lock().await;
         let Some(state) = sessions.get_mut(&params.session_id) else {
@@ -531,7 +657,10 @@ impl ServerHandler {
 
         let messages = state.conversation.api_messages().to_vec();
         if messages.len() < 3 {
-            return RpcResponse::ok(id, serde_json::json!({"compacted": false, "reason": "too few messages"}));
+            return RpcResponse::ok(
+                id,
+                serde_json::json!({"compacted": false, "reason": "too few messages"}),
+            );
         }
 
         let provider = self.engine.provider_ref().clone();
@@ -540,12 +669,21 @@ impl ServerHandler {
         match oxicode_context::AutoCompactor::compact(&messages, provider.as_ref(), &model).await {
             Ok(summary_msg) => {
                 let before = state.conversation.len();
-                state.conversation.replace_messages(vec![summary_msg.clone()]);
+                state
+                    .conversation
+                    .replace_messages(vec![summary_msg.clone()]);
                 state.session.messages = vec![summary_msg];
                 let _ = oxicode_session::save_session(&state.session, None);
-                RpcResponse::ok(id, serde_json::json!({"compacted": true, "before": before, "after": 1}))
+                RpcResponse::ok(
+                    id,
+                    serde_json::json!({"compacted": true, "before": before, "after": 1}),
+                )
             }
-            Err(e) => RpcResponse::err(id, error_codes::INTERNAL_ERROR, format!("Compact failed: {e}")),
+            Err(e) => RpcResponse::err(
+                id,
+                error_codes::INTERNAL_ERROR,
+                format!("Compact failed: {e}"),
+            ),
         }
     }
 
@@ -599,56 +737,108 @@ async fn forward_turn_event(
 ) {
     match event {
         TurnEvent::TextDelta(text) => {
-            let _ = notify_tx.send(RpcNotification::new("stream.text",
-                serde_json::to_value(StreamTextParams { session_id: session_id.to_string(), text }).unwrap_or_default(),
-            )).await;
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "stream.text",
+                    serde_json::to_value(StreamTextParams {
+                        session_id: session_id.to_string(),
+                        text,
+                    })
+                    .unwrap_or_default(),
+                ))
+                .await;
         }
         TurnEvent::TurnStart | TurnEvent::TurnEnd => {
             // No-op for IDE — stream.text covers deltas, response signals completion.
         }
         TurnEvent::ToolUseStart { id, name, input } => {
-            let _ = notify_tx.send(RpcNotification::new("tool.start",
-                serde_json::to_value(ToolStartParams {
-                    session_id: session_id.to_string(), tool_use_id: id, tool_name: name, input,
-                }).unwrap_or_default(),
-            )).await;
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "tool.start",
+                    serde_json::to_value(ToolStartParams {
+                        session_id: session_id.to_string(),
+                        tool_use_id: id,
+                        tool_name: name,
+                        input,
+                    })
+                    .unwrap_or_default(),
+                ))
+                .await;
         }
-        TurnEvent::ToolResult { tool_use_id, content, is_error } => {
-            let _ = notify_tx.send(RpcNotification::new("tool.result",
-                serde_json::to_value(ToolResultParams {
-                    session_id: session_id.to_string(), tool_use_id, content, is_error,
-                }).unwrap_or_default(),
-            )).await;
+        TurnEvent::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => {
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "tool.result",
+                    serde_json::to_value(ToolResultParams {
+                        session_id: session_id.to_string(),
+                        tool_use_id,
+                        content,
+                        is_error,
+                    })
+                    .unwrap_or_default(),
+                ))
+                .await;
         }
-        TurnEvent::PermissionAsk { tool_name, input_summary, prompt, reply_tx } => {
+        TurnEvent::PermissionAsk {
+            tool_name,
+            input_summary,
+            prompt,
+            reply_tx,
+        } => {
             let perm_id = uuid::Uuid::new_v4().to_string();
-            let _ = notify_tx.send(RpcNotification::new("permission.ask",
-                serde_json::to_value(PermissionAskParams {
-                    session_id: session_id.to_string(), permission_id: perm_id.clone(),
-                    tool_name, input_summary, prompt,
-                }).unwrap_or_default(),
-            )).await;
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "permission.ask",
+                    serde_json::to_value(PermissionAskParams {
+                        session_id: session_id.to_string(),
+                        permission_id: perm_id.clone(),
+                        tool_name,
+                        input_summary,
+                        prompt,
+                    })
+                    .unwrap_or_default(),
+                ))
+                .await;
             // Send to collector which writes directly to session's active_perms.
             let _ = perm_tx.send((perm_id, reply_tx)).await;
         }
         TurnEvent::Error(msg) => {
-            let _ = notify_tx.send(RpcNotification::new("error",
-                serde_json::to_value(ErrorNotificationParams {
-                    session_id: Some(session_id.to_string()), message: msg,
-                }).unwrap_or_default(),
-            )).await;
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "error",
+                    serde_json::to_value(ErrorNotificationParams {
+                        session_id: Some(session_id.to_string()),
+                        message: msg,
+                    })
+                    .unwrap_or_default(),
+                ))
+                .await;
         }
-        TurnEvent::RateLimited { message, attempt, max_retries, retry_in_secs } => {
-            tracing::warn!("Rate limited ({attempt}/{max_retries}): {message} — retry in {retry_in_secs:.0}s");
-            let _ = notify_tx.send(RpcNotification::new("stream.rate_limited",
-                serde_json::json!({
-                    "session_id": session_id,
-                    "message": message,
-                    "attempt": attempt,
-                    "max_retries": max_retries,
-                    "retry_in_secs": retry_in_secs,
-                }),
-            )).await;
+        TurnEvent::RateLimited {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => {
+            tracing::warn!(
+                "Rate limited ({attempt}/{max_retries}): {message} — retry in {retry_in_secs:.0}s"
+            );
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "stream.rate_limited",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "message": message,
+                        "attempt": attempt,
+                        "max_retries": max_retries,
+                        "retry_in_secs": retry_in_secs,
+                    }),
+                ))
+                .await;
         }
     }
 }

@@ -12,15 +12,16 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use crate::server_handler::ServerHandler;
-use crate::server_protocol::{
-    error_codes, RpcId, RpcNotification, RpcRequest, RpcResponse,
-};
+use crate::server_protocol::{error_codes, RpcId, RpcNotification, RpcRequest, RpcResponse};
 
 /// Shared stdout writer for responses and notifications.
 type StdoutWriter = Arc<tokio::sync::Mutex<tokio::io::Stdout>>;
 
 /// Run the server loop: read JSON-RPC from stdin, dispatch, write to stdout.
-pub async fn run_server(engine: Arc<oxicode_core::QueryEngine>, model: String) -> anyhow::Result<()> {
+pub async fn run_server(
+    engine: Arc<oxicode_core::QueryEngine>,
+    model: String,
+) -> anyhow::Result<()> {
     let (notify_tx, mut notify_rx) = mpsc::channel::<RpcNotification>(512);
     let handler = Arc::new(ServerHandler::new(engine, model, notify_tx));
 

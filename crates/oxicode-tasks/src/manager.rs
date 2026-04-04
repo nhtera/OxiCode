@@ -8,9 +8,17 @@ use uuid::Uuid;
 /// Type of background task to run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TaskType {
-    LocalBash { command: String },
-    LocalAgent { prompt: String, model: String },
-    Monitor { interval_secs: u64, command: String },
+    LocalBash {
+        command: String,
+    },
+    LocalAgent {
+        prompt: String,
+        model: String,
+    },
+    Monitor {
+        interval_secs: u64,
+        command: String,
+    },
     #[cfg(feature = "remote")]
     RemoteAgent {
         server_url: String,

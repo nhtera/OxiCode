@@ -47,36 +47,13 @@ impl SlashCommand for PluginCommand {
     }
 
     fn completions(&self, partial: &str, _ctx: &CommandContext) -> Vec<String> {
-        ["browse", "search", "info", "install", "update", "remove", "list"]
-            .iter()
-            .filter(|s| s.starts_with(partial))
-            .map(|s| (*s).to_string())
-            .collect()
-    }
-}
-
-/// /reload-plugins — hot-reload all plugins without restart.
-pub struct ReloadPluginsCommand;
-
-impl SlashCommand for ReloadPluginsCommand {
-    fn name(&self) -> &str {
-        "reload-plugins"
-    }
-    fn description(&self) -> &str {
-        "Hot-reload all plugins without restarting"
-    }
-
-    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        // Hot-reload is async and needs PluginManager access.
-        // In the current sync command framework, we output instructions.
-        // Full async reload will be wired through the engine event loop.
-        CommandOutput::Message(
-            "Plugin hot-reload triggered.\n\
-             Scanning plugin directories and restarting subprocesses...\n\
-             Note: Full async reload is handled by the engine. \
-             Plugins will be available on the next turn."
-                .into(),
-        )
+        [
+            "browse", "search", "info", "install", "update", "remove", "list",
+        ]
+        .iter()
+        .filter(|s| s.starts_with(partial))
+        .map(|s| (*s).to_string())
+        .collect()
     }
 }
 
@@ -122,7 +99,9 @@ fn execute_browse(args: &str) -> CommandOutput {
             let start = (page.saturating_sub(1)) * page_size;
 
             if start >= total {
-                return CommandOutput::Error(format!("Page {page} out of range (1-{total_pages})."));
+                return CommandOutput::Error(format!(
+                    "Page {page} out of range (1-{total_pages})."
+                ));
             }
 
             let end = (start + page_size).min(total);
@@ -130,14 +109,20 @@ fn execute_browse(args: &str) -> CommandOutput {
                 "Plugin Registry (page {page}/{total_pages}, {total} total):\n\n\
                  {:<25} {:<10} {:<12} {}\n\
                  {}\n",
-                "NAME", "VERSION", "TRUST", "DESCRIPTION",
+                "NAME",
+                "VERSION",
+                "TRUST",
+                "DESCRIPTION",
                 "-".repeat(70)
             );
 
             for entry in &entries[start..end] {
                 let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                 let version = entry.get("version").and_then(|v| v.as_str()).unwrap_or("?");
-                let trust = entry.get("trust").and_then(|v| v.as_str()).unwrap_or("unverified");
+                let trust = entry
+                    .get("trust")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unverified");
                 let desc = entry
                     .get("description")
                     .and_then(|v| v.as_str())
@@ -217,11 +202,17 @@ fn execute_search(query: &str) -> CommandOutput {
                 return CommandOutput::Message(format!("No plugins matching '{query}'."));
             }
 
-            let mut output = format!("Search results for '{query}' ({} found):\n\n", matches.len());
+            let mut output = format!(
+                "Search results for '{query}' ({} found):\n\n",
+                matches.len()
+            );
             for entry in &matches {
                 let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                 let version = entry.get("version").and_then(|v| v.as_str()).unwrap_or("?");
-                let trust = entry.get("trust").and_then(|v| v.as_str()).unwrap_or("unverified");
+                let trust = entry
+                    .get("trust")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unverified");
                 let desc = entry
                     .get("description")
                     .and_then(|v| v.as_str())
@@ -375,11 +366,7 @@ fn execute_list(plugins_dir: &PathBuf) -> CommandOutput {
     }
 
     let mut output = String::from("Installed plugins:\n\n");
-    let _ = writeln!(
-        output,
-        "{:<20} {:<10} {}",
-        "NAME", "VERSION", "DESCRIPTION"
-    );
+    let _ = writeln!(output, "{:<20} {:<10} {}", "NAME", "VERSION", "DESCRIPTION");
     let _ = writeln!(output, "{}", "-".repeat(60));
 
     for plugin in &installed {
@@ -405,7 +392,10 @@ fn format_registry_entry(entry: &serde_json::Value) -> String {
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let trust = entry.get("trust").and_then(|v| v.as_str()).unwrap_or("unverified");
+    let trust = entry
+        .get("trust")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unverified");
     let dl_url = entry
         .get("download_url")
         .and_then(|v| v.as_str())

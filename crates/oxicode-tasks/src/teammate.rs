@@ -126,11 +126,7 @@ pub async fn run_teammate(
     message_bus: Arc<Mutex<MessageBus>>,
     tasks_dir: &Path,
 ) -> OxiResult<TaskStatus> {
-    tracing::info!(
-        "run_teammate task={} name={}",
-        task_id,
-        teammate_name
-    );
+    tracing::info!("run_teammate task={} name={}", task_id, teammate_name);
 
     let mut out_file = open_output_file(tasks_dir, task_id)?;
 

@@ -35,12 +35,9 @@ impl SlashCommand for VoiceCommand {
                             .to_string(),
                     )
                 }
-                "off" | "stop" => {
-                    CommandOutput::Message("Voice input disabled.".to_string())
-                }
+                "off" | "stop" => CommandOutput::Message("Voice input disabled.".to_string()),
                 "status" => CommandOutput::Message(
-                    "Voice status: check the status bar for the microphone indicator."
-                        .to_string(),
+                    "Voice status: check the status bar for the microphone indicator.".to_string(),
                 ),
                 "" => CommandOutput::Message(
                     "Voice input: use /voice on to start, /voice off to stop.\n\
@@ -48,9 +45,7 @@ impl SlashCommand for VoiceCommand {
                      Audio is streamed directly to API — never stored on disk."
                         .to_string(),
                 ),
-                _ => CommandOutput::Error(
-                    "Usage: /voice [on|off|status]".to_string(),
-                ),
+                _ => CommandOutput::Error("Usage: /voice [on|off|status]".to_string()),
             }
         }
         #[cfg(not(feature = "voice"))]
@@ -270,8 +265,7 @@ impl SlashCommand for RemoteEnvCommand {
             other => {
                 if other.starts_with("set ") {
                     CommandOutput::Message(
-                        "Remote env variable setting is only available in bridge mode."
-                            .to_string(),
+                        "Remote env variable setting is only available in bridge mode.".to_string(),
                     )
                 } else {
                     CommandOutput::Error("Usage: /remote-env [list|set KEY VALUE]".to_string())

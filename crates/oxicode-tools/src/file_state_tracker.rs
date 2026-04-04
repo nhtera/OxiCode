@@ -34,7 +34,10 @@ impl FileStateTracker {
     /// Get the recorded mtime for a path (used for TOCTOU double-check).
     pub fn get_recorded_mtime(&self, path: &Path) -> Option<SystemTime> {
         let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        let guard = self.state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = self
+            .state
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.get(&key).copied()
     }
 
@@ -42,7 +45,10 @@ impl FileStateTracker {
     /// Returns `Ok(())` if safe to write, `Err(message)` if stale.
     pub fn check_staleness(&self, path: &Path) -> Result<(), String> {
         let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        let guard = self.state.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = self
+            .state
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(recorded_mtime) = guard.get(&key) else {
             // File was never read via FileReadTool — allow the edit but warn
             return Ok(());

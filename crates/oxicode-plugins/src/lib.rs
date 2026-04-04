@@ -9,4 +9,4 @@ pub mod subprocess;
 pub use manager::PluginManager;
 pub use manifest::{PluginManifest, PluginToolDef};
 pub use registry::{PluginEntry, PluginRegistry};
-pub use security::{TrustLevel, PermissionManifest};
+pub use security::{PermissionManifest, TrustLevel};

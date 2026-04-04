@@ -32,11 +32,7 @@ impl SlashCommand for EffortCommand {
         }
 
         let (budget_label, flags_to_enable, flags_to_disable) = match level.as_str() {
-            "low" => (
-                "low",
-                vec!["effort_low"],
-                vec!["effort_high", "effort_max"],
-            ),
+            "low" => ("low", vec!["effort_low"], vec!["effort_high", "effort_max"]),
             "medium" | "med" | "default" => (
                 "medium",
                 vec![],
@@ -47,15 +43,9 @@ impl SlashCommand for EffortCommand {
                 vec!["effort_high"],
                 vec!["effort_low", "effort_max"],
             ),
-            "max" | "maximum" => (
-                "max",
-                vec!["effort_max"],
-                vec!["effort_low", "effort_high"],
-            ),
+            "max" | "maximum" => ("max", vec!["effort_max"], vec!["effort_low", "effort_high"]),
             _ => {
-                return CommandOutput::Error(
-                    "Usage: /effort <low|medium|high|max>".into(),
-                );
+                return CommandOutput::Error("Usage: /effort <low|medium|high|max>".into());
             }
         };
 

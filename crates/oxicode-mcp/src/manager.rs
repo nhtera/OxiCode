@@ -104,7 +104,10 @@ impl McpServerManager {
             };
 
             // Initialize the server.
-            match self.initialize_server(name, transport, server_config.clone()).await {
+            match self
+                .initialize_server(name, transport, server_config.clone())
+                .await
+            {
                 Ok(()) => started.push(name.to_string()),
                 Err(e) => tracing::error!("Failed to initialize MCP server '{name}': {e}"),
             }

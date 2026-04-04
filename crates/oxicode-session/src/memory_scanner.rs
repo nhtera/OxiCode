@@ -38,11 +38,7 @@ pub fn scan_memory_files(dir: &Path) -> Result<Vec<MemoryHeader>, String> {
 }
 
 /// Recursive directory walker with depth limit.
-fn walk_dir(
-    current: &Path,
-    depth: usize,
-    results: &mut Vec<MemoryHeader>,
-) -> Result<(), String> {
+fn walk_dir(current: &Path, depth: usize, results: &mut Vec<MemoryHeader>) -> Result<(), String> {
     if depth > MAX_DEPTH || results.len() >= MAX_FILES {
         return Ok(());
     }
@@ -104,13 +100,8 @@ pub fn build_memory_index(headers: &[MemoryHeader]) -> String {
 
     let mut index = String::new();
     for h in headers {
-        let type_str = h
-            .memory_type
-            .map_or("note", |t| t.as_str());
-        let desc = h
-            .description
-            .as_deref()
-            .unwrap_or(&h.filename);
+        let type_str = h.memory_type.map_or("note", |t| t.as_str());
+        let desc = h.description.as_deref().unwrap_or(&h.filename);
         let _ = writeln!(index, "- [{type_str}] {desc}");
     }
     index
@@ -266,5 +257,82 @@ mod tests {
         let index = build_memory_index(&headers);
         assert!(index.contains("[decision] Architecture decisions"));
         assert!(index.contains("[note] note.md")); // Fallback to filename
+    }
+
+    #[test]
+    fn scan_within_depth_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        // Depth 1 — should be found.
+        let sub = dir.path().join("subdir");
+        std::fs::create_dir_all(&sub).unwrap();
+        create_memory_file(&sub, "nested.md", "In subdir.");
+
+        let results = scan_memory_files(dir.path()).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].filename, "nested.md");
+    }
+
+    #[test]
+    fn scan_max_depth_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        // Depth 3 exactly — should still be found (depth <= MAX_DEPTH).
+        let d3 = dir.path().join("a/b/c");
+        std::fs::create_dir_all(&d3).unwrap();
+        create_memory_file(&d3, "d3.md", "At depth 3.");
+
+        let results = scan_memory_files(dir.path()).unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn scan_with_frontmatter_tags() {
+        let dir = tempfile::tempdir().unwrap();
+        create_memory_file(
+            dir.path(),
+            "tagged.md",
+            "---\ntype: preference\ntags: [rust, coding]\n---\nPrefer snake_case.",
+        );
+
+        let results = scan_memory_files(dir.path()).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].tags, vec!["rust", "coding"]);
+    }
+
+    #[test]
+    fn scan_with_no_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        create_memory_file(dir.path(), "plain.md", "Just plain text, no frontmatter.");
+
+        let results = scan_memory_files(dir.path()).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].memory_type.is_none());
+        assert!(results[0].description.is_none());
+    }
+
+    #[test]
+    fn build_index_all_memory_types() {
+        use crate::memory_types::MemoryType;
+        let types = [
+            MemoryType::Decision,
+            MemoryType::Preference,
+            MemoryType::Context,
+            MemoryType::Task,
+        ];
+        let headers: Vec<MemoryHeader> = types
+            .iter()
+            .map(|t: &MemoryType| MemoryHeader {
+                filename: format!("{}.md", t.as_str()),
+                filepath: Path::new("test.md").to_path_buf(),
+                memory_type: Some(*t),
+                description: Some(format!("A {} entry", t.as_str())),
+                tags: vec![],
+                mtime: SystemTime::now(),
+            })
+            .collect();
+
+        let index = build_memory_index(&headers);
+        for t in &types {
+            assert!(index.contains(t.as_str()));
+        }
     }
 }

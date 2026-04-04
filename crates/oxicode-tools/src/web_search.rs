@@ -46,11 +46,7 @@ impl Tool for WebSearchTool {
         PermissionLevel::System
     }
 
-    async fn execute(
-        &self,
-        input: serde_json::Value,
-        _ctx: &ToolContext,
-    ) -> OxiResult<ToolResult> {
+    async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
         let Some(query) = input["query"].as_str() else {
             return Ok(ToolResult::error("'query' is required"));
         };

@@ -48,11 +48,7 @@ impl Tool for WebFetchTool {
         PermissionLevel::System
     }
 
-    async fn execute(
-        &self,
-        input: serde_json::Value,
-        _ctx: &ToolContext,
-    ) -> OxiResult<ToolResult> {
+    async fn execute(&self, input: serde_json::Value, _ctx: &ToolContext) -> OxiResult<ToolResult> {
         let Some(url_str) = input["url"].as_str() else {
             return Ok(ToolResult::error("'url' is required"));
         };
@@ -212,9 +208,7 @@ fn is_private_ip(ip: IpAddr) -> bool {
 /// RFC 1918 private IPv4 ranges.
 fn is_private_ipv4(ip: Ipv4Addr) -> bool {
     let o = ip.octets();
-    o[0] == 10
-        || (o[0] == 172 && (16..=31).contains(&o[1]))
-        || (o[0] == 192 && o[1] == 168)
+    o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168)
 }
 
 // Lazy-compiled regexes for HTML stripping.
@@ -226,12 +220,10 @@ static RE_NOSCRIPT: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?is)<noscript[^>]*>.*?</noscript>").unwrap());
 static RE_NEWLINE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)</?(br|p|div|li|h[1-6]|tr|dt|dd)[^>]*>").unwrap());
-static RE_TAGS: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"<[^>]+>").unwrap());
+static RE_TAGS: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"<[^>]+>").unwrap());
 static RE_SPACES: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"[^\S\n]+").unwrap());
-static RE_BLANK: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\n{3,}").unwrap());
+static RE_BLANK: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"\n{3,}").unwrap());
 
 /// Strip HTML tags and collapse whitespace to produce readable plain text.
 fn strip_html(html: &str) -> String {
@@ -258,10 +250,7 @@ fn strip_html(html: &str) -> String {
 
 /// Truncate string to at most `max` characters, cutting at a char boundary.
 fn truncate_chars(s: &str, max: usize) -> &str {
-    let end = s
-        .char_indices()
-        .nth(max)
-        .map_or(s.len(), |(idx, _)| idx);
+    let end = s.char_indices().nth(max).map_or(s.len(), |(idx, _)| idx);
     &s[..end]
 }
 
@@ -322,9 +311,7 @@ mod tests {
 
     #[test]
     fn test_is_private_url_blocks_aws_imds() {
-        assert!(is_private_url(
-            "http://169.254.169.254/latest/meta-data/"
-        ));
+        assert!(is_private_url("http://169.254.169.254/latest/meta-data/"));
     }
 
     #[test]

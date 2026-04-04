@@ -4,12 +4,14 @@ use oxicode_api::LlmProvider;
 use oxicode_common::{Message, OxiResult};
 
 use crate::{
-    auto_compact::AutoCompactor, context_collapse::ContextCollapse,
+    auto_compact::AutoCompactor,
+    context_collapse::ContextCollapse,
     microcompact::microcompact_messages,
     post_compact_cleanup::{self, RestoreContext},
     reactive_compact::ReactiveCompactor,
     snip_compact::{self, SnipConfig},
-    token_counter::TokenCounter, truncation::truncate_messages,
+    token_counter::TokenCounter,
+    truncation::truncate_messages,
 };
 
 /// Context budget thresholds (fraction of model max tokens).
@@ -142,8 +144,7 @@ impl BudgetManager {
                 self.counter.clear_cache();
 
                 // Extract context before compaction for post-compact restore.
-                let recent_tools =
-                    post_compact_cleanup::extract_recent_tools(&result, 5);
+                let recent_tools = post_compact_cleanup::extract_recent_tools(&result, 5);
                 let restore_ctx = RestoreContext {
                     working_dir: Some(working_dir.to_string_lossy().to_string()),
                     recent_tools,
@@ -154,10 +155,7 @@ impl BudgetManager {
                     Ok(summary_msg) => {
                         tracing::info!("L3: replaced {} messages with summary", result.len());
                         let mut compacted = vec![summary_msg];
-                        post_compact_cleanup::post_compact_restore(
-                            &mut compacted,
-                            &restore_ctx,
-                        );
+                        post_compact_cleanup::post_compact_restore(&mut compacted, &restore_ctx);
                         Ok(compacted)
                     }
                     Err(e) => {

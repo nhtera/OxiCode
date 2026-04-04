@@ -91,9 +91,7 @@ pub async fn login() -> Result<LoginResult, String> {
 
     if open_browser(&auth_url).is_err() {
         // If browser fails to open, print the URL for manual copy.
-        return Err(format!(
-            "Could not open browser. Please visit:\n{auth_url}"
-        ));
+        return Err(format!("Could not open browser. Please visit:\n{auth_url}"));
     }
 
     // 4. Wait for the authorization code from the callback.
@@ -305,7 +303,10 @@ mod tests {
 
     #[test]
     fn test_mask_api_key() {
-        assert_eq!(mask_api_key("sk-ant-api03-abcdefghijklmnop"), "sk-ant-...mnop");
+        assert_eq!(
+            mask_api_key("sk-ant-api03-abcdefghijklmnop"),
+            "sk-ant-...mnop"
+        );
         assert_eq!(mask_api_key("short"), "sk-...");
     }
 

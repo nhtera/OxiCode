@@ -38,14 +38,9 @@ impl SlashCommand for TaskCommand {
                 }
                 let target_id = rest.trim();
                 let state = ctx.state_store.current();
-                if state
-                    .background_tasks
-                    .iter()
-                    .any(|t| t.id == target_id)
-                {
+                if state.background_tasks.iter().any(|t| t.id == target_id) {
                     ctx.state_store.update(|s| {
-                        if let Some(t) = s.background_tasks.iter_mut().find(|t| t.id == target_id)
-                        {
+                        if let Some(t) = s.background_tasks.iter_mut().find(|t| t.id == target_id) {
                             t.status = "completed".to_string();
                         }
                     });
@@ -70,7 +65,9 @@ impl SlashCommand for TaskCommand {
                 }
                 CommandOutput::Message(output)
             }
-            other => CommandOutput::Error(format!("Unknown: /task {other}. Use: create, stop, list")),
+            other => {
+                CommandOutput::Error(format!("Unknown: /task {other}. Use: create, stop, list"))
+            }
         }
     }
     fn completions(&self, partial: &str, _ctx: &CommandContext) -> Vec<String> {

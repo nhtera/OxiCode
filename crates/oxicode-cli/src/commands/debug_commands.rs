@@ -73,13 +73,13 @@ impl SlashCommand for ContextCommand {
         let pct = (approx_tokens as f64 / max_context as f64 * 100.0).min(100.0);
 
         let bar_len: usize = 20;
-        #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss,
+            clippy::cast_possible_truncation
+        )]
         let filled = ((pct / 100.0) * bar_len as f64) as usize;
-        let bar: String = format!(
-            "[{}{}]",
-            "#".repeat(filled),
-            "-".repeat(bar_len - filled)
-        );
+        let bar: String = format!("[{}{}]", "#".repeat(filled), "-".repeat(bar_len - filled));
 
         CommandOutput::Message(format!(
             "Context window: ~{approx_tokens} / {max_context} tokens ({pct:.1}%)\n\

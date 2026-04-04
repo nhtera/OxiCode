@@ -64,9 +64,7 @@ fn usage_color(pct: f64) -> Color {
 
 impl Widget for ContextVisualization {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .title(" Context ")
-            .borders(Borders::ALL);
+        let block = Block::default().title(" Context ").borders(Borders::ALL);
         let inner = block.inner(area);
         block.render(area, buf);
 

@@ -198,18 +198,13 @@ fn header_str(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String
     headers.get(name)?.to_str().ok().map(ToString::to_string)
 }
 
-fn header_datetime(
-    headers: &reqwest::header::HeaderMap,
-    name: &str,
-) -> Option<DateTime<Utc>> {
+fn header_datetime(headers: &reqwest::header::HeaderMap, name: &str) -> Option<DateTime<Utc>> {
     let val = headers.get(name)?.to_str().ok()?;
-    val.parse::<DateTime<Utc>>()
-        .ok()
-        .or_else(|| {
-            DateTime::parse_from_rfc2822(val)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        })
+    val.parse::<DateTime<Utc>>().ok().or_else(|| {
+        DateTime::parse_from_rfc2822(val)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+    })
 }
 
 fn header_f64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<f64> {
@@ -288,7 +283,10 @@ mod tests {
             overage_resets_at: Some(Utc::now() + chrono::Duration::hours(24)),
             ..Default::default()
         };
-        assert!(matches!(evaluate(&info), RateLimitState::OverageActive { .. }));
+        assert!(matches!(
+            evaluate(&info),
+            RateLimitState::OverageActive { .. }
+        ));
     }
 
     #[test]
@@ -308,7 +306,10 @@ mod tests {
             ..Default::default()
         };
         // Overage should win
-        assert!(matches!(evaluate(&info), RateLimitState::OverageActive { .. }));
+        assert!(matches!(
+            evaluate(&info),
+            RateLimitState::OverageActive { .. }
+        ));
     }
 
     // ── Message tests ──

@@ -73,7 +73,12 @@ pub fn list_prs(limit: u32) -> GhResult {
 
 /// Get repository metadata (name, description, visibility).
 pub fn repo_info() -> GhResult {
-    run_gh(&["repo", "view", "--json", "name,description,visibility,defaultBranchRef"])
+    run_gh(&[
+        "repo",
+        "view",
+        "--json",
+        "name,description,visibility,defaultBranchRef",
+    ])
 }
 
 /// List repository branches (requires `gh` CLI with repo context).
@@ -113,9 +118,7 @@ fn run_gh(args: &[&str]) -> GhResult {
 pub fn format_result(result: GhResult, success_prefix: &str) -> Result<String, String> {
     match result {
         GhResult::Ok(output) => Ok(format!("{success_prefix}{output}")),
-        GhResult::NotInstalled => {
-            Err("gh CLI not found. Install: https://cli.github.com".into())
-        }
+        GhResult::NotInstalled => Err("gh CLI not found. Install: https://cli.github.com".into()),
         GhResult::NotAuthenticated => {
             Err("Not authenticated with GitHub. Run: gh auth login".into())
         }

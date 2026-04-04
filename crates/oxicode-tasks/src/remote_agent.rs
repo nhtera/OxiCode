@@ -32,11 +32,7 @@ pub async fn run_remote_agent(
     model: &str,
     tasks_dir: &Path,
 ) -> OxiResult<TaskStatus> {
-    tracing::info!(
-        "run_remote_agent task={} server={}",
-        task_id,
-        server_url
-    );
+    tracing::info!("run_remote_agent task={} server={}", task_id, server_url);
 
     let mut out_file = open_output_file(tasks_dir, task_id)?;
     let client = reqwest::Client::builder()

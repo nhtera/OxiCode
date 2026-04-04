@@ -55,9 +55,8 @@ pub async fn run_voice_pipeline(
 
         // End of speech segment: silence timeout reached after speech detected.
         let buffer_secs = capture.buffer_len() as f32 / 16_000.0;
-        let should_transcribe = was_speaking
-            && silence_counter >= SILENCE_TIMEOUT_MS
-            && buffer_secs >= MIN_CHUNK_SECS;
+        let should_transcribe =
+            was_speaking && silence_counter >= SILENCE_TIMEOUT_MS && buffer_secs >= MIN_CHUNK_SECS;
 
         // Also transcribe if buffer is getting full (approaching 30s limit).
         let buffer_full = buffer_secs >= 28.0;

@@ -191,15 +191,13 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         } else {
             let (icon, color) = match self.voice_status {
-                "listening" => ("\u{1f3a4}", Color::Red),     // 🎤 red when recording
+                "listening" => ("\u{1f3a4}", Color::Red), // 🎤 red when recording
                 "processing" => ("\u{1f3a4}", Color::Yellow), // 🎤 yellow when processing
                 _ => ("\u{1f3a4}", Color::DarkGray),
             };
             Span::styled(
                 format!(" {icon} {}", self.voice_status),
-                Style::default()
-                    .fg(color)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
             )
         };
 

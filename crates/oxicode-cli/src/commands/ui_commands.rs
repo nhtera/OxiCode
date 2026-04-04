@@ -147,7 +147,10 @@ impl SlashCommand for TerminalSetupCommand {
         let mut out = String::from("Terminal Setup:\n");
         out.push_str(&format!("  TERM: {term}\n"));
         out.push_str(&format!("  Program: {term_program}\n"));
-        out.push_str(&format!("  True color: {}\n", if truecolor { "yes" } else { "no" }));
+        out.push_str(&format!(
+            "  True color: {}\n",
+            if truecolor { "yes" } else { "no" }
+        ));
         out.push_str(&format!("  Size: {cols}x{lines}\n"));
         out.push('\n');
 

@@ -203,10 +203,22 @@ mod tests {
     fn test_trust_level_from_str() {
         assert_eq!(TrustLevel::from_str_loose("verified"), TrustLevel::Verified);
         assert_eq!(TrustLevel::from_str_loose("Verified"), TrustLevel::Verified);
-        assert_eq!(TrustLevel::from_str_loose("community"), TrustLevel::Community);
-        assert_eq!(TrustLevel::from_str_loose("COMMUNITY"), TrustLevel::Community);
-        assert_eq!(TrustLevel::from_str_loose("unverified"), TrustLevel::Unverified);
-        assert_eq!(TrustLevel::from_str_loose("unknown"), TrustLevel::Unverified);
+        assert_eq!(
+            TrustLevel::from_str_loose("community"),
+            TrustLevel::Community
+        );
+        assert_eq!(
+            TrustLevel::from_str_loose("COMMUNITY"),
+            TrustLevel::Community
+        );
+        assert_eq!(
+            TrustLevel::from_str_loose("unverified"),
+            TrustLevel::Unverified
+        );
+        assert_eq!(
+            TrustLevel::from_str_loose("unknown"),
+            TrustLevel::Unverified
+        );
         assert_eq!(TrustLevel::from_str_loose(""), TrustLevel::Unverified);
     }
 

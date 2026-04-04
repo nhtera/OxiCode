@@ -68,10 +68,7 @@ impl ManagedSettings {
             return "No managed settings active.".to_string();
         }
 
-        let source = self
-            .source
-            .as_deref()
-            .unwrap_or("unknown");
+        let source = self.source.as_deref().unwrap_or("unknown");
         let mut lines = vec![format!("Managed settings (source: {source}):")];
 
         for (key, value, locked) in self.list_all() {

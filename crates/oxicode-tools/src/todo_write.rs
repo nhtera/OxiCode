@@ -112,8 +112,7 @@ impl Tool for TodoWriteTool {
         let old_list = load_todos(&path);
 
         // Clear list if all tasks completed
-        let all_done = !new_items.is_empty()
-            && new_items.iter().all(|t| t.status == "completed");
+        let all_done = !new_items.is_empty() && new_items.iter().all(|t| t.status == "completed");
         let final_items = if all_done { vec![] } else { new_items };
 
         let new_list = TodoList { todos: final_items };
@@ -127,7 +126,9 @@ impl Tool for TodoWriteTool {
             "cleared": all_done,
         });
 
-        Ok(ToolResult::success(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        Ok(ToolResult::success(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 }
 

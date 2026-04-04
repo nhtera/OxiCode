@@ -55,19 +55,13 @@ impl Tool for SuggestBackgroundPrTool {
             .get("body")
             .and_then(|v| v.as_str())
             .unwrap_or("Draft PR created by OxiCode");
-        let base = input
-            .get("base")
-            .and_then(|v| v.as_str())
-            .unwrap_or("main");
+        let base = input.get("base").and_then(|v| v.as_str()).unwrap_or("main");
 
         let output = tokio::time::timeout(
             std::time::Duration::from_secs(60),
             Command::new("gh")
                 .args([
-                    "pr", "create", "--draft",
-                    "--title", title,
-                    "--body", body,
-                    "--base", base,
+                    "pr", "create", "--draft", "--title", title, "--body", body, "--base", base,
                 ])
                 .current_dir(&ctx.working_dir)
                 .kill_on_drop(true)

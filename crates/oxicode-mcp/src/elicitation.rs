@@ -96,10 +96,7 @@ impl ElicitationHandler for DefaultValueHandler {
                 value: default.clone(),
             }
         } else {
-            tracing::info!(
-                "No default for elicitation '{}', denying",
-                request.id
-            );
+            tracing::info!("No default for elicitation '{}', denying", request.id);
             ElicitationResponse {
                 id: request.id.clone(),
                 approved: false,

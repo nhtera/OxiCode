@@ -67,10 +67,7 @@ fn summarize_output(output: &str, is_error: bool) -> String {
 
 /// Truncate text to a summary-friendly length.
 fn truncate_summary(text: &str) -> String {
-    let first_line = text
-        .lines()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or(text);
+    let first_line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or(text);
 
     let chars: String = first_line.chars().take(200).collect();
     if first_line.chars().count() > 200 {

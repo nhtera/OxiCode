@@ -83,24 +83,28 @@ impl Tool for FileReadTool {
 
         // Stream line-by-line to avoid loading entire file into memory (OOM risk
         // for large files like logs). Only collect lines in [offset, offset+limit).
-        let file = tokio::fs::File::open(&path)
-            .await
-            .map_err(|e| oxicode_common::OxiError::Tool {
-                name: self.name().into(),
-                message: format!("Failed to open {}: {e}", path.display()),
-            })?;
+        let file =
+            tokio::fs::File::open(&path)
+                .await
+                .map_err(|e| oxicode_common::OxiError::Tool {
+                    name: self.name().into(),
+                    message: format!("Failed to open {}: {e}", path.display()),
+                })?;
 
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
         let mut line_num = 0usize;
         let mut output_lines = Vec::with_capacity(limit.min(2000));
 
-        while let Some(line) = lines.next_line().await.map_err(|e| {
-            oxicode_common::OxiError::Tool {
-                name: self.name().into(),
-                message: format!("Failed to read {}: {e}", path.display()),
-            }
-        })? {
+        while let Some(line) =
+            lines
+                .next_line()
+                .await
+                .map_err(|e| oxicode_common::OxiError::Tool {
+                    name: self.name().into(),
+                    message: format!("Failed to read {}: {e}", path.display()),
+                })?
+        {
             if line_num >= offset && output_lines.len() < limit {
                 output_lines.push(format!("{}\t{}", line_num + 1, line));
             }

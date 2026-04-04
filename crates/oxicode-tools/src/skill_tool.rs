@@ -68,16 +68,13 @@ impl Tool for SkillTool {
 
         // Find matching skill: prefer exact name match, fallback to namespace suffix.
         let skills = executor.list_skills();
-        let matched = skills
-            .iter()
-            .find(|s| s.name == skill_name)
-            .or_else(|| {
-                skills.iter().find(|s| {
-                    s.name
-                        .rsplit_once(':')
-                        .is_some_and(|(_, suffix)| suffix == skill_name)
-                })
-            });
+        let matched = skills.iter().find(|s| s.name == skill_name).or_else(|| {
+            skills.iter().find(|s| {
+                s.name
+                    .rsplit_once(':')
+                    .is_some_and(|(_, suffix)| suffix == skill_name)
+            })
+        });
 
         let Some(info) = matched else {
             let available: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();

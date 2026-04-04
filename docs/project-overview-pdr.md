@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Status:** Phase 1-8 + Phase 5 + Phase 6 + Phase 7 Complete (Voice, Bridge, Telemetry & GitHub)
+**Version:** 0.5.1 | **Last Updated:** 2026-04-05 | **Status:** Gap Closure Complete (10 phases, 1,143 tests, 7.8MB binary)
 
 ## Project Vision
 
@@ -127,9 +127,26 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **Test Coverage** — 56 new tests added (756 total workspace)
 - **Total Crates** — 20 (was 17 in Phase 6)
 
-### Phase 9+: Forthcoming
-- **Phase 9 (Enterprise):** OAuth, GitHub SSO, telemetry, audit logging
-- **Phase 10 (Extras):** Voice input, advanced bridging, community plugins
+### Gap Closure: P0+P1 Feature Parity (Complete ✓)
+**Added:** 10 sequential phases closing 40% feature gap vs openclaude (TypeScript), 1,143 tests pass
+- **Phase 1:** BashTool hardening (command analysis, sandboxing, background execution)
+- **Phase 2:** Rate limiting full stack (state machine, org policies, header/messaging)
+- **Phase 3:** Cost tracking service (multi-model, cache tokens, persistence)
+- **Phase 4:** Memory directory (Memdir) with file scanning and relevance search
+- **Phase 5:** Context compaction depth (snip, session memory, cached MC layers)
+- **Phase 6:** Bridge/IDE integration (JSON-RPC 2.0, permission bridge flow, session mgmt)
+- **Phase 7:** Config migrations (upgrade pipeline for breaking changes)
+- **Phase 8:** Rewind + thin commands (conversation rewind, command enforcement)
+- **Phase 9:** Test coverage push (70+ unit tests, MockLlmProvider, 776→1,132 tests)
+- **Phase 10:** Integration & smoke testing (11 integration tests, cross-phase validation, 1,132→1,143 tests)
+- **Deliverables:** 8 new modules, ~8K LOC added, zero regressions, all tests pass
+- **Binary Size:** 7.8 MB release binary
+- **Test Count:** 1,143 tests (was ~700 pre-Gap-Closure)
+
+### Phase 11+: Forthcoming
+- **OAuth/SSO:** GitHub and enterprise authentication
+- **Audit Logging:** Enterprise telemetry and compliance tracking
+- **Advanced Features:** Community plugins, custom providers, extended bridging
 
 ---
 
@@ -324,11 +341,12 @@ oxicode/
 | **6** | **✓ Complete** | **TUI dialogs (4 new), vim text objects, 16 new commands** |
 | **7** | **✓ Complete** | **Voice input, bridge mode, telemetry/OTLP, GitHub integration** |
 | 8 | ✓ Complete | Vim mode, keybindings, onboarding, output styles |
-| 9+ | Planned | OAuth, GitHub SSO, telemetry audit logging, advanced features |
+| **Gap Closure (10 phases)** | **✓ Complete** | **BashTool hardening, rate limiting, cost tracking, memdir, compaction, bridge/IDE, config migrations, rewind/commands, test coverage (70+ tests), integration testing** |
+| 11+ | Planned | OAuth/SSO, audit logging, advanced features |
 
-**Code Quality:** Phase 4 review found 4 critical security issues, 7 high-priority wiring/robustness gaps. **All 11 issues fixed and verified** (756 tests pass, clippy clean, cargo check passes).
+**Code Quality:** Gap Closure plan completed 2026-04-04. All 1,143 tests pass, clippy clean, cargo check passes, 7.8MB release binary.
 
-**Test Coverage:** Unit tests for all modules, edge cases (empty input, zero budget, missing files), integration tests for provider routing, security penetration tests. Phase 7 adds 56 new tests.
+**Test Coverage:** 1,143 unit + integration tests. Phase 9 added 70+ unit tests. Phase 10 added 11 integration tests. Full coverage for all new modules (BashTool, RateLimit, CostTracker, Memdir, Compaction, Bridge/IDE, ConfigMigrations, Rewind).
 
 ---
 

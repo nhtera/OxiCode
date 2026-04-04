@@ -1,5 +1,6 @@
 pub mod conversation;
 pub mod query_engine;
+pub mod rewind;
 pub mod system_prompt;
 mod tool_dispatch;
 pub mod tool_use_summary;

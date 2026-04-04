@@ -44,8 +44,7 @@ pub fn save_github_token(token: &str) -> Result<(), String> {
     let dir = dirs::home_dir()
         .ok_or("Cannot determine home directory")?
         .join(".oxicode");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create config dir: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create config dir: {e}"))?;
 
     let cred_path = dir.join("credentials.toml");
 
@@ -60,8 +59,7 @@ pub fn save_github_token(token: &str) -> Result<(), String> {
 
     let content = toml::to_string_pretty(&table)
         .map_err(|e| format!("Failed to serialize credentials: {e}"))?;
-    std::fs::write(&cred_path, content)
-        .map_err(|e| format!("Failed to write credentials: {e}"))?;
+    std::fs::write(&cred_path, content).map_err(|e| format!("Failed to write credentials: {e}"))?;
 
     // Restrict file permissions to owner-only on Unix (0600).
     #[cfg(unix)]
@@ -104,10 +102,7 @@ pub async fn list_user_repos(token: &str) -> Result<Vec<RepoInfo>, String> {
             Some(RepoInfo {
                 full_name: r["full_name"].as_str()?.to_string(),
                 name: r["name"].as_str()?.to_string(),
-                default_branch: r["default_branch"]
-                    .as_str()
-                    .unwrap_or("main")
-                    .to_string(),
+                default_branch: r["default_branch"].as_str().unwrap_or("main").to_string(),
                 private: r["private"].as_bool().unwrap_or(false),
             })
         })

@@ -81,7 +81,11 @@ impl McpServerConfig {
         if let Some(ref mut cmd) = self.command {
             *cmd = env_expansion::expand_env(cmd);
         }
-        self.args = self.args.iter().map(|a| env_expansion::expand_env(a)).collect();
+        self.args = self
+            .args
+            .iter()
+            .map(|a| env_expansion::expand_env(a))
+            .collect();
         if let Some(ref mut url) = self.url {
             *url = env_expansion::expand_env(url);
         }

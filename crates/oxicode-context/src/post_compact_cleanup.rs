@@ -87,10 +87,7 @@ pub fn build_restore_message(ctx: &RestoreContext) -> Option<Message> {
 
 /// Inject a context restoration message into messages after compaction.
 /// Appends the restoration as the last user message before the final assistant turn.
-pub fn post_compact_restore(
-    messages: &mut Vec<Message>,
-    ctx: &RestoreContext,
-) -> RestoreResult {
+pub fn post_compact_restore(messages: &mut Vec<Message>, ctx: &RestoreContext) -> RestoreResult {
     let Some(restore_msg) = build_restore_message(ctx) else {
         return RestoreResult::default();
     };
@@ -203,10 +200,7 @@ mod tests {
 
     #[test]
     fn post_compact_restore_injects_message() {
-        let mut msgs = vec![
-            Message::user("Hello"),
-            Message::assistant(),
-        ];
+        let mut msgs = vec![Message::user("Hello"), Message::assistant()];
         let ctx = RestoreContext {
             working_dir: Some("/test".to_string()),
             ..Default::default()

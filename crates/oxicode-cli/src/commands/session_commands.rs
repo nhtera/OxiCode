@@ -133,25 +133,21 @@ impl SlashCommand for MemoryCommand {
                     Err(e) => CommandOutput::Error(format!("Failed to save memory: {e}")),
                 }
             }
-            "search" if !rest.is_empty() => {
-                match oxicode_session::memory::search_memories(rest) {
-                    Ok(results) => {
-                        if results.is_empty() {
-                            return CommandOutput::Message(format!(
-                                "No memories matching \"{rest}\"."
-                            ));
-                        }
-                        let mut output = format!("Found {} memories:\n", results.len());
-                        for m in results.iter().take(10) {
-                            let preview: String = m.content.chars().take(80).collect();
-                            let tags = m.tags.join(", ");
-                            let _ = writeln!(output, "  [{tags}] {preview}");
-                        }
-                        CommandOutput::Message(output)
+            "search" if !rest.is_empty() => match oxicode_session::memory::search_memories(rest) {
+                Ok(results) => {
+                    if results.is_empty() {
+                        return CommandOutput::Message(format!("No memories matching \"{rest}\"."));
                     }
-                    Err(e) => CommandOutput::Error(format!("Search failed: {e}")),
+                    let mut output = format!("Found {} memories:\n", results.len());
+                    for m in results.iter().take(10) {
+                        let preview: String = m.content.chars().take(80).collect();
+                        let tags = m.tags.join(", ");
+                        let _ = writeln!(output, "  [{tags}] {preview}");
+                    }
+                    CommandOutput::Message(output)
                 }
-            }
+                Err(e) => CommandOutput::Error(format!("Search failed: {e}")),
+            },
             "list" | "ls" => match oxicode_session::memory::load_all_memories() {
                 Ok(memories) => {
                     if memories.is_empty() {
@@ -161,7 +157,11 @@ impl SlashCommand for MemoryCommand {
                     for m in memories.iter().take(20) {
                         let preview: String = m.content.chars().take(60).collect();
                         let id_short: String = m.id.chars().take(8).collect();
-                        let _ = writeln!(output, "  {id_short} [{source}] {preview}", source = m.source);
+                        let _ = writeln!(
+                            output,
+                            "  {id_short} [{source}] {preview}",
+                            source = m.source
+                        );
                     }
                     CommandOutput::Message(output)
                 }

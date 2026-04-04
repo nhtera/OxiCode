@@ -12,6 +12,10 @@ pub mod schema_adapter;
 pub mod stream_event;
 pub mod vertex;
 
+/// Mock LLM provider for testing — only compiled in test builds.
+#[cfg(test)]
+pub mod mock;
+
 pub use anthropic::AnthropicProvider;
 pub use bedrock::BedrockProvider;
 pub use openai_compatible::OpenAiCompatibleProvider;

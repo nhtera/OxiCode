@@ -78,10 +78,7 @@ impl SlashCommand for LoginCommand {
 
                 match result {
                     Some(login_result) => {
-                        let who = login_result
-                            .email
-                            .as_deref()
-                            .unwrap_or("Anthropic account");
+                        let who = login_result.email.as_deref().unwrap_or("Anthropic account");
                         CommandOutput::Message(format!(
                             "Login successful! Authenticated as {who}.\n\
                              OAuth token stored. Restart to use."
@@ -367,9 +364,7 @@ impl SlashCommand for FeedbackCommand {
         "Send feedback"
     }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message(
-            "Report issues: https://github.com/nhtera/oxicode/issues".into(),
-        )
+        CommandOutput::Message("Report issues: https://github.com/nhtera/oxicode/issues".into())
     }
 }
 

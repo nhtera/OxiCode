@@ -62,52 +62,180 @@ impl SecurityAnalyzer {
     pub fn new() -> Self {
         let raw_patterns: Vec<(&str, &str, SecurityLevel)> = vec![
             // -- Destructive file operations --
-            (r"rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?/\s", "rm targeting root /", SecurityLevel::Dangerous),
-            (r"rm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+/", "rm -rf from root", SecurityLevel::Dangerous),
-            (r"rm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\s+/", "rm -fr from root", SecurityLevel::Dangerous),
-            (r"rm\s+-rf\s+~", "rm -rf home directory", SecurityLevel::Dangerous),
-            (r"rm\s+-rf\s+\*", "rm -rf wildcard", SecurityLevel::Dangerous),
-            (r"rm\s+-rf\s+\.\s", "rm -rf current dir", SecurityLevel::Dangerous),
-            (r"mkfs\.", "filesystem format command", SecurityLevel::Dangerous),
-            (r"dd\s+if=.*of=/dev/", "direct disk overwrite", SecurityLevel::Dangerous),
-            (r">\s*/dev/sd[a-z]", "write to raw disk device", SecurityLevel::Dangerous),
-            (r">\s*/dev/nvme", "write to NVMe device", SecurityLevel::Dangerous),
+            (
+                r"rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?/\s",
+                "rm targeting root /",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"rm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+/",
+                "rm -rf from root",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"rm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\s+/",
+                "rm -fr from root",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"rm\s+-rf\s+~",
+                "rm -rf home directory",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"rm\s+-rf\s+\*",
+                "rm -rf wildcard",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"rm\s+-rf\s+\.\s",
+                "rm -rf current dir",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"mkfs\.",
+                "filesystem format command",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"dd\s+if=.*of=/dev/",
+                "direct disk overwrite",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r">\s*/dev/sd[a-z]",
+                "write to raw disk device",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r">\s*/dev/nvme",
+                "write to NVMe device",
+                SecurityLevel::Dangerous,
+            ),
             (r"shred\s+", "file shredding", SecurityLevel::Suspicious),
             // -- Privilege escalation --
-            (r"(?:^|\s|;|&&|\|\|)sudo\s+", "sudo command", SecurityLevel::Suspicious),
-            (r"(?:^|\s|;|&&|\|\|)su\s+-?\s*\w*$", "su (switch user)", SecurityLevel::Suspicious),
-            (r"(?:^|\s|;|&&|\|\|)doas\s+", "doas command", SecurityLevel::Suspicious),
-            (r"chmod\s+[0-7]*777", "world-writable permissions", SecurityLevel::Suspicious),
+            (
+                r"(?:^|\s|;|&&|\|\|)sudo\s+",
+                "sudo command",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"(?:^|\s|;|&&|\|\|)su\s+-?\s*\w*$",
+                "su (switch user)",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"(?:^|\s|;|&&|\|\|)doas\s+",
+                "doas command",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"chmod\s+[0-7]*777",
+                "world-writable permissions",
+                SecurityLevel::Suspicious,
+            ),
             (r"chmod\s+u\+s", "setuid bit", SecurityLevel::Dangerous),
             (r"chown\s+root", "chown to root", SecurityLevel::Suspicious),
             // -- Network exfiltration --
-            (r"curl\s.*\|\s*(sh|bash|zsh)", "curl piped to shell", SecurityLevel::Dangerous),
-            (r"wget\s.*\|\s*(sh|bash|zsh)", "wget piped to shell", SecurityLevel::Dangerous),
-            (r"curl\s.*-o\s*/tmp/.*&&\s*(sh|bash|chmod)", "curl download + execute", SecurityLevel::Dangerous),
-            (r"nc\s+-[a-zA-Z]*l", "netcat listener", SecurityLevel::Suspicious),
+            (
+                r"curl\s.*\|\s*(sh|bash|zsh)",
+                "curl piped to shell",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"wget\s.*\|\s*(sh|bash|zsh)",
+                "wget piped to shell",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"curl\s.*-o\s*/tmp/.*&&\s*(sh|bash|chmod)",
+                "curl download + execute",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"nc\s+-[a-zA-Z]*l",
+                "netcat listener",
+                SecurityLevel::Suspicious,
+            ),
             (r"ncat\s+", "ncat usage", SecurityLevel::Suspicious),
             (r"socat\s+", "socat usage", SecurityLevel::Suspicious),
             // -- Environment manipulation --
-            (r"export\s+LD_PRELOAD=", "LD_PRELOAD injection", SecurityLevel::Dangerous),
-            (r"export\s+DYLD_", "macOS dylib injection", SecurityLevel::Dangerous),
-            (r"export\s+LD_LIBRARY_PATH=", "LD_LIBRARY_PATH manipulation", SecurityLevel::Suspicious),
-            (r"export\s+PATH=\s*/tmp", "PATH set to /tmp", SecurityLevel::Dangerous),
+            (
+                r"export\s+LD_PRELOAD=",
+                "LD_PRELOAD injection",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"export\s+DYLD_",
+                "macOS dylib injection",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"export\s+LD_LIBRARY_PATH=",
+                "LD_LIBRARY_PATH manipulation",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"export\s+PATH=\s*/tmp",
+                "PATH set to /tmp",
+                SecurityLevel::Dangerous,
+            ),
             (r"unset\s+PATH", "unset PATH", SecurityLevel::Suspicious),
             // -- Fork bomb / resource exhaustion --
-            (r":\(\)\s*\{.*:\|:.*\};:", "fork bomb", SecurityLevel::Dangerous),
-            (r"while\s+true;\s*do\s.*done", "infinite loop", SecurityLevel::Suspicious),
+            (
+                r":\(\)\s*\{.*:\|:.*\};:",
+                "fork bomb",
+                SecurityLevel::Dangerous,
+            ),
+            (
+                r"while\s+true;\s*do\s.*done",
+                "infinite loop",
+                SecurityLevel::Suspicious,
+            ),
             // -- Destructive git commands --
-            (r"git\s+reset\s+--hard", "git reset --hard", SecurityLevel::Suspicious),
-            (r"git\s+push\s+--force", "git push --force", SecurityLevel::Suspicious),
-            (r"git\s+push\s+-f\b", "git push -f", SecurityLevel::Suspicious),
-            (r"git\s+clean\s+-[a-zA-Z]*f", "git clean -f", SecurityLevel::Suspicious),
-            (r"git\s+checkout\s+--\s+\.", "git checkout -- . (discard all)", SecurityLevel::Suspicious),
-            (r"git\s+branch\s+-D", "git branch force delete", SecurityLevel::Suspicious),
+            (
+                r"git\s+reset\s+--hard",
+                "git reset --hard",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"git\s+push\s+--force",
+                "git push --force",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"git\s+push\s+-f\b",
+                "git push -f",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"git\s+clean\s+-[a-zA-Z]*f",
+                "git clean -f",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"git\s+checkout\s+--\s+\.",
+                "git checkout -- . (discard all)",
+                SecurityLevel::Suspicious,
+            ),
+            (
+                r"git\s+branch\s+-D",
+                "git branch force delete",
+                SecurityLevel::Suspicious,
+            ),
             // -- Zsh-specific attacks --
-            (r"=\(", "zsh equals expansion attack", SecurityLevel::Dangerous),
+            (
+                r"=\(",
+                "zsh equals expansion attack",
+                SecurityLevel::Dangerous,
+            ),
             (r"zmodload", "zsh module loading", SecurityLevel::Suspicious),
             // -- Path traversal --
-            (r"\.\./\.\./\.\./", "deep path traversal", SecurityLevel::Suspicious),
+            (
+                r"\.\./\.\./\.\./",
+                "deep path traversal",
+                SecurityLevel::Suspicious,
+            ),
             // -- System config writes --
             (r">\s*/etc/", "write to /etc/", SecurityLevel::Dangerous),
             (r"tee\s+/etc/", "tee to /etc/", SecurityLevel::Dangerous),

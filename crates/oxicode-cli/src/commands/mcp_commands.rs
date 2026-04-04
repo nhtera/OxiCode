@@ -79,7 +79,10 @@ impl SlashCommand for McpToolsCommand {
 
         let mut output = String::from("MCP server tools:\n");
         for (name, _cfg) in &servers {
-            let _ = writeln!(output, "  [{name}] (tools discovered at runtime via MCP protocol)");
+            let _ = writeln!(
+                output,
+                "  [{name}] (tools discovered at runtime via MCP protocol)"
+            );
         }
         let _ = writeln!(
             output,

@@ -64,10 +64,7 @@ fn extract_path_tokens(command: &str) -> Vec<String> {
     tokens
         .into_iter()
         .filter(|t| {
-            t.starts_with('/')
-                || t.starts_with("./")
-                || t.starts_with("../")
-                || t.starts_with('~')
+            t.starts_with('/') || t.starts_with("./") || t.starts_with("../") || t.starts_with('~')
         })
         .collect()
 }
@@ -210,7 +207,10 @@ mod tests {
 
     #[test]
     fn absolute_outside_bounds() {
-        assert!(PathValidator::has_escape("cat /etc/passwd", Path::new("/project")));
+        assert!(PathValidator::has_escape(
+            "cat /etc/passwd",
+            Path::new("/project")
+        ));
     }
 
     #[test]

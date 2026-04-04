@@ -182,13 +182,29 @@ impl QueryEngine {
     }
 
     /// Build a MessageRequest with all tool schemas (built-in + MCP).
+    ///
+    /// Dynamically injects mode-specific system prompt sections (advisor, sandbox)
+    /// based on current `active_skills` in the state store.
     fn build_request(&self, conversation: &Conversation) -> MessageRequest {
         let mut tool_schemas = self.tool_registry.schemas_json();
         for (server_name, server_tools) in self.mcp_tool_schemas() {
-            tool_schemas.extend(oxicode_mcp::mcp_tools_to_schemas(&server_name, &server_tools));
+            tool_schemas.extend(oxicode_mcp::mcp_tools_to_schemas(
+                &server_name,
+                &server_tools,
+            ));
         }
+
+        // Append mode injection (advisor/sandbox) to system prompt per-turn.
+        let active_skills = self.state_store.current().active_skills;
+        let effective_prompt =
+            if let Some(modes) = crate::system_prompt::mode_injection_text(&active_skills) {
+                format!("{}{modes}", self.system_prompt)
+            } else {
+                self.system_prompt.clone()
+            };
+
         let mut request = MessageRequest::new(&self.model, conversation.api_messages().to_vec())
-            .with_system(&self.system_prompt)
+            .with_system(&effective_prompt)
             .with_max_tokens(self.max_tokens);
         request.tools = tool_schemas;
         request
@@ -261,17 +277,19 @@ impl QueryEngine {
                         let id = std::mem::take(&mut current_tool_id);
                         let name = std::mem::take(&mut current_tool_name);
 
-                        emit(event_tx, TurnEvent::ToolUseStart {
-                            id: id.clone(),
-                            name: name.clone(),
-                            input: input.clone(),
-                        }).await;
+                        emit(
+                            event_tx,
+                            TurnEvent::ToolUseStart {
+                                id: id.clone(),
+                                name: name.clone(),
+                                input: input.clone(),
+                            },
+                        )
+                        .await;
 
-                        assistant_msg.content.push(ContentBlock::ToolUse {
-                            id,
-                            name,
-                            input,
-                        });
+                        assistant_msg
+                            .content
+                            .push(ContentBlock::ToolUse { id, name, input });
                         current_tool_input_json.clear();
                     }
                 }
@@ -300,15 +318,25 @@ impl QueryEngine {
                     return Err(err);
                 }
                 StreamEvent::Ping => {}
-                StreamEvent::RateLimited { info, attempt, max_retries, retry_in_secs } => {
+                StreamEvent::RateLimited {
+                    info,
+                    attempt,
+                    max_retries,
+                    retry_in_secs,
+                } => {
                     // Record in state for /status display.
-                    self.state_store.record_rate_limit(info.clone(), self.provider.name().to_string());
-                    emit(event_tx, TurnEvent::RateLimited {
-                        message: info.message,
-                        attempt,
-                        max_retries,
-                        retry_in_secs,
-                    }).await;
+                    self.state_store
+                        .record_rate_limit(info.clone(), self.provider.name().to_string());
+                    emit(
+                        event_tx,
+                        TurnEvent::RateLimited {
+                            message: info.message,
+                            attempt,
+                            max_retries,
+                            retry_in_secs,
+                        },
+                    )
+                    .await;
                 }
             }
         }
@@ -321,5 +349,4 @@ impl QueryEngine {
 
         Ok(assistant_msg)
     }
-
 }

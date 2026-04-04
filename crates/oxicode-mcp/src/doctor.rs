@@ -61,10 +61,7 @@ impl fmt::Display for DiagResult {
 }
 
 /// Diagnose a single MCP server: attempt connection, initialize, list tools.
-async fn diagnose_server_inner(
-    name: &str,
-    config: &McpServerConfig,
-) -> DiagResult {
+async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResult {
     let start = Instant::now();
     let init_params = serde_json::json!({
         "protocolVersion": "2024-11-05",
@@ -84,7 +81,11 @@ async fn diagnose_server_inner(
                     error_detail: Some("No command configured".to_string()),
                 };
             };
-            let env: Vec<(String, String)> = config.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let env: Vec<(String, String)> = config
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             let transport = match StdioTransport::spawn(command, &config.args, &env) {
                 Ok(t) => t,
                 Err(e) => {
@@ -113,7 +114,9 @@ async fn diagnose_server_inner(
                     error_detail: Some("No URL configured".to_string()),
                 };
             };
-            SseTransport::new(url).request("initialize", Some(init_params)).await
+            SseTransport::new(url)
+                .request("initialize", Some(init_params))
+                .await
         }
         McpTransportType::WebSocket => {
             let Some(ref url) = config.url else {

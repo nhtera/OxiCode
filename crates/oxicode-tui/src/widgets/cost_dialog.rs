@@ -55,9 +55,7 @@ impl Widget for CostDialog {
         let mut lines = Vec::new();
         lines.push(Line::from(Span::styled(
             format!("Session cost: ${:.2}", self.current_cost),
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )));
         lines.push(Line::from(format!(
             "Exceeds threshold: ${:.2}",
@@ -74,7 +72,11 @@ impl Widget for CostDialog {
             } else {
                 Style::default()
             };
-            let prefix = if i == self.selected { "\u{25b8} " } else { "  " };
+            let prefix = if i == self.selected {
+                "\u{25b8} "
+            } else {
+                "  "
+            };
             lines.push(Line::from(Span::styled(format!("{prefix}{option}"), style)));
         }
 

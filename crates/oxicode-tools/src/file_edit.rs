@@ -130,9 +130,7 @@ impl Tool for FileEditTool {
         };
 
         // Re-check mtime after read to narrow TOCTOU race window.
-        let post_read_mtime = std::fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .ok();
+        let post_read_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if let Some(recorded) = ctx.file_state.get_recorded_mtime(&path) {
             if post_read_mtime.is_some_and(|m| m != recorded) {
                 return Ok(ToolResult::error(format!(
@@ -148,12 +146,12 @@ impl Tool for FileEditTool {
             "{}.oxicode-tmp",
             path.file_name().unwrap_or_default().to_string_lossy()
         ));
-        tokio::fs::write(&tmp_path, &new_content).await.map_err(|e| {
-            oxicode_common::OxiError::Tool {
+        tokio::fs::write(&tmp_path, &new_content)
+            .await
+            .map_err(|e| oxicode_common::OxiError::Tool {
                 name: self.name().into(),
                 message: format!("Failed to write temp file: {e}"),
-            }
-        })?;
+            })?;
         // Preserve original file permissions (e.g., execute bits on scripts).
         if let Ok(meta) = std::fs::metadata(&path) {
             let _ = std::fs::set_permissions(&tmp_path, meta.permissions());

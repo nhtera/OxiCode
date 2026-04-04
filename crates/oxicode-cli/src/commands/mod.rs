@@ -7,17 +7,16 @@ pub mod clipboard_commands;
 pub mod debug_commands;
 pub mod enterprise_commands;
 pub mod extras_commands;
-pub mod info_commands;
-pub mod utility_commands;
 pub mod general;
 pub mod git_commands;
 pub mod git_helpers;
 pub mod hook_commands;
+pub mod info_commands;
 pub mod mcp_commands;
 pub mod new_commands;
 pub mod plan_commands;
-pub mod project_detect;
 pub mod plugin_commands;
+pub mod project_detect;
 pub mod provider;
 pub mod reasoning_commands;
 pub mod session_commands;
@@ -26,6 +25,7 @@ pub mod session_view_commands;
 pub mod task_commands;
 pub mod team_commands;
 pub mod ui_commands;
+pub mod utility_commands;
 pub mod view_commands;
 pub mod workflow_commands;
 
@@ -198,7 +198,6 @@ pub fn default_registry() -> CommandRegistry {
 
     // Phase 5: Plugin commands
     reg.register(Box::new(plugin_commands::PluginCommand));
-    reg.register(Box::new(plugin_commands::ReloadPluginsCommand));
 
     // Phase 5: Plan commands
     reg.register(Box::new(plan_commands::PlanCommand));

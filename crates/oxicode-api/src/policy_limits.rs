@@ -79,10 +79,7 @@ impl PolicyLimitsClient {
 
     /// Get a snapshot of all current policies.
     pub fn snapshot(&self) -> PolicyLimits {
-        self.limits
-            .read()
-            .map(|l| l.clone())
-            .unwrap_or_default()
+        self.limits.read().map(|l| l.clone()).unwrap_or_default()
     }
 
     /// Update cached limits (called after successful fetch).
@@ -103,11 +100,7 @@ impl PolicyLimitsClient {
     /// if no endpoint configured, fetch failed, or no change.
     pub async fn fetch(&self) -> Option<PolicyLimits> {
         let url = self.endpoint.as_ref()?;
-        let current_etag = self
-            .limits
-            .read()
-            .ok()
-            .and_then(|l| l.etag.clone());
+        let current_etag = self.limits.read().ok().and_then(|l| l.etag.clone());
 
         match fetch_policy_limits(url, current_etag.as_deref()).await {
             Ok(Some(limits)) => {
@@ -120,7 +113,10 @@ impl PolicyLimitsClient {
                 None
             }
             Err(e) => {
-                tracing::warn!("Failed to fetch policy limits: {} — using cached/fail-open", e);
+                tracing::warn!(
+                    "Failed to fetch policy limits: {} — using cached/fail-open",
+                    e
+                );
                 None
             }
         }
@@ -274,10 +270,7 @@ mod tests {
 
     #[test]
     fn load_save_roundtrip() {
-        let dir = std::env::temp_dir().join(format!(
-            "oxi-policy-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir = std::env::temp_dir().join(format!("oxi-policy-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("policy-limits.json");
 

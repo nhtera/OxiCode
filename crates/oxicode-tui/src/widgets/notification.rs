@@ -138,7 +138,10 @@ mod tests {
         assert_eq!(NotificationLevel::Info.color(), Color::Blue);
         assert_eq!(NotificationLevel::Warning.color(), Color::Yellow);
         assert_eq!(NotificationLevel::Error.color(), Color::Red);
-        assert_eq!(NotificationLevel::RateLimit.color(), Color::Rgb(255, 165, 0));
+        assert_eq!(
+            NotificationLevel::RateLimit.color(),
+            Color::Rgb(255, 165, 0)
+        );
     }
 
     #[test]

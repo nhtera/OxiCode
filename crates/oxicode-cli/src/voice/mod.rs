@@ -75,9 +75,7 @@ impl VoiceSession {
 
         // Check for OPENAI_API_KEY before starting capture.
         if std::env::var("OPENAI_API_KEY").is_err() {
-            return Err(
-                "OPENAI_API_KEY not set. Required for Whisper transcription.".to_string(),
-            );
+            return Err("OPENAI_API_KEY not set. Required for Whisper transcription.".to_string());
         }
 
         let (stop_tx, stop_rx) = mpsc::channel::<()>(1);

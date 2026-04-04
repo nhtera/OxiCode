@@ -314,8 +314,7 @@ mod tests {
 
             match parsed {
                 StreamEvent::RateLimited {
-                    info: parsed_info,
-                    ..
+                    info: parsed_info, ..
                 } => {
                     assert_eq!(parsed_info.limit_type, limit_type);
                 }
@@ -345,7 +344,8 @@ mod tests {
         };
         let rate_limited_json = serde_json::to_string(&rate_limited_event).unwrap();
         assert!(
-            rate_limited_json.contains("\"RateLimited\"") || rate_limited_json.contains("rate_limited")
+            rate_limited_json.contains("\"RateLimited\"")
+                || rate_limited_json.contains("rate_limited")
         );
 
         // Ensure they serialize differently

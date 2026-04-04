@@ -59,15 +59,16 @@ impl SlashCommand for PrCommand {
         let result = if args.trim().is_empty() {
             run_command("gh", &["pr", "create", "--fill"])
         } else {
-            run_command("gh", &["pr", "create", "--title", args.trim(), "--fill-verbose"])
+            run_command(
+                "gh",
+                &["pr", "create", "--title", args.trim(), "--fill-verbose"],
+            )
         };
         match result {
             Ok(url) => CommandOutput::Message(format!("PR created: {url}")),
             Err(e) => {
                 if e.contains("not found") {
-                    CommandOutput::Error(
-                        "gh CLI not found. Install: https://cli.github.com".into(),
-                    )
+                    CommandOutput::Error("gh CLI not found. Install: https://cli.github.com".into())
                 } else {
                     CommandOutput::Error(format!("PR creation failed: {e}"))
                 }
@@ -119,9 +120,7 @@ impl SlashCommand for LogCommand {
         let count = args.trim().parse::<u32>().unwrap_or(10).min(100);
         let count_str = format!("-{count}");
         match run_git(&["log", "--oneline", "--decorate", &count_str]) {
-            Ok(log) if log.is_empty() => {
-                CommandOutput::Message("No commits yet.".into())
-            }
+            Ok(log) if log.is_empty() => CommandOutput::Message("No commits yet.".into()),
             Ok(log) => CommandOutput::Message(log),
             Err(e) => CommandOutput::Error(format!("git log failed: {e}")),
         }
@@ -277,11 +276,18 @@ impl SlashCommand for IssueCommand {
             } else {
                 format!(
                     "Created via OxiCode CLI.\n\n## Context\n\n{}",
-                    context_msgs.into_iter().rev().collect::<Vec<_>>().join("\n\n")
+                    context_msgs
+                        .into_iter()
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
                 )
             };
 
-            match run_command("gh", &["issue", "create", "--title", title, "--body", &body]) {
+            match run_command(
+                "gh",
+                &["issue", "create", "--title", title, "--body", &body],
+            ) {
                 Ok(url) => CommandOutput::Message(format!("Issue created: {url}")),
                 Err(e) => {
                     if e.contains("not found") {
@@ -332,9 +338,7 @@ impl SlashCommand for PrCommentsCommand {
             }
             Err(e) => {
                 if e.contains("not found") {
-                    CommandOutput::Error(
-                        "gh CLI not found. Install: https://cli.github.com".into(),
-                    )
+                    CommandOutput::Error("gh CLI not found. Install: https://cli.github.com".into())
                 } else {
                     CommandOutput::Error(format!("Failed to get PR comments: {e}"))
                 }

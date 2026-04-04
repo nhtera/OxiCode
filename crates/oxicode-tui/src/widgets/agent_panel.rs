@@ -87,10 +87,7 @@ impl Widget for AgentPanel<'_> {
                 if !agent.model.is_empty() {
                     lines.push(Line::from(vec![
                         Span::styled("  Model: ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(
-                            &agent.model,
-                            Style::default().fg(Color::Cyan),
-                        ),
+                        Span::styled(&agent.model, Style::default().fg(Color::Cyan)),
                     ]));
                 }
                 if !agent.restricted_tools.is_empty() {
@@ -99,9 +96,7 @@ impl Widget for AgentPanel<'_> {
                         Span::styled("  Restricted: ", Style::default().fg(Color::DarkGray)),
                         Span::styled(
                             tools_str,
-                            Style::default()
-                                .fg(Color::Red)
-                                .add_modifier(Modifier::DIM),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::DIM),
                         ),
                     ]));
                 }

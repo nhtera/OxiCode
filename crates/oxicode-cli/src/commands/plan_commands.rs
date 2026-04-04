@@ -83,7 +83,9 @@ impl SlashCommand for PlanCommand {
                 }
             }
             "show" => show_plan(plans_dir, rest.trim()),
-            other => CommandOutput::Error(format!("Unknown: /plan {other}. Use: create, list, show")),
+            other => {
+                CommandOutput::Error(format!("Unknown: /plan {other}. Use: create, list, show"))
+            }
         }
     }
 
@@ -140,10 +142,6 @@ fn find_plan_dir(plans_dir: &std::path::Path, query: &str) -> Option<std::path::
         .ok()?
         .filter_map(Result::ok)
         .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
-        .find(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .contains(query)
-        })
+        .find(|e| e.file_name().to_string_lossy().contains(query))
         .map(|e| e.path())
 }

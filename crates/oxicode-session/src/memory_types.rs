@@ -89,18 +89,24 @@ pub fn parse_frontmatter(content: &str) -> (Option<FrontmatterFields>, &str) {
 
     let yaml_str = &after_open[..pos];
     let body_start = 3 + pos + 4; // skip opening "---" + yaml + "\n---"
-    let body = trimmed.get(body_start..).unwrap_or("").trim_start_matches('\n');
+    let body = trimmed
+        .get(body_start..)
+        .unwrap_or("")
+        .trim_start_matches('\n');
 
     // Parse YAML.
     let parsed: Result<RawFrontmatter, _> = serde_yaml::from_str(yaml_str);
     match parsed {
         Ok(raw) => {
             let mem_type = raw.memory_type.as_deref().and_then(parse_memory_type);
-            (Some(FrontmatterFields {
-                memory_type: mem_type,
-                description: raw.description,
-                tags: raw.tags,
-            }), body)
+            (
+                Some(FrontmatterFields {
+                    memory_type: mem_type,
+                    description: raw.description,
+                    tags: raw.tags,
+                }),
+                body,
+            )
         }
         Err(_) => (None, content),
     }
@@ -118,13 +124,12 @@ fn parse_memory_type(s: &str) -> Option<MemoryType> {
 }
 
 /// Generate frontmatter string for a memory file.
-pub fn format_frontmatter(
-    mem_type: MemoryType,
-    description: &str,
-    tags: &[String],
-) -> String {
+pub fn format_frontmatter(mem_type: MemoryType, description: &str, tags: &[String]) -> String {
     use std::fmt::Write;
-    let mut fm = format!("---\ntype: {}\ndescription: \"{description}\"\n", mem_type.as_str());
+    let mut fm = format!(
+        "---\ntype: {}\ndescription: \"{description}\"\n",
+        mem_type.as_str()
+    );
     if !tags.is_empty() {
         let _ = writeln!(fm, "tags: [{}]", tags.join(", "));
     }
@@ -221,5 +226,57 @@ mod tests {
         assert_eq!(json, "\"decision\"");
         let parsed: MemoryType = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, MemoryType::Decision);
+    }
+
+    #[test]
+    fn all_memory_types_serde_roundtrip() {
+        let types = [
+            MemoryType::Decision,
+            MemoryType::Context,
+            MemoryType::Preference,
+            MemoryType::Task,
+            MemoryType::Reference,
+        ];
+        for t in types {
+            let json = serde_json::to_string(&t).unwrap();
+            let parsed: MemoryType = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, t);
+        }
+    }
+
+    #[test]
+    fn parse_case_insensitive_type() {
+        let content = "---\ntype: DECISION\n---\nBody.";
+        let (fm, _) = parse_frontmatter(content);
+        let fields = fm.unwrap();
+        assert_eq!(fields.memory_type, Some(MemoryType::Decision));
+    }
+
+    #[test]
+    fn parse_whitespace_around_frontmatter() {
+        let content = "  \n---\ntype: context\n---\nBody.";
+        let (fm, _) = parse_frontmatter(content);
+        let fields = fm.unwrap();
+        assert_eq!(fields.memory_type, Some(MemoryType::Context));
+    }
+
+    #[test]
+    fn format_frontmatter_multiple_tags() {
+        let tags = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let fm = format_frontmatter(MemoryType::Reference, "Links", &tags);
+        assert!(fm.contains("tags: [a, b, c]"));
+    }
+
+    #[test]
+    fn parse_all_types() {
+        assert_eq!(parse_memory_type("decision"), Some(MemoryType::Decision));
+        assert_eq!(parse_memory_type("context"), Some(MemoryType::Context));
+        assert_eq!(
+            parse_memory_type("preference"),
+            Some(MemoryType::Preference)
+        );
+        assert_eq!(parse_memory_type("task"), Some(MemoryType::Task));
+        assert_eq!(parse_memory_type("reference"), Some(MemoryType::Reference));
+        assert_eq!(parse_memory_type("unknown"), None);
     }
 }

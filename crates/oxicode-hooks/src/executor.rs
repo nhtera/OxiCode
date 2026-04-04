@@ -151,4 +151,81 @@ mod tests {
         let response = execute_hook_script("exit 1", &test_payload(), None).await;
         assert!(matches!(response, HookResponse::Pass));
     }
+
+    // -- New comprehensive tests --
+
+    #[tokio::test]
+    async fn test_abort_response() {
+        let response = execute_hook_script(
+            r#"echo '{"action":"abort","reason":"policy violation"}'"#,
+            &test_payload(),
+            None,
+        )
+        .await;
+        assert!(matches!(response, HookResponse::Abort { reason } if reason == "policy violation"));
+    }
+
+    #[tokio::test]
+    async fn test_override_result_response() {
+        let response = execute_hook_script(
+            r#"echo '{"action":"override_result","text":"replaced output"}'"#,
+            &test_payload(),
+            None,
+        )
+        .await;
+        assert!(
+            matches!(response, HookResponse::OverrideResult { text } if text == "replaced output")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_invalid_json_returns_pass() {
+        let response = execute_hook_script("echo 'not valid json'", &test_payload(), None).await;
+        // Invalid JSON from stdout should be treated as pass (don't block app).
+        // The function returns Err which maps to Pass in the outer handler,
+        // but run_subprocess returns Err, so execute_hook_script logs and returns Pass.
+        assert!(matches!(response, HookResponse::Pass));
+    }
+
+    #[tokio::test]
+    async fn test_payload_received_by_script() {
+        // Verify the script receives the payload on stdin.
+        let payload = HookPayload {
+            event: HookEvent::ToolCallBefore,
+            data: serde_json::json!({"tool": "bash"}),
+            session_id: Some("test-session".to_string()),
+            model: None,
+        };
+        // Script reads stdin and checks for expected content.
+        let response = execute_hook_script(
+            r#"input=$(cat); echo "$input" | grep -q "tool_call_before" && echo '{"action":"pass"}' || echo '{"action":"abort","reason":"missing event"}'"#,
+            &payload,
+            Some(Duration::from_secs(5)),
+        )
+        .await;
+        assert!(matches!(response, HookResponse::Pass));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_command_returns_pass() {
+        let response = execute_hook_script(
+            "/nonexistent/command/path",
+            &test_payload(),
+            Some(Duration::from_secs(2)),
+        )
+        .await;
+        // Command that fails to run returns Pass.
+        assert!(matches!(response, HookResponse::Pass));
+    }
+
+    #[tokio::test]
+    async fn test_stderr_does_not_affect_result() {
+        let response = execute_hook_script(
+            r#"echo "warning" >&2; echo '{"action":"pass"}'"#,
+            &test_payload(),
+            None,
+        )
+        .await;
+        assert!(matches!(response, HookResponse::Pass));
+    }
 }

@@ -54,10 +54,7 @@ pub async fn transcribe(samples: &[f32]) -> Result<TranscriptionResult, String> 
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .unwrap_or_else(|_| "unknown".to_string());
+        let body = resp.text().await.unwrap_or_else(|_| "unknown".to_string());
         return Err(format!("Whisper API error ({status}): {body}"));
     }
 
@@ -66,11 +63,7 @@ pub async fn transcribe(samples: &[f32]) -> Result<TranscriptionResult, String> 
         .await
         .map_err(|e| format!("Failed to parse Whisper response: {e}"))?;
 
-    let text = json["text"]
-        .as_str()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let text = json["text"].as_str().unwrap_or("").trim().to_string();
 
     Ok(TranscriptionResult {
         text,

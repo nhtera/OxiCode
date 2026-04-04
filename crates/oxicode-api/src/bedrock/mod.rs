@@ -461,7 +461,10 @@ mod tests {
 
     #[test]
     fn test_urlencoding() {
-        assert_eq!(urlencoding::encode("anthropic.claude-3"), "anthropic.claude-3");
+        assert_eq!(
+            urlencoding::encode("anthropic.claude-3"),
+            "anthropic.claude-3"
+        );
         assert_eq!(urlencoding::encode("model/name"), "model%2Fname");
     }
 }

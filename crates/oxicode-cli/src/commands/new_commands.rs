@@ -79,7 +79,8 @@ impl SlashCommand for ReviewCommand {
                 Ok(diff) => {
                     let lines: Vec<&str> = diff.lines().collect();
                     let total = lines.len();
-                    let preview: String = lines.into_iter().take(100).collect::<Vec<_>>().join("\n");
+                    let preview: String =
+                        lines.into_iter().take(100).collect::<Vec<_>>().join("\n");
                     let suffix = if total > 100 {
                         format!("\n\n... ({total} total lines)")
                     } else {
@@ -178,7 +179,8 @@ impl SlashCommand for RenameCommand {
         // Store the display name in active_skills as a marker.
         // Full session-level rename requires Session struct changes (future).
         ctx.state_store.update(|s| {
-            s.active_skills.retain(|sk| !sk.starts_with("session_name:"));
+            s.active_skills
+                .retain(|sk| !sk.starts_with("session_name:"));
             s.active_skills.push(format!("session_name:{name}"));
         });
         CommandOutput::Message(format!(
@@ -212,7 +214,11 @@ impl SlashCommand for UsageCommand {
         let _ = writeln!(output, "Provider: {}", ctx.provider_name);
         let _ = writeln!(output, "Messages: {msg_count}");
         let _ = writeln!(output, "Total tokens: {total_in} in / {total_out} out");
-        let _ = writeln!(output, "Total cost: {}", CostTracker::format_cost(tracker.total_cost()));
+        let _ = writeln!(
+            output,
+            "Total cost: {}",
+            CostTracker::format_cost(tracker.total_cost())
+        );
 
         let summary = tracker.summary();
         if !summary.is_empty() {
@@ -223,7 +229,11 @@ impl SlashCommand for UsageCommand {
                 let _ = writeln!(output, "    Output:      {}", usage.output_tokens);
                 let _ = writeln!(output, "    Cache read:  {}", usage.cache_read_tokens);
                 let _ = writeln!(output, "    Cache write: {}", usage.cache_write_tokens);
-                let _ = writeln!(output, "    Cost:        {}", CostTracker::format_cost(usage.cost_usd));
+                let _ = writeln!(
+                    output,
+                    "    Cost:        {}",
+                    CostTracker::format_cost(usage.cost_usd)
+                );
             }
         }
 
@@ -294,7 +304,7 @@ impl SlashCommand for StatsCommand {
     }
 }
 
-/// /rewind [N] — remove the last N message pairs from conversation.
+/// /rewind [N] — remove the last N turn-pairs from conversation.
 pub struct RewindCommand;
 impl SlashCommand for RewindCommand {
     fn name(&self) -> &str {
@@ -310,21 +320,25 @@ impl SlashCommand for RewindCommand {
         }
 
         let state = ctx.state_store.current();
-        let msg_count = state.messages.len();
+        if state.messages.is_empty() {
+            return CommandOutput::Message("Conversation is empty — nothing to rewind.".into());
+        }
+        if state.is_streaming {
+            return CommandOutput::Error("Cannot rewind while a response is streaming.".into());
+        }
 
-        // Each "turn" = user message + assistant response = 2 messages.
-        let to_remove = (n * 2).min(msg_count);
-        let remaining = msg_count - to_remove;
-
-        ctx.state_store.update(|s| {
-            s.messages.truncate(remaining);
-        });
-
-        let turns_removed = to_remove / 2;
-        let extra = if to_remove % 2 != 0 { " (+1 orphan)" } else { "" };
-        CommandOutput::Message(format!(
-            "Rewound {turns_removed} turn(s){extra}. {remaining} messages remaining."
-        ))
+        // Use the core rewind module for correct turn-boundary detection.
+        let mut messages = state.messages.clone();
+        match oxicode_core::rewind::rewind(&mut messages, n) {
+            Some(result) => {
+                ctx.state_store.replace_messages(messages);
+                CommandOutput::Message(format!(
+                    "Rewound {} turn(s) ({} messages removed). {} messages remaining.",
+                    result.turns_removed, result.messages_removed, result.remaining,
+                ))
+            }
+            None => CommandOutput::Message("No turns to rewind (no user messages found).".into()),
+        }
     }
 }
 
@@ -356,6 +370,10 @@ impl SlashCommand for ThinkingCommand {
 }
 
 /// /sandbox-toggle — toggle sandbox (restricted shell) mode.
+///
+/// When active, the tool registry filters out shell execution tools
+/// (bash, powershell, repl) at dispatch time. The `sandbox_mode` flag
+/// in active_skills is checked by the engine's tool dispatch path.
 pub struct SandboxToggleCommand;
 impl SlashCommand for SandboxToggleCommand {
     fn name(&self) -> &str {
@@ -377,8 +395,20 @@ impl SlashCommand for SandboxToggleCommand {
             }
         });
 
-        let status = if was_enabled { "disabled" } else { "enabled" };
-        CommandOutput::Message(format!("Sandbox mode: {status}"))
+        if was_enabled {
+            CommandOutput::Message(
+                "Sandbox mode: disabled\n\
+                 Shell tools (bash, powershell, repl) are now available."
+                    .into(),
+            )
+        } else {
+            CommandOutput::Message(
+                "Sandbox mode: enabled\n\
+                 Shell tools (bash, powershell, repl) are blocked.\n\
+                 File read/write and other tools remain available."
+                    .into(),
+            )
+        }
     }
 }
 

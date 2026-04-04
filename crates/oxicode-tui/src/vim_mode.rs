@@ -285,9 +285,7 @@ impl VimState {
                 // But we keep it for consistency.
                 VimAction::Noop
             }
-            (_, KeyCode::Char('k') | KeyCode::Up) => {
-                VimAction::Noop
-            }
+            (_, KeyCode::Char('k') | KeyCode::Up) => VimAction::Noop,
 
             // Word motions.
             (_, KeyCode::Char('w')) => {
@@ -305,12 +303,8 @@ impl VimState {
 
             // Line motions.
             (_, KeyCode::Char('0')) => VimAction::MoveToLineStart,
-            (_, KeyCode::Char('$')) => {
-                VimAction::MoveToLineEnd
-            }
-            (_, KeyCode::Char('^')) => {
-                VimAction::MoveToLineStart
-            }
+            (_, KeyCode::Char('$')) => VimAction::MoveToLineEnd,
+            (_, KeyCode::Char('^')) => VimAction::MoveToLineStart,
 
             // Global motions.
             (_, KeyCode::Char('g')) => {
@@ -318,9 +312,7 @@ impl VimState {
                 self.pending_op = Some('g');
                 VimAction::Noop
             }
-            (_, KeyCode::Char('G')) => {
-                VimAction::MoveToEnd
-            }
+            (_, KeyCode::Char('G')) => VimAction::MoveToEnd,
 
             // Operators that need a motion.
             (_, KeyCode::Char('d')) => {
@@ -345,16 +337,12 @@ impl VimState {
                 let _n = self.consume_count();
                 VimAction::DeleteChar
             }
-            (_, KeyCode::Char('X')) => {
-                VimAction::DeleteCharBefore
-            }
+            (_, KeyCode::Char('X')) => VimAction::DeleteCharBefore,
             (_, KeyCode::Char('p')) => VimAction::Paste,
             (_, KeyCode::Char('u')) => VimAction::Undo,
 
             // Delete to end of line (D).
-            (_, KeyCode::Char('D')) => {
-                VimAction::DeleteToEnd
-            }
+            (_, KeyCode::Char('D')) => VimAction::DeleteToEnd,
             // Change to end of line (C).
             (_, KeyCode::Char('C')) => {
                 self.mode = Mode::Insert;

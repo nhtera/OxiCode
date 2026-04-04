@@ -185,8 +185,12 @@ mod tests {
         struct OtherTool;
         #[async_trait]
         impl Tool for OtherTool {
-            fn name(&self) -> &str { "other" }
-            fn description(&self) -> &str { "Another tool" }
+            fn name(&self) -> &str {
+                "other"
+            }
+            fn description(&self) -> &str {
+                "Another tool"
+            }
             fn schema(&self) -> ToolSchema {
                 ToolSchema {
                     name: "other".into(),
@@ -194,8 +198,14 @@ mod tests {
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
                 }
             }
-            fn permission_level(&self) -> PermissionLevel { PermissionLevel::ReadOnly }
-            async fn execute(&self, _: serde_json::Value, _: &ToolContext) -> OxiResult<ToolResult> {
+            fn permission_level(&self) -> PermissionLevel {
+                PermissionLevel::ReadOnly
+            }
+            async fn execute(
+                &self,
+                _: serde_json::Value,
+                _: &ToolContext,
+            ) -> OxiResult<ToolResult> {
                 Ok(ToolResult::success("ok"))
             }
         }

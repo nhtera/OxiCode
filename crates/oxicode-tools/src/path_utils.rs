@@ -79,9 +79,7 @@ pub fn check_workspace_boundary(path: &Path, working_dir: &Path) -> Option<ToolR
     let canonical_wd = working_dir
         .canonicalize()
         .unwrap_or_else(|_| working_dir.to_path_buf());
-    let canonical_path = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     // Allow paths within the working directory
     if canonical_path.starts_with(&canonical_wd) {

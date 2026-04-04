@@ -46,10 +46,7 @@ impl SlashCommand for CopyCommand {
         }
 
         match copy_to_clipboard(&text) {
-            Ok(()) => CommandOutput::Message(format!(
-                "Copied {} chars to clipboard.",
-                text.len()
-            )),
+            Ok(()) => CommandOutput::Message(format!("Copied {} chars to clipboard.", text.len())),
             Err(e) => CommandOutput::Error(format!("Clipboard not available: {e}")),
         }
     }
@@ -70,9 +67,7 @@ fn copy_to_clipboard(text: &str) -> Result<(), String> {
                 .write_all(text.as_bytes())
                 .map_err(|e| format!("Failed to write to pbcopy: {e}"))?;
         }
-        child
-            .wait()
-            .map_err(|e| format!("pbcopy failed: {e}"))?;
+        child.wait().map_err(|e| format!("pbcopy failed: {e}"))?;
         Ok(())
     }
 
@@ -81,7 +76,11 @@ fn copy_to_clipboard(text: &str) -> Result<(), String> {
         use std::io::Write;
         use std::process::{Command, Stdio};
         // Try xclip first, then xsel, then wl-copy (Wayland).
-        let cmds = ["xclip -selection clipboard", "xsel --clipboard --input", "wl-copy"];
+        let cmds = [
+            "xclip -selection clipboard",
+            "xsel --clipboard --input",
+            "wl-copy",
+        ];
         for cmd_str in &cmds {
             let parts: Vec<&str> = cmd_str.split_whitespace().collect();
             if let Ok(mut child) = Command::new(parts[0])

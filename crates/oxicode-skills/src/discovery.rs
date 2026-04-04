@@ -46,10 +46,7 @@ impl SkillDiscovery {
         // Load user skills, overriding bundled skills with same name.
         for skill in Self::discover_from_dir(&self.user_dir) {
             if let Some(existing) = skills.iter_mut().find(|s| s.name() == skill.name()) {
-                tracing::debug!(
-                    "User skill '{}' overrides bundled skill",
-                    skill.name(),
-                );
+                tracing::debug!("User skill '{}' overrides bundled skill", skill.name(),);
                 *existing = skill;
             } else {
                 skills.push(skill);
@@ -70,7 +67,11 @@ impl SkillDiscovery {
             }
         }
 
-        tracing::debug!("Discovered {} skill(s) total ({} bundled)", skills.len(), bundled_count);
+        tracing::debug!(
+            "Discovered {} skill(s) total ({} bundled)",
+            skills.len(),
+            bundled_count
+        );
         skills
     }
 

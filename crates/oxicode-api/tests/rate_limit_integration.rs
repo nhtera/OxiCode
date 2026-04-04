@@ -14,7 +14,10 @@ fn test_parse_openai_tokens_limit() {
         "x-ratelimit-remaining-tokens",
         HeaderValue::from_static("0"),
     );
-    headers.insert("x-ratelimit-reset-tokens", HeaderValue::from_static("2026-04-04T12:00:30Z"));
+    headers.insert(
+        "x-ratelimit-reset-tokens",
+        HeaderValue::from_static("2026-04-04T12:00:30Z"),
+    );
     headers.insert("retry-after", HeaderValue::from_static("60"));
 
     let info = rate_limit_headers::parse_openai_headers(&headers);
@@ -193,7 +196,10 @@ fn test_nonzero_remaining_unknown_limit() {
         "x-ratelimit-remaining-tokens",
         HeaderValue::from_static("100"),
     );
-    headers.insert("x-ratelimit-reset-tokens", HeaderValue::from_static("2026-04-04T12:00:30Z"));
+    headers.insert(
+        "x-ratelimit-reset-tokens",
+        HeaderValue::from_static("2026-04-04T12:00:30Z"),
+    );
 
     let info = rate_limit_headers::parse_openai_headers(&headers);
     assert_eq!(info.limit_type, RateLimitType::Unknown);

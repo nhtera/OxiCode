@@ -66,8 +66,9 @@ impl AgentConfig {
 
             // Set tool whitelist from the agent type (General = no restriction).
             if self.allowed_tools.is_none() {
-                self.allowed_tools =
-                    at.allowed_tools().map(|t| t.iter().map(|s| (*s).to_string()).collect());
+                self.allowed_tools = at
+                    .allowed_tools()
+                    .map(|t| t.iter().map(|s| (*s).to_string()).collect());
             }
         }
     }

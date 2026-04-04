@@ -95,12 +95,11 @@ impl ProviderRouter {
 
         // Google Vertex AI.
         if let (Ok(project), Ok(token)) = (
-            std::env::var("VERTEX_AI_PROJECT")
-                .or_else(|_| std::env::var("GOOGLE_CLOUD_PROJECT")),
+            std::env::var("VERTEX_AI_PROJECT").or_else(|_| std::env::var("GOOGLE_CLOUD_PROJECT")),
             std::env::var("VERTEX_AI_ACCESS_TOKEN"),
         ) {
-            let region = std::env::var("VERTEX_AI_REGION")
-                .unwrap_or_else(|_| "us-central1".to_string());
+            let region =
+                std::env::var("VERTEX_AI_REGION").unwrap_or_else(|_| "us-central1".to_string());
             providers.push((
                 "vertex".to_string(),
                 Arc::new(VertexProvider::new(project, region, token)),

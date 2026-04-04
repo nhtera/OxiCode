@@ -75,8 +75,7 @@ pub struct MigrationResult {
 /// Individual migration failures are logged but don't abort — we skip
 /// the failed migration and continue with the original value for that step.
 pub fn run_migrations(config_path: &Path) -> Result<MigrationResult, String> {
-    let content = std::fs::read_to_string(config_path)
-        .map_err(|e| format!("read config: {e}"))?;
+    let content = std::fs::read_to_string(config_path).map_err(|e| format!("read config: {e}"))?;
 
     let mut value: toml::Value =
         toml::from_str(&content).map_err(|e| format!("parse config TOML: {e}"))?;
@@ -85,7 +84,10 @@ pub fn run_migrations(config_path: &Path) -> Result<MigrationResult, String> {
     let migrations = all_migrations();
 
     // Nothing to do?
-    let pending: Vec<&Migration> = migrations.iter().filter(|m| m.version > old_version).collect();
+    let pending: Vec<&Migration> = migrations
+        .iter()
+        .filter(|m| m.version > old_version)
+        .collect();
     if pending.is_empty() {
         return Ok(MigrationResult {
             applied: 0,
@@ -130,10 +132,8 @@ pub fn run_migrations(config_path: &Path) -> Result<MigrationResult, String> {
     write_version(&mut value, current_version);
 
     // Write back.
-    let updated = toml::to_string_pretty(&value)
-        .map_err(|e| format!("serialize config: {e}"))?;
-    std::fs::write(config_path, updated)
-        .map_err(|e| format!("write config: {e}"))?;
+    let updated = toml::to_string_pretty(&value).map_err(|e| format!("serialize config: {e}"))?;
+    std::fs::write(config_path, updated).map_err(|e| format!("write config: {e}"))?;
 
     Ok(MigrationResult {
         applied,
@@ -146,12 +146,14 @@ pub fn run_migrations(config_path: &Path) -> Result<MigrationResult, String> {
 /// Run migrations on raw TOML content in memory (no file I/O).
 /// Used when you already have the content and don't want disk side-effects.
 pub fn run_migrations_in_memory(content: &str) -> Result<(String, MigrationResult), String> {
-    let mut value: toml::Value =
-        toml::from_str(content).map_err(|e| format!("parse TOML: {e}"))?;
+    let mut value: toml::Value = toml::from_str(content).map_err(|e| format!("parse TOML: {e}"))?;
 
     let old_version = read_version(&value);
     let migrations = all_migrations();
-    let pending: Vec<&Migration> = migrations.iter().filter(|m| m.version > old_version).collect();
+    let pending: Vec<&Migration> = migrations
+        .iter()
+        .filter(|m| m.version > old_version)
+        .collect();
 
     if pending.is_empty() {
         return Ok((
@@ -180,8 +182,7 @@ pub fn run_migrations_in_memory(content: &str) -> Result<(String, MigrationResul
 
     write_version(&mut value, current_version);
 
-    let updated = toml::to_string_pretty(&value)
-        .map_err(|e| format!("serialize: {e}"))?;
+    let updated = toml::to_string_pretty(&value).map_err(|e| format!("serialize: {e}"))?;
 
     Ok((
         updated,
@@ -228,8 +229,7 @@ fn backup_config(config_path: &Path) -> Result<PathBuf, String> {
             .to_string_lossy()
     );
     let backup_path = config_path.with_file_name(backup_name);
-    std::fs::copy(config_path, &backup_path)
-        .map_err(|e| format!("backup config: {e}"))?;
+    std::fs::copy(config_path, &backup_path).map_err(|e| format!("backup config: {e}"))?;
     tracing::info!(backup = %backup_path.display(), "config backup created");
     Ok(backup_path)
 }
@@ -265,10 +265,7 @@ fn m002_rename_legacy_models(value: &mut toml::Value) -> Result<(), String> {
         for (old, new) in model_remap {
             if model_val == *old {
                 if let Some(table) = value.as_table_mut() {
-                    table.insert(
-                        "model".to_string(),
-                        toml::Value::String(new.to_string()),
-                    );
+                    table.insert("model".to_string(), toml::Value::String(new.to_string()));
                 }
                 break;
             }
@@ -349,7 +346,12 @@ mod tests {
     fn all_migrations_ordered() {
         let migrations = all_migrations();
         for (i, m) in migrations.iter().enumerate() {
-            assert_eq!(m.version, (i + 1) as u32, "migration {} out of order", m.name);
+            assert_eq!(
+                m.version,
+                (i + 1) as u32,
+                "migration {} out of order",
+                m.name
+            );
         }
     }
 
@@ -428,8 +430,14 @@ mod tests {
         m003_add_default_features(&mut value).unwrap();
 
         let features = value.get("features").unwrap().as_table().unwrap();
-        assert_eq!(features.get("extended_thinking").unwrap().as_bool(), Some(true));
-        assert_eq!(features.get("prompt_caching").unwrap().as_bool(), Some(true));
+        assert_eq!(
+            features.get("extended_thinking").unwrap().as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            features.get("prompt_caching").unwrap().as_bool(),
+            Some(true)
+        );
         assert_eq!(features.get("streaming").unwrap().as_bool(), Some(true));
     }
 
@@ -445,19 +453,24 @@ custom_flag = true
 
         let features = value.get("features").unwrap().as_table().unwrap();
         // User's false should be preserved.
-        assert_eq!(features.get("extended_thinking").unwrap().as_bool(), Some(false));
+        assert_eq!(
+            features.get("extended_thinking").unwrap().as_bool(),
+            Some(false)
+        );
         // Custom flags preserved.
         assert_eq!(features.get("custom_flag").unwrap().as_bool(), Some(true));
         // New defaults added.
-        assert_eq!(features.get("prompt_caching").unwrap().as_bool(), Some(true));
+        assert_eq!(
+            features.get("prompt_caching").unwrap().as_bool(),
+            Some(true)
+        );
     }
 
     // -- Migration 4: permission_mode normalize --
 
     #[test]
     fn m004_renames_accept_edits_kebab() {
-        let mut value: toml::Value =
-            toml::from_str("permission_mode = \"accept-edits\"").unwrap();
+        let mut value: toml::Value = toml::from_str("permission_mode = \"accept-edits\"").unwrap();
         m004_normalize_permission_mode(&mut value).unwrap();
         assert_eq!(
             value.get("permission_mode").unwrap().as_str().unwrap(),
@@ -467,8 +480,7 @@ custom_flag = true
 
     #[test]
     fn m004_renames_auto_accept() {
-        let mut value: toml::Value =
-            toml::from_str("permission_mode = \"autoAccept\"").unwrap();
+        let mut value: toml::Value = toml::from_str("permission_mode = \"autoAccept\"").unwrap();
         m004_normalize_permission_mode(&mut value).unwrap();
         assert_eq!(
             value.get("permission_mode").unwrap().as_str().unwrap(),
@@ -478,8 +490,7 @@ custom_flag = true
 
     #[test]
     fn m004_leaves_canonical_values() {
-        let mut value: toml::Value =
-            toml::from_str("permission_mode = \"default\"").unwrap();
+        let mut value: toml::Value = toml::from_str("permission_mode = \"default\"").unwrap();
         m004_normalize_permission_mode(&mut value).unwrap();
         assert_eq!(
             value.get("permission_mode").unwrap().as_str().unwrap(),

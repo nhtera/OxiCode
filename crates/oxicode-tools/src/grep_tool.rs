@@ -59,15 +59,20 @@ impl Tool for GrepTool {
     }
 
     async fn execute(&self, input: serde_json::Value, ctx: &ToolContext) -> OxiResult<ToolResult> {
-        let pattern = input["pattern"].as_str().ok_or_else(|| oxicode_common::OxiError::Tool {
-            name: self.name().into(),
-            message: "pattern is required".into(),
-        })?;
-
-        let search_path = input["path"]
+        let pattern = input["pattern"]
             .as_str()
-            .map_or_else(|| ctx.working_dir.clone(), |p| resolve_path(p, &ctx.working_dir));
-        let output_mode = input["output_mode"].as_str().unwrap_or("files_with_matches");
+            .ok_or_else(|| oxicode_common::OxiError::Tool {
+                name: self.name().into(),
+                message: "pattern is required".into(),
+            })?;
+
+        let search_path = input["path"].as_str().map_or_else(
+            || ctx.working_dir.clone(),
+            |p| resolve_path(p, &ctx.working_dir),
+        );
+        let output_mode = input["output_mode"]
+            .as_str()
+            .unwrap_or("files_with_matches");
 
         let args = build_rg_args(pattern, &input, output_mode, &search_path);
         let (stdout, stderr, code) = match run_rg(&args, &ctx.working_dir).await {
@@ -76,20 +81,46 @@ impl Tool for GrepTool {
         };
 
         match code {
-            0 => Ok(format_output(&stdout, output_mode, &input, &ctx.working_dir)),
+            0 => Ok(format_output(
+                &stdout,
+                output_mode,
+                &input,
+                &ctx.working_dir,
+            )),
             1 => Ok(ToolResult::success("No matches found.")),
-            _ => Ok(ToolResult::error(if stderr.is_empty() { stdout } else { stderr })),
+            _ => Ok(ToolResult::error(if stderr.is_empty() {
+                stdout
+            } else {
+                stderr
+            })),
         }
     }
 }
 
 /// Build the rg argument list from tool input parameters.
-fn build_rg_args(pattern: &str, input: &serde_json::Value, mode: &str, search_path: &Path) -> Vec<String> {
+fn build_rg_args(
+    pattern: &str,
+    input: &serde_json::Value,
+    mode: &str,
+    search_path: &Path,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![
-        "--hidden".into(), "--no-heading".into(), "--max-columns".into(), "500".into(),
-        "--glob".into(), "!.git".into(), "--glob".into(), "!.svn".into(),
-        "--glob".into(), "!.hg".into(), "--glob".into(), "!.bzr".into(),
-        "--glob".into(), "!.jj".into(), "--glob".into(), "!.sl".into(),
+        "--hidden".into(),
+        "--no-heading".into(),
+        "--max-columns".into(),
+        "500".into(),
+        "--glob".into(),
+        "!.git".into(),
+        "--glob".into(),
+        "!.svn".into(),
+        "--glob".into(),
+        "!.hg".into(),
+        "--glob".into(),
+        "!.bzr".into(),
+        "--glob".into(),
+        "!.jj".into(),
+        "--glob".into(),
+        "!.sl".into(),
     ];
 
     match mode {
@@ -108,17 +139,27 @@ fn build_rg_args(pattern: &str, input: &serde_json::Value, mode: &str, search_pa
         if let Some(c) = ctx {
             args.extend(["-C".into(), clamp(c).to_string()]);
         } else {
-            if let Some(b) = input["-B"].as_u64() { args.extend(["-B".into(), clamp(b).to_string()]); }
-            if let Some(a) = input["-A"].as_u64() { args.extend(["-A".into(), clamp(a).to_string()]); }
+            if let Some(b) = input["-B"].as_u64() {
+                args.extend(["-B".into(), clamp(b).to_string()]);
+            }
+            if let Some(a) = input["-A"].as_u64() {
+                args.extend(["-A".into(), clamp(a).to_string()]);
+            }
         }
     }
 
-    if input["-i"].as_bool().unwrap_or(false) { args.push("-i".into()); }
+    if input["-i"].as_bool().unwrap_or(false) {
+        args.push("-i".into());
+    }
     if input["multiline"].as_bool().unwrap_or(false) {
         args.extend(["-U".into(), "--multiline-dotall".into()]);
     }
-    if let Some(g) = input["glob"].as_str() { args.extend(["--glob".into(), g.into()]); }
-    if let Some(t) = input["type"].as_str() { args.extend(["--type".into(), t.into()]); }
+    if let Some(g) = input["glob"].as_str() {
+        args.extend(["--glob".into(), g.into()]);
+    }
+    if let Some(t) = input["type"].as_str() {
+        args.extend(["--type".into(), t.into()]);
+    }
 
     // Pattern via -e to protect against leading dashes
     args.extend(["-e".into(), pattern.into()]);
@@ -135,7 +176,9 @@ async fn run_rg(args: &[String], working_dir: &Path) -> Result<(String, String, 
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|_| "ripgrep (rg) not found. Install: https://github.com/BurntSushi/ripgrep".to_string())?;
+        .map_err(|_| {
+            "ripgrep (rg) not found. Install: https://github.com/BurntSushi/ripgrep".to_string()
+        })?;
 
     let output = tokio::time::timeout(RG_TIMEOUT, child.wait_with_output())
         .await
@@ -150,7 +193,10 @@ async fn run_rg(args: &[String], working_dir: &Path) -> Result<(String, String, 
 
 /// Format rg output based on mode, applying pagination and char cap.
 fn format_output(
-    stdout: &str, mode: &str, input: &serde_json::Value, working_dir: &Path,
+    stdout: &str,
+    mode: &str,
+    input: &serde_json::Value,
+    working_dir: &Path,
 ) -> ToolResult {
     let head_limit = input["head_limit"].as_u64().unwrap_or(250) as usize;
     let offset = input["offset"].as_u64().unwrap_or(0) as usize;
@@ -158,29 +204,49 @@ fn format_output(
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
 
     let result = if mode == "files_with_matches" {
-        let mut entries: Vec<_> = lines.iter().map(|l| {
-            let mtime = std::fs::metadata(l).and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
-            (*l, mtime)
-        }).collect();
+        let mut entries: Vec<_> = lines
+            .iter()
+            .map(|l| {
+                let mtime = std::fs::metadata(l)
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                (*l, mtime)
+            })
+            .collect();
         entries.sort_by(|a, b| b.1.cmp(&a.1)); // newest first
-        let paths: Vec<String> = entries.iter()
+        let paths: Vec<String> = entries
+            .iter()
             .map(|(p, _)| relativize(p, working_dir))
             .collect();
         let path_refs: Vec<&str> = paths.iter().map(String::as_str).collect();
         let paginated = paginate(&path_refs, offset, head_limit);
-        if paginated.is_empty() { return ToolResult::success("No matches found."); }
+        if paginated.is_empty() {
+            return ToolResult::success("No matches found.");
+        }
         format!("Found {} files\n{}", paginated.len(), paginated.join("\n"))
     } else if mode == "count" {
         let paginated = paginate(&lines, offset, head_limit);
-        let total: u64 = paginated.iter()
+        let total: u64 = paginated
+            .iter()
             .filter_map(|l| l.rsplit_once(':').and_then(|(_, c)| c.parse::<u64>().ok()))
             .sum();
-        let rel: Vec<String> = paginated.iter().map(|l| relativize_line(l, working_dir)).collect();
-        format!("{}\n\nTotal: {} matches in {} files", rel.join("\n"), total, rel.len())
+        let rel: Vec<String> = paginated
+            .iter()
+            .map(|l| relativize_line(l, working_dir))
+            .collect();
+        format!(
+            "{}\n\nTotal: {} matches in {} files",
+            rel.join("\n"),
+            total,
+            rel.len()
+        )
     } else {
         // content mode
         let paginated = paginate(&lines, offset, head_limit);
-        let rel: Vec<String> = paginated.iter().map(|l| relativize_line(l, working_dir)).collect();
+        let rel: Vec<String> = paginated
+            .iter()
+            .map(|l| relativize_line(l, working_dir))
+            .collect();
         rel.join("\n")
     };
 
@@ -189,22 +255,35 @@ fn format_output(
 
 /// Skip offset, then take limit (0=unlimited).
 fn paginate<'a>(lines: &[&'a str], offset: usize, limit: usize) -> Vec<&'a str> {
-    let skipped = if offset < lines.len() { &lines[offset..] } else { &[] };
-    if limit == 0 { skipped.to_vec() } else { skipped.iter().take(limit).copied().collect() }
+    let skipped = if offset < lines.len() {
+        &lines[offset..]
+    } else {
+        &[]
+    };
+    if limit == 0 {
+        skipped.to_vec()
+    } else {
+        skipped.iter().take(limit).copied().collect()
+    }
 }
 
 /// Truncate to MAX_OUTPUT_CHARS (safe for multi-byte UTF-8).
 fn cap_output(s: String) -> String {
-    if s.len() <= MAX_OUTPUT_CHARS { return s; }
+    if s.len() <= MAX_OUTPUT_CHARS {
+        return s;
+    }
     // Walk back to a valid char boundary to avoid panic on multi-byte chars
     let mut end = MAX_OUTPUT_CHARS;
-    while !s.is_char_boundary(end) { end -= 1; }
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
     format!("{}... truncated at {} chars", &s[..end], MAX_OUTPUT_CHARS)
 }
 
 /// Make a path relative to working_dir.
 fn relativize(path: &str, working_dir: &Path) -> String {
-    Path::new(path).strip_prefix(working_dir)
+    Path::new(path)
+        .strip_prefix(working_dir)
         .map_or_else(|_| path.to_string(), |r| r.display().to_string())
 }
 
@@ -226,7 +305,10 @@ mod tests {
     use tempfile::TempDir;
 
     fn ctx(dir: &TempDir) -> ToolContext {
-        ToolContext { working_dir: dir.path().to_path_buf(), ..Default::default() }
+        ToolContext {
+            working_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        }
     }
 
     #[tokio::test]
@@ -236,8 +318,12 @@ mod tests {
         std::fs::write(dir.path().join("b.txt"), "no match here").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "fn \\w+", "output_mode": "content"}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "fn \\w+", "output_mode": "content"}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(!result.is_error);
         assert!(result.content.contains("fn hello"));
@@ -251,8 +337,12 @@ mod tests {
         std::fs::write(dir.path().join("b.txt"), "match_me").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "match_me", "glob": "*.rs"}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "match_me", "glob": "*.rs"}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(!result.is_error);
         assert!(result.content.contains("a.rs"));
@@ -265,8 +355,12 @@ mod tests {
         std::fs::write(dir.path().join("a.rs"), "hello world").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "nonexistent_pattern_xyz"}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "nonexistent_pattern_xyz"}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(!result.is_error);
         assert!(result.content.contains("No matches"));
@@ -278,8 +372,12 @@ mod tests {
         std::fs::write(dir.path().join("test.rs"), "line1\nmatch_here\nline3").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "match_here", "output_mode": "content"}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "match_here", "output_mode": "content"}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(result.content.contains("match_here"));
         assert!(result.content.contains("2:")); // line number
@@ -291,8 +389,12 @@ mod tests {
         std::fs::write(dir.path().join("a.rs"), "foo\nfoo\nbar").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "foo", "output_mode": "count"}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "foo", "output_mode": "count"}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(result.content.contains("2")); // 2 matches
         assert!(result.content.contains("Total:"));
@@ -304,8 +406,12 @@ mod tests {
         std::fs::write(dir.path().join("ctx.txt"), "before\nmatch_line\nafter").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "match_line", "output_mode": "content", "-C": 1}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "match_line", "output_mode": "content", "-C": 1}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(result.content.contains("before"));
         assert!(result.content.contains("match_line"));
@@ -318,8 +424,12 @@ mod tests {
         std::fs::write(dir.path().join("ci.txt"), "Hello World").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "hello", "-i": true, "output_mode": "content"}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "hello", "-i": true, "output_mode": "content"}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(result.content.contains("Hello World"));
     }
@@ -339,12 +449,19 @@ mod tests {
     #[tokio::test]
     async fn test_grep_head_limit() {
         let dir = TempDir::new().unwrap();
-        let content: String = (1..=10).map(|i| format!("match_{i}")).collect::<Vec<_>>().join("\n");
+        let content: String = (1..=10)
+            .map(|i| format!("match_{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         std::fs::write(dir.path().join("many.txt"), &content).unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "match_", "output_mode": "content", "head_limit": 3}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "match_", "output_mode": "content", "head_limit": 3}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         let lines: Vec<&str> = result.content.lines().collect();
         assert_eq!(lines.len(), 3);
@@ -353,7 +470,10 @@ mod tests {
     #[tokio::test]
     async fn test_grep_offset() {
         let dir = TempDir::new().unwrap();
-        let content: String = (1..=5).map(|i| format!("item_{i}")).collect::<Vec<_>>().join("\n");
+        let content: String = (1..=5)
+            .map(|i| format!("item_{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         std::fs::write(dir.path().join("off.txt"), &content).unwrap();
 
         let result = GrepTool
@@ -372,8 +492,12 @@ mod tests {
         std::fs::write(dir.path().join("readme.md"), "use std").unwrap();
 
         let result = GrepTool
-            .execute(serde_json::json!({"pattern": "use std", "type": "rust"}), &ctx(&dir))
-            .await.unwrap();
+            .execute(
+                serde_json::json!({"pattern": "use std", "type": "rust"}),
+                &ctx(&dir),
+            )
+            .await
+            .unwrap();
 
         assert!(result.content.contains("code.rs"));
         assert!(!result.content.contains("readme.md"));

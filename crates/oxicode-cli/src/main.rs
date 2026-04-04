@@ -125,7 +125,12 @@ async fn main() -> Result<()> {
     }
 
     // First-run onboarding wizard (skip with --no-onboard or non-interactive modes).
-    if !cli.no_onboard && cli.prompt.is_none() && !cli.server && !cli.daemon && onboarding::should_onboard() {
+    if !cli.no_onboard
+        && cli.prompt.is_none()
+        && !cli.server
+        && !cli.daemon
+        && onboarding::should_onboard()
+    {
         onboarding::run_onboarding();
     }
 
@@ -228,12 +233,20 @@ async fn main() -> Result<()> {
     let mcp_ref = std::sync::Arc::new(mcp_manager);
     let tool_context = ToolContext {
         working_dir: cwd.clone(),
-        file_state: std::sync::Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default()),
-        task_manager: std::sync::Arc::new(std::sync::Mutex::new(oxicode_tasks::TaskManager::default())),
-        task_abort_handles: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        file_state: std::sync::Arc::new(
+            oxicode_tools::file_state_tracker::FileStateTracker::default(),
+        ),
+        task_manager: std::sync::Arc::new(std::sync::Mutex::new(
+            oxicode_tasks::TaskManager::default(),
+        )),
+        task_abort_handles: std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )),
         mcp_manager: mcp_ref.clone(),
         skill_executor: Some(skill_executor),
-        team_manager: std::sync::Arc::new(std::sync::Mutex::new(oxicode_agents::TeamManager::new())),
+        team_manager: std::sync::Arc::new(
+            std::sync::Mutex::new(oxicode_agents::TeamManager::new()),
+        ),
     };
 
     let engine = Arc::new(QueryEngine::new(
@@ -290,9 +303,15 @@ async fn main() -> Result<()> {
         );
 
         // Write lockfile (port will be updated after bind if port=0).
-        let actual_port = if daemon_config.port == 0 { 0 } else { daemon_config.port };
+        let actual_port = if daemon_config.port == 0 {
+            0
+        } else {
+            daemon_config.port
+        };
         if actual_port > 0 {
-            if let Err(e) = daemon_listener::write_lockfile(actual_port, &daemon_config.bind_address) {
+            if let Err(e) =
+                daemon_listener::write_lockfile(actual_port, &daemon_config.bind_address)
+            {
                 eprintln!("Warning: Failed to write lockfile: {e}");
             }
         }
@@ -482,9 +501,17 @@ fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
             reply_tx,
         },
         TurnEvent::Error(e) => CoreEvent::Error(e),
-        TurnEvent::RateLimited { message, attempt, max_retries, retry_in_secs } => {
-            CoreEvent::RateLimited { message, attempt, max_retries, retry_in_secs }
-        }
+        TurnEvent::RateLimited {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => CoreEvent::RateLimited {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        },
     }
 }
 
@@ -511,8 +538,8 @@ async fn run_tui(
     }
 
     // Load user keybindings if file exists.
-    let keybindings_path = oxicode_config::config_dir(settings.config_dir.as_deref())
-        .join("keybindings.toml");
+    let keybindings_path =
+        oxicode_config::config_dir(settings.config_dir.as_deref()).join("keybindings.toml");
     app.load_keybindings(&keybindings_path);
 
     let engine_clone = engine.clone();
@@ -566,8 +593,7 @@ async fn run_tui(
                             let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
                         }
                         Err(e) => {
-                            let _ =
-                                core_tx_clone.send(CoreEvent::Error(e.to_string())).await;
+                            let _ = core_tx_clone.send(CoreEvent::Error(e.to_string())).await;
                         }
                     }
                 }

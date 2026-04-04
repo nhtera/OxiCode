@@ -28,3 +28,5 @@ chrono = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+oxicode-session = { workspace = true }
+tempfile = "3"

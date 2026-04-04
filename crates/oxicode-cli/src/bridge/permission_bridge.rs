@@ -139,9 +139,7 @@ mod tests {
             .await;
         assert_eq!(PermissionBridge::pending_count(&perms).await, 1);
 
-        let resolved = bridge
-            .resolve_permission(&perms, "p1", true, false)
-            .await;
+        let resolved = bridge.resolve_permission(&perms, "p1", true, false).await;
         assert!(resolved);
         assert_eq!(rx.await.unwrap(), PermissionResponse::AllowOnce);
     }
@@ -155,9 +153,7 @@ mod tests {
         bridge
             .register_permission(&perms, "p2".to_string(), tx)
             .await;
-        let resolved = bridge
-            .resolve_permission(&perms, "p2", false, false)
-            .await;
+        let resolved = bridge.resolve_permission(&perms, "p2", false, false).await;
         assert!(resolved);
         assert_eq!(rx.await.unwrap(), PermissionResponse::Deny);
     }
@@ -171,9 +167,7 @@ mod tests {
         bridge
             .register_permission(&perms, "p3".to_string(), tx)
             .await;
-        bridge
-            .resolve_permission(&perms, "p3", true, true)
-            .await;
+        bridge.resolve_permission(&perms, "p3", true, true).await;
         assert_eq!(rx.await.unwrap(), PermissionResponse::AlwaysAllow);
     }
 
@@ -186,9 +180,7 @@ mod tests {
         bridge
             .register_permission(&perms, "p4".to_string(), tx)
             .await;
-        bridge
-            .resolve_permission(&perms, "p4", false, true)
-            .await;
+        bridge.resolve_permission(&perms, "p4", false, true).await;
         assert_eq!(rx.await.unwrap(), PermissionResponse::AlwaysDeny);
     }
 

@@ -93,10 +93,7 @@ pub fn run_onboarding() -> bool {
                 let perms = std::fs::Permissions::from_mode(0o600);
                 let _ = std::fs::set_permissions(&settings_path, perms);
             }
-            eprintln!(
-                "\n  ✓ Settings saved to {}",
-                settings_path.display()
-            );
+            eprintln!("\n  ✓ Settings saved to {}", settings_path.display());
             eprintln!("  Run `oxicode` to start.\n");
             true
         }

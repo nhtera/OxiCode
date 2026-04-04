@@ -384,10 +384,7 @@ mod tests {
         let snapshot2 = store.current().last_rate_limit.unwrap();
         assert_eq!(snapshot2.provider, "openai");
         assert_eq!(snapshot2.info.retry_after_secs, Some(30.0));
-        assert_eq!(
-            snapshot2.info.limit_type,
-            RateLimitType::RequestsPerMinute
-        );
+        assert_eq!(snapshot2.info.limit_type, RateLimitType::RequestsPerMinute);
     }
 
     #[test]

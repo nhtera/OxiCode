@@ -22,10 +22,9 @@ fn detect_lsp_command(file_path: &str) -> Option<Vec<String>> {
         .unwrap_or("");
     match ext {
         "rs" => Some(vec!["rust-analyzer".into()]),
-        "ts" | "tsx" | "js" | "jsx" => Some(vec![
-            "typescript-language-server".into(),
-            "--stdio".into(),
-        ]),
+        "ts" | "tsx" | "js" | "jsx" => {
+            Some(vec!["typescript-language-server".into(), "--stdio".into()])
+        }
         "py" => Some(vec!["pylsp".into()]),
         "go" => Some(vec!["gopls".into(), "serve".into()]),
         "java" => Some(vec!["jdtls".into()]),
@@ -115,7 +114,10 @@ impl Tool for LspTool {
         let abs_path = if Path::new(file_path).is_absolute() {
             file_path.to_string()
         } else {
-            ctx.working_dir.join(file_path).to_string_lossy().to_string()
+            ctx.working_dir
+                .join(file_path)
+                .to_string_lossy()
+                .to_string()
         };
 
         if !Path::new(&abs_path).exists() {
@@ -132,10 +134,21 @@ impl Tool for LspTool {
             )));
         };
 
-        let line = input.get("line").and_then(serde_json::Value::as_u64).unwrap_or(1).saturating_sub(1);
-        let character = input.get("character").and_then(serde_json::Value::as_u64).unwrap_or(1).saturating_sub(1);
+        let line = input
+            .get("line")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(1)
+            .saturating_sub(1);
+        let character = input
+            .get("character")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(1)
+            .saturating_sub(1);
 
-        run_lsp_query(operation, &abs_path, method, &cmd_parts, line, character, &input, ctx).await
+        run_lsp_query(
+            operation, &abs_path, method, &cmd_parts, line, character, &input, ctx,
+        )
+        .await
     }
 }
 
@@ -192,10 +205,14 @@ async fn run_lsp_query(
     }
 
     let init_notif = json!({"jsonrpc": "2.0", "method": "initialized", "params": {}});
-    let _ = stdin.write_all(encode_jsonrpc(&init_notif).as_bytes()).await;
+    let _ = stdin
+        .write_all(encode_jsonrpc(&init_notif).as_bytes())
+        .await;
 
     // Open document
-    let file_content = tokio::fs::read_to_string(abs_path).await.unwrap_or_default();
+    let file_content = tokio::fs::read_to_string(abs_path)
+        .await
+        .unwrap_or_default();
     let open_notif = json!({
         "jsonrpc": "2.0", "method": "textDocument/didOpen",
         "params": { "textDocument": {
@@ -203,7 +220,9 @@ async fn run_lsp_query(
             "version": 1, "text": file_content,
         }}
     });
-    let _ = stdin.write_all(encode_jsonrpc(&open_notif).as_bytes()).await;
+    let _ = stdin
+        .write_all(encode_jsonrpc(&open_notif).as_bytes())
+        .await;
 
     // Build request params
     let params = match method {
@@ -234,7 +253,9 @@ async fn run_lsp_query(
     let shutdown = json!({"jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": null});
     let _ = stdin.write_all(encode_jsonrpc(&shutdown).as_bytes()).await;
     let exit_notif = json!({"jsonrpc": "2.0", "method": "exit", "params": null});
-    let _ = stdin.write_all(encode_jsonrpc(&exit_notif).as_bytes()).await;
+    let _ = stdin
+        .write_all(encode_jsonrpc(&exit_notif).as_bytes())
+        .await;
     drop(stdin);
 
     match response {
@@ -262,13 +283,19 @@ async fn read_jsonrpc_message(
     let mut content_length: usize = 0;
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line).await.map_err(|e| e.to_string())?;
+        reader
+            .read_line(&mut line)
+            .await
+            .map_err(|e| e.to_string())?;
         let trimmed = line.trim();
         if trimmed.is_empty() {
             break;
         }
         if let Some(len_str) = trimmed.strip_prefix("Content-Length:") {
-            content_length = len_str.trim().parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+            content_length = len_str
+                .trim()
+                .parse()
+                .map_err(|e: std::num::ParseIntError| e.to_string())?;
         }
     }
 
@@ -276,7 +303,9 @@ async fn read_jsonrpc_message(
         return Err("No Content-Length header".into());
     }
     if content_length > MAX_LSP_BODY {
-        return Err(format!("Content-Length {content_length} exceeds {MAX_LSP_BODY} byte limit"));
+        return Err(format!(
+            "Content-Length {content_length} exceeds {MAX_LSP_BODY} byte limit"
+        ));
     }
 
     let mut body = vec![0u8; content_length];
