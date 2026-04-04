@@ -301,6 +301,11 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(extras_commands::MobileCommand));
     reg.register(Box::new(extras_commands::BridgeCommand));
 
+    // Phase 7: GitHub integration + remote commands
+    reg.register(Box::new(extras_commands::InstallGithubAppCommand));
+    reg.register(Box::new(extras_commands::RemoteSetupCommand));
+    reg.register(Box::new(extras_commands::RemoteEnvCommand));
+
     // Phase 3: Gap closure — clipboard, reasoning, and utility commands
     reg.register(Box::new(clipboard_commands::CopyCommand));
     reg.register(Box::new(reasoning_commands::EffortCommand));

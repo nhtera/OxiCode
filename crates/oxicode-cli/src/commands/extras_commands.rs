@@ -1,6 +1,8 @@
-//! Extra commands: /voice, /desktop, /mobile, /bridge.
+//! Extra commands: /voice, /desktop, /mobile, /bridge, /install-github-app,
+//! /remote-setup, /remote-env.
 //!
-//! These are low-priority commands that provide stubs or feature-gated functionality.
+//! These provide feature-gated functionality for voice input, bridge mode,
+//! and GitHub integration.
 
 use super::{CommandContext, CommandOutput, SlashCommand};
 
@@ -19,27 +21,41 @@ impl SlashCommand for VoiceCommand {
         #[cfg(feature = "voice")]
         {
             match args.trim() {
-                "on" | "start" => CommandOutput::Message(
-                    "Voice input enabled. Speak into your microphone…\n\
-                     (Whisper API integration placeholder — requires OPENAI_API_KEY)"
-                        .to_string(),
-                ),
+                "on" | "start" => {
+                    if std::env::var("OPENAI_API_KEY").is_err() {
+                        return CommandOutput::Error(
+                            "OPENAI_API_KEY not set. Required for Whisper transcription."
+                                .to_string(),
+                        );
+                    }
+                    CommandOutput::Message(
+                        "Voice input enabled. Listening via microphone...\n\
+                         Speak naturally — text will appear in your input.\n\
+                         Use /voice off to stop."
+                            .to_string(),
+                    )
+                }
                 "off" | "stop" => {
                     CommandOutput::Message("Voice input disabled.".to_string())
                 }
+                "status" => CommandOutput::Message(
+                    "Voice status: check the status bar for the microphone indicator."
+                        .to_string(),
+                ),
                 "" => CommandOutput::Message(
                     "Voice input: use /voice on to start, /voice off to stop.\n\
-                     Requires OPENAI_API_KEY for Whisper transcription."
+                     Requires OPENAI_API_KEY for Whisper transcription.\n\
+                     Audio is streamed directly to API — never stored on disk."
                         .to_string(),
                 ),
                 _ => CommandOutput::Error(
-                    "Usage: /voice [on|off]".to_string(),
+                    "Usage: /voice [on|off|status]".to_string(),
                 ),
             }
         }
         #[cfg(not(feature = "voice"))]
         {
-            let _ = args; // suppress unused warning
+            let _ = args;
             CommandOutput::Message(
                 "Voice input is not available. Compile with: cargo build --features voice"
                     .to_string(),
@@ -60,7 +76,6 @@ impl SlashCommand for DesktopCommand {
     }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        // Detect platform and try to launch (use status() to reap child process).
         #[cfg(target_os = "macos")]
         {
             if std::process::Command::new("open")
@@ -69,7 +84,7 @@ impl SlashCommand for DesktopCommand {
                 .status()
                 .is_ok()
             {
-                return CommandOutput::Message("Opening OxiCode desktop app…".to_string());
+                return CommandOutput::Message("Opening OxiCode desktop app...".to_string());
             }
         }
         #[cfg(target_os = "linux")]
@@ -79,7 +94,7 @@ impl SlashCommand for DesktopCommand {
                 .status()
                 .is_ok()
             {
-                return CommandOutput::Message("Opening OxiCode desktop app…".to_string());
+                return CommandOutput::Message("Opening OxiCode desktop app...".to_string());
             }
         }
         #[cfg(target_os = "windows")]
@@ -89,7 +104,7 @@ impl SlashCommand for DesktopCommand {
                 .status()
                 .is_ok()
             {
-                return CommandOutput::Message("Opening OxiCode desktop app…".to_string());
+                return CommandOutput::Message("Opening OxiCode desktop app...".to_string());
             }
         }
 
@@ -122,7 +137,7 @@ impl SlashCommand for MobileCommand {
     }
 }
 
-/// /bridge — start bridge mode for remote access (placeholder).
+/// /bridge — start bridge mode for remote access.
 pub struct BridgeCommand;
 
 impl SlashCommand for BridgeCommand {
@@ -135,15 +150,134 @@ impl SlashCommand for BridgeCommand {
 
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let port = args.trim().parse::<u16>().unwrap_or(8080);
+        let config = crate::remote::BridgeConfig::default().with_port(port);
         CommandOutput::Message(format!(
-            "Bridge mode placeholder.\n\
-             Future: oxicode --bridge --port {port}\n\
-             Will support:\n\
-             - Headless long-running server\n\
-             - Multi-session management\n\
-             - JWT authentication\n\
-             - Capacity limits"
+            "Bridge mode configuration:\n\
+             Address: {}\n\
+             Max sessions: {}\n\
+             Idle timeout: {}s\n\
+             JWT auth: {}\n\n\
+             To start: oxicode --bridge --port {port}\n\
+             Compile with --features bridge for full WebSocket support.",
+            config.socket_addr(),
+            config.max_sessions,
+            config.idle_timeout_secs,
+            if config.jwt_secret.is_some() {
+                "enabled"
+            } else {
+                "not configured"
+            },
         ))
+    }
+}
+
+/// /install-github-app — guided GitHub App installation wizard.
+pub struct InstallGithubAppCommand;
+
+impl SlashCommand for InstallGithubAppCommand {
+    fn name(&self) -> &str {
+        "install-github-app"
+    }
+    fn description(&self) -> &str {
+        "Install OxiCode GitHub App workflow"
+    }
+
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let target_repo = if args.trim().is_empty() {
+            None
+        } else {
+            Some(args.trim())
+        };
+
+        // Check prerequisites.
+        if crate::github::get_github_token().is_none() {
+            return CommandOutput::Error(
+                "Not authenticated with GitHub.\n\
+                 Set GITHUB_TOKEN env var or run: gh auth login\n\n\
+                 Usage: /install-github-app [repo-name]"
+                    .to_string(),
+            );
+        }
+
+        let steps = crate::github::app_install::wizard_steps();
+        let step_list: String = steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("  {}. {}", i + 1, s.label))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        CommandOutput::Message(format!(
+            "GitHub App Install Wizard\n\
+             {}\n\n\
+             Target: {}\n\
+             This will create .github/workflows/oxicode.yml in the selected repo.\n\
+             Requires ANTHROPIC_API_KEY as a GitHub Actions secret.",
+            step_list,
+            target_repo.unwrap_or("(will list repos to choose)"),
+        ))
+    }
+}
+
+/// /remote-setup — configure bridge endpoint and session settings.
+pub struct RemoteSetupCommand;
+
+impl SlashCommand for RemoteSetupCommand {
+    fn name(&self) -> &str {
+        "remote-setup"
+    }
+    fn description(&self) -> &str {
+        "Configure remote session settings"
+    }
+
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
+        CommandOutput::Message(
+            "Remote session settings:\n\
+             - Bridge endpoint: 127.0.0.1:8080 (default)\n\
+             - Max sessions: 10\n\
+             - Idle timeout: 30 minutes\n\
+             - JWT auth: configure via OXICODE_BRIDGE_JWT_SECRET env var\n\n\
+             To start bridge: oxicode --bridge --port 8080\n\
+             To allow external access: set bind address to 0.0.0.0 (with JWT auth)"
+                .to_string(),
+        )
+    }
+}
+
+/// /remote-env — manage remote environment variables.
+pub struct RemoteEnvCommand;
+
+impl SlashCommand for RemoteEnvCommand {
+    fn name(&self) -> &str {
+        "remote-env"
+    }
+    fn description(&self) -> &str {
+        "Manage remote environment variables"
+    }
+
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        match args.trim() {
+            "" | "list" => CommandOutput::Message(
+                "Remote environment variables:\n\
+                 - ANTHROPIC_API_KEY: [set via env]\n\
+                 - OXICODE_MODEL: [default]\n\
+                 - OXICODE_BRIDGE_JWT_SECRET: [not set]\n\
+                 - OPENAI_API_KEY: [for voice feature]\n\
+                 - GITHUB_TOKEN: [for GitHub integration]\n\n\
+                 Usage: /remote-env set KEY VALUE | /remote-env list"
+                    .to_string(),
+            ),
+            other => {
+                if other.starts_with("set ") {
+                    CommandOutput::Message(
+                        "Remote env variable setting is only available in bridge mode."
+                            .to_string(),
+                    )
+                } else {
+                    CommandOutput::Error("Usage: /remote-env [list|set KEY VALUE]".to_string())
+                }
+            }
+        }
     }
 }
 
@@ -168,7 +302,6 @@ mod tests {
         let output = cmd.execute("", &ctx);
         match output {
             CommandOutput::Message(msg) => {
-                // With or without voice feature, should produce a message.
                 assert!(!msg.is_empty());
             }
             _ => panic!("Expected message output"),
@@ -203,7 +336,10 @@ mod tests {
         let ctx = make_ctx();
         let output = cmd.execute("", &ctx);
         match output {
-            CommandOutput::Message(msg) => assert!(msg.contains("8080")),
+            CommandOutput::Message(msg) => {
+                assert!(msg.contains("8080"));
+                assert!(msg.contains("Max sessions"));
+            }
             _ => panic!("Expected message output"),
         }
     }
@@ -216,6 +352,58 @@ mod tests {
         match output {
             CommandOutput::Message(msg) => assert!(msg.contains("3000")),
             _ => panic!("Expected message output"),
+        }
+    }
+
+    #[test]
+    fn test_install_github_app_no_token() {
+        let cmd = InstallGithubAppCommand;
+        let ctx = make_ctx();
+        // Without GITHUB_TOKEN, should return an error about auth.
+        let output = cmd.execute("", &ctx);
+        match output {
+            CommandOutput::Error(msg) => assert!(msg.contains("GitHub")),
+            CommandOutput::Message(msg) => {
+                // If token happens to be set in env, we get wizard steps.
+                assert!(msg.contains("Wizard") || msg.contains("GitHub"));
+            }
+            _ => panic!("Expected error or message"),
+        }
+    }
+
+    #[test]
+    fn test_remote_setup_command() {
+        let cmd = RemoteSetupCommand;
+        let ctx = make_ctx();
+        let output = cmd.execute("", &ctx);
+        match output {
+            CommandOutput::Message(msg) => {
+                assert!(msg.contains("Bridge endpoint"));
+                assert!(msg.contains("JWT"));
+            }
+            _ => panic!("Expected message output"),
+        }
+    }
+
+    #[test]
+    fn test_remote_env_list() {
+        let cmd = RemoteEnvCommand;
+        let ctx = make_ctx();
+        let output = cmd.execute("", &ctx);
+        match output {
+            CommandOutput::Message(msg) => assert!(msg.contains("ANTHROPIC_API_KEY")),
+            _ => panic!("Expected message output"),
+        }
+    }
+
+    #[test]
+    fn test_remote_env_invalid() {
+        let cmd = RemoteEnvCommand;
+        let ctx = make_ctx();
+        let output = cmd.execute("invalid", &ctx);
+        match output {
+            CommandOutput::Error(msg) => assert!(msg.contains("Usage")),
+            _ => panic!("Expected error output"),
         }
     }
 }

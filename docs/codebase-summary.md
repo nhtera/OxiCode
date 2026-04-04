@@ -1,6 +1,6 @@
 # OxiCode — Codebase Summary
 
-**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Scope:** Phase 6 Complete (TUI Advanced Dialogs & Vim Depth) | **Total:** 17 crates, 46 oxicode-tools files, ~130K tokens
+**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Scope:** Phase 7 Complete (Voice, Bridge, Telemetry & GitHub Integration) | **Total:** 20 crates, 46 oxicode-tools files, ~156K tokens
 
 ---
 
@@ -64,6 +64,16 @@
     │  oxicode-plugins (Registry, Trust, Hot-Reload)  │
     │  oxicode-config enhanced (Enterprise Settings)   │
     └───────────┬────────────────────────────────────┘
+                │
+    ┌───────────┴──────────────────────────────────┐
+    │    PHASE 7: VOICE, BRIDGE, TELEMETRY, GITHUB  │
+    │                                               │
+    │  oxicode-voice ─ oxicode-remote ── oxicode-  │
+    │  (Whisper)       (WebSocket)      telemetry  │
+    │                                   (OTLP)     │
+    │                                               │
+    │  oxicode-github (App, Workflows)             │
+    └───────────┬──────────────────────────────────┘
                 │
     ┌───────────┴──────────────────────────────────┐
     │          INTEGRATION & USER-FACING LAYER         │
@@ -564,7 +574,162 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 
 ---
 
-### Layer 6: Integration & User-Facing
+### Layer 7: Phase 7 — Voice, Bridge, Telemetry & GitHub
+
+#### oxicode-voice (~400 LOC, feature-gated: `voice`)
+**Purpose:** Real-time voice capture, speech-to-text via Whisper API
+
+**Key exports:**
+- `AudioCapture` — cpal microphone management
+- `VoiceActivityDetector` — Silence detection + noise filtering
+- `WhisperClient` — Async Whisper API client with retry logic
+- `VoiceCommandParser` — Parse transcribed text as commands/input
+
+**Files:**
+- audio_capture.rs — PCM buffer handling, device enumeration
+- vad.rs — Voice activity detection
+- whisper_client.rs — API client + streaming response parsing
+- voice_command_parser.rs — Command/text parsing from transcription
+
+**Commands:**
+- `/voice on|off|status` — Control voice input
+
+**TUI Integration:**
+- Status bar shows 🎤 with color state (green/yellow/red)
+
+**Feature Flag:** `voice` (requires cpal, hound)
+
+**Used by:** TUI (voice input events), QueryEngine (message assembly)
+
+---
+
+#### oxicode-remote (~420 LOC, feature-gated: `bridge`)
+**Purpose:** WebSocket bridge for multi-device session control
+
+**Key exports:**
+- `BridgeServer` — WebSocket server, session routing
+- `BridgeClient` — Client connection to remote endpoint
+- `SessionPool` — Multiplexed session management with JWT auth
+- `MessageRelay` — Relay QueryEngine messages between endpoints
+- `JwtAuth` — Token generation + validation
+
+**Files:**
+- bridge_server.rs — WebSocket listener, session pool
+- bridge_client.rs — Client to connect to remote bridge
+- session_pool.rs — JWT validation, session routing
+- message_relay.rs — Message forwarding logic
+- auth.rs — JWT token handling
+- error.rs — Error types for bridge ops
+
+**Commands:**
+- `/remote-setup` — Configure bridge endpoint
+- `/bridge [port]` — Start local bridge server
+- `/remote-env [list|set KEY VALUE]` — Manage remote environment
+
+**Features:**
+- Session pool with separate JWT tokens per session
+- Message relay for tool results, state updates
+- Automatic reconnect on timeout
+- Remote environment variable sync
+
+**Feature Flag:** `bridge` (requires tokio-tungstenite, jsonwebtoken)
+
+**Used by:** CLI (/remote-* commands), QueryEngine (message relay)
+
+---
+
+#### oxicode-telemetry (~380 LOC, feature-gated: `telemetry-otlp`)
+**Purpose:** Structured event collection + OTLP export
+
+**Key exports:**
+- `TelemetryCollector` — Event buffering, batching
+- `TelemetryEvent` — Event schema (type, timestamp, metadata)
+- `NdjsonLogger` — Local persistence (NDJSON + rotation)
+- `OtlpExporter` — OpenTelemetry Protocol HTTP export
+- `MetricsAggregator` — Counters, histograms, gauges
+
+**Files:**
+- collector.rs — Event collection + batching
+- event.rs — TelemetryEvent schema definition
+- ndjson_logger.rs — Local NDJSON persistence with rotation
+- otlp_exporter.rs — OTLP HTTP export (configurable endpoint)
+- metrics.rs — Metric aggregation
+
+**Event Types:**
+- LlmRequest (model, input tokens, latency)
+- LlmResponse (output tokens, latency, stop_reason)
+- ToolExecution (name, latency, status)
+- CommandExecuted (command, result)
+- PermissionCheck (decision: allow/deny/ask)
+- Error (error_type, message)
+
+**Commands:**
+- `/telemetry status` — Show collected events
+- `/telemetry export` — Manually trigger OTLP export
+- `/telemetry clear` — Clear local event log
+
+**Configuration:**
+```toml
+[telemetry]
+enabled = true
+local_path = "~/.oxicode/telemetry/"
+otlp_endpoint = "http://localhost:4318"
+batch_size = 100
+flush_interval_secs = 60
+```
+
+**Feature Flag:** `telemetry-otlp` (requires opentelemetry, opentelemetry-otlp)
+
+**Used by:** QueryEngine (LLM/tool event hooks), TUI (command events), CLI (status)
+
+---
+
+#### oxicode-github (~380 LOC, no feature gate)
+**Purpose:** GitHub App installation + workflow generation
+
+**Key exports:**
+- `AppInstaller` — Guided GitHub App setup wizard
+- `WorkflowGenerator` — Generate `.github/workflows/*.yml` files
+- `GitHubClient` — GitHub API client (authenticated)
+- `AppConfig` — App manifest configuration
+- `WorkflowTemplate` — Workflow YAML builder
+
+**Files:**
+- app_installer.rs — Installation flow (manifest → OAuth → callback)
+- workflow_generator.rs — Generate workflow YAML files
+- github_client.rs — GitHub API wrapper (repos, workflows, PRs)
+- app_config.rs — App manifest + permissions
+- workflow_templates.rs — Pre-built workflow templates
+- error.rs — GitHub API error handling
+
+**Commands:**
+- `/install-github-app [repo]` — Guided GitHub App installer
+  - Displays GitHub App manifest URL
+  - Handles OAuth callback (localhost:8080)
+  - Generates `.github/workflows/*.yml`
+  - Tests initial workflow
+
+**Generated Workflows:**
+1. oxicode-workflow-basic.yml — Standard analysis on PR
+2. oxicode-workflow-advanced.yml — Multi-model, cost reporting
+3. oxicode-workflow-custom.yml — User-configured actions
+
+**GitHub App Permissions:**
+- contents:read — Read code + workflows
+- pull_requests:read — Read PR details
+- pull_requests:write — Create PR comments
+- workflows:write — Create/update workflows
+- checks:write — Report check runs
+
+**Features:**
+- Manifest-based setup (no manual GitHub App creation)
+- Pre-built workflow templates (customizable)
+- GitHub status checks integration
+- `@oxicode-bot` comment triggers
+
+**Used by:** CLI (/install-github-app command), workflow automation
+
+---
 
 #### oxicode-mcp (~200 LOC)
 **Purpose:** MCP (Model Context Protocol) server wrapper for external tools
@@ -681,15 +846,16 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 
 | Metric | Value |
 |--------|-------|
-| Total Crates | 17 |
-| Total Files | 131 |
-| Total Tokens | 130,500 |
-| Total Chars | 480,000 |
-| LOC (non-test) | ~6,200 |
-| Test LOC | ~2,800 |
+| Total Crates | 20 |
+| Total Files | 155 |
+| Total Tokens | 156,000 |
+| Total Chars | 580,000 |
+| LOC (non-test) | ~7,200 |
+| Test LOC | ~3,000 |
 | Unsafe Code | 0 (forbidden) |
 | Panics in Prod | 0 |
 | TUI Tests | 81 (was ~50 in Phase 5)
+| Total Tests | 756 workspace (was 700 in Phase 6)
 
 ### Top 5 Files by Size
 1. openai_compatible.rs — 3,681 tokens (3.6%)
@@ -715,10 +881,14 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 | **oxicode-skills** | **350** | **Skills system (P4)** |
 | **oxicode-tasks** | **380** | **Background tasks (P4)** |
 | **oxicode-plugins** | **2,100** | **Plugin marketplace + registry (P5)** |
+| **oxicode-voice** | **400** | **Voice input + Whisper (P7)** |
+| **oxicode-remote** | **420** | **WebSocket bridge + session pool (P7)** |
+| **oxicode-telemetry** | **380** | **OTLP event collection (P7)** |
+| **oxicode-github** | **380** | **GitHub App + workflows (P7)** |
 | oxicode-mcp | 200 | MCP bridging |
 | oxicode-tui | 800 | Terminal UI (P6: +200 LOC for vim depth + dialogs) |
 | oxicode-cli | 400 | Commands/REPL (P6: +16 new commands) |
-| **Total** | **~9,060** | **17 crates + Phase 6 enhancements** |
+| **Total** | **~10,360** | **20 crates + Phase 7 enhancements** |
 
 ---
 
@@ -917,11 +1087,9 @@ cargo build --release
 
 ## Next Steps (Phase 7+)
 
-1. ✅ **Phase 6 COMPLETE** — Advanced TUI dialogs, vim text objects, 16 new commands
-2. **Phase 7:** Server improvements, team UI enhancements
-3. **Bug fixes:** Monitor performance of new text object operators
-4. **Observability:** Extended metrics for dialog interactions
-5. **Community:** Marketplace plugins + advanced features
+1. ✅ **Phase 7 COMPLETE** — Voice input, bridge mode, telemetry/OTLP, GitHub integration
+2. **Phase 8:** UX Polish — Vim mode, keybindings, onboarding (COMPLETE ✓)
+3. **Phase 9+:** Advanced features — OAuth, GitHub SSO, advanced team features
 
 ---
 

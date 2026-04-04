@@ -12,9 +12,12 @@ default = []
 remote = ["oxicode-tasks/remote", "oxicode-tools/remote"]
 dream = ["oxicode-tasks/dream", "oxicode-tools/dream"]
 teammate = ["oxicode-tasks/teammate", "oxicode-tools/teammate"]
-voice = []
+voice = ["dep:cpal"]
+bridge = ["dep:tokio-tungstenite", "dep:jsonwebtoken"]
+telemetry-otlp = ["dep:opentelemetry", "dep:opentelemetry-otlp"]
 enterprise = []
-all = ["remote", "dream", "teammate", "voice", "enterprise"]
+full = ["voice", "bridge", "telemetry-otlp"]
+all = ["remote", "dream", "teammate", "voice", "bridge", "telemetry-otlp", "enterprise"]
 
 [[bin]]
 name = "oxicode"
@@ -52,6 +55,14 @@ toml = { workspace = true }
 anyhow = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
+base64 = "0.22"
+
+# Feature-gated dependencies (Phase 7)
+cpal = { version = "0.15", optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+jsonwebtoken = { version = "9", optional = true }
+opentelemetry = { version = "0.22", optional = true }
+opentelemetry-otlp = { version = "0.15", optional = true, features = ["http-proto"] }
 
 [dev-dependencies]
 criterion = { workspace = true }

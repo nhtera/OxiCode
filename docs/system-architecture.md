@@ -1,6 +1,6 @@
 # OxiCode — System Architecture
 
-**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Phase:** 6 (TUI Advanced Dialogs & Vim Depth) | **Cumulative:** Phase 1-8 + Phase 5 plugin/enterprise + Phase 6 vim/dialogs
+**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Phase:** 7 (Voice, Bridge, Telemetry & GitHub Integration) | **Cumulative:** Phase 1-8 + Phase 5 plugin/enterprise + Phase 6 vim/dialogs + Phase 7 voice/bridge/telemetry/github
 
 ## Architecture Overview
 
@@ -994,8 +994,250 @@ EnterpriseSettingsResponse {
 
 ---
 
-## Next Steps (Phase 9+)
+## Phase 7: Voice, Bridge, Telemetry & GitHub Integration
 
-1. **Phase 9 (Enterprise):** OAuth, GitHub SSO, telemetry, audit logging
-2. **Phase 10 (Extras):** Voice input, advanced bridging, community plugins
+### Voice Input Module (`voice/` — feature-gated: `voice`)
+
+**Purpose:** Real-time voice capture and speech-to-text via Whisper API
+
+**Architecture:**
+```
+Microphone (cpal)
+  ↓
+Audio Buffer (PCM)
+  ↓
+VAD (Voice Activity Detection)
+  ↓
+Whisper API
+  ↓
+Transcription (text)
+```
+
+**Key components:**
+- **`audio_capture.rs`** — cpal microphone device management, PCM buffer handling
+- **`vad.rs`** — Voice activity detection (silence detection, noise filtering)
+- **`whisper_client.rs`** — Async Whisper API calls, retry logic
+- **`voice_command_parser.rs`** — Parse transcribed text as slash commands or user input
+
+**Commands:**
+- `/voice on` — Enable microphone capture, start listening
+- `/voice off` — Disable capture, stop listening
+- `/voice status` — Show current state (listening/idle/error)
+
+**TUI Integration:**
+- Status bar shows 🎤 indicator with color state:
+  - Green: actively listening
+  - Yellow: processing
+  - Red: error or disabled
+
+**Feature Flag:** Add to `Cargo.toml`:
+```toml
+[features]
+voice = ["cpal", "hound"]
+```
+
+**Dependencies:** cpal (audio), hound (WAV), reqwest (Whisper API)
+
+---
+
+### Remote Bridge Mode (`remote/` — feature-gated: `bridge`)
+
+**Purpose:** Bridge OxiCode sessions over WebSocket, enabling multi-device control
+
+**Architecture:**
+```
+Local OxiCode Instance
+  ↓ (WebSocket)
+Bridge Server (remote endpoint)
+  ↓ (session pool)
+Remote OxiCode Instance
+  ↓
+Local LLM/Services
+```
+
+**Key components:**
+- **`bridge_server.rs`** — WebSocket server, session routing
+- **`bridge_client.rs`** — Client to connect to remote bridge endpoint
+- **`session_pool.rs`** — Manage multiplexed sessions, JWT auth
+- **`message_relay.rs`** — Relay QueryEngine messages between endpoints
+- **`auth.rs`** — JWT token generation + validation
+
+**Commands:**
+- `/remote-setup` — Configure bridge endpoint (URL, optional auth)
+- `/bridge [port]` — Start local bridge server on port (default 8765)
+- `/remote-env list` — List remote environment variables
+- `/remote-env set KEY VALUE` — Set remote env var (persisted)
+
+**Features:**
+- **Session Pool:** Multiple concurrent sessions with separate JWT tokens
+- **Message Relay:** Tool results, LLM responses, state updates streamed back
+- **Error Recovery:** Automatic reconnect on timeout, graceful degradation
+- **Env Sync:** Remote environment variables accessible to tools
+
+**Feature Flag:**
+```toml
+[features]
+bridge = ["tokio-tungstenite", "jsonwebtoken"]
+```
+
+**Dependencies:** tokio-tungstenite (WebSocket), jsonwebtoken (JWT), uuid
+
+---
+
+### Telemetry Pipeline (`telemetry_pipeline/` — feature-gated: `telemetry-otlp`)
+
+**Purpose:** Structured event collection and export via OpenTelemetry (OTLP protocol)
+
+**Architecture:**
+```
+LLM Events (token counts, latency)
+Tool Events (execution time, errors)
+User Events (commands, tool uses)
+  ↓
+Event Collector
+  ↓
+├─ Local NDJSON Logger (~/.oxicode/telemetry/*.jsonl)
+└─ OTLP Exporter (configurable endpoint)
+  ↓
+Telemetry Backend (Jaeger, DataDog, etc)
+```
+
+**Key components:**
+- **`collector.rs`** — Event collection, buffering, batching
+- **`event.rs`** — Event schema (OxiTelemetryEvent with timestamp, type, metadata)
+- **`ndjson_logger.rs`** — Local persistence (NDJSON format with rotation)
+- **`otlp_exporter.rs`** — OpenTelemetry Protocol (OTLP) HTTP exporter
+- **`metrics.rs`** — Metric aggregation (counters, histograms, gauges)
+
+**Event Types:**
+```rust
+pub enum TelemetryEventType {
+    LlmRequest { model, tokens_in, latency_ms },
+    LlmResponse { tokens_out, latency_ms, stop_reason },
+    ToolExecution { name, latency_ms, status (success/error) },
+    CommandExecuted { command, result },
+    PermissionCheck { decision (allow/deny/ask) },
+    Error { error_type, message },
+}
+```
+
+**Commands:**
+- `/telemetry status` — Show collected events, export status
+- `/telemetry export` — Manually trigger OTLP export
+- `/telemetry clear` — Clear local event log
+
+**Configuration:**
+```toml
+[telemetry]
+enabled = true
+local_path = "~/.oxicode/telemetry/"
+otlp_endpoint = "http://localhost:4318"  # OpenTelemetry HTTP endpoint
+batch_size = 100
+flush_interval_secs = 60
+```
+
+**Feature Flag:**
+```toml
+[features]
+telemetry-otlp = ["opentelemetry", "opentelemetry-otlp"]
+```
+
+**Dependencies:** opentelemetry, opentelemetry-otlp (OTLP export), serde_json
+
+---
+
+### GitHub Integration (`github/` — included by default)
+
+**Purpose:** GitHub App installation wizard and workflow generation for repository automation
+
+**Architecture:**
+```
+GitHub App Manifest
+  ↓
+OxiCode Install Wizard
+  ↓
+GitHub OAuth Flow
+  ↓
+Workflow File Generation
+  ↓
+GitHub Actions Integration
+```
+
+**Key components:**
+- **`app_installer.rs`** — Guided GitHub App installation (manifest → redirect → OAuth)
+- **`workflow_generator.rs`** — Generate `.github/workflows/*.yml` files
+- **`github_client.rs`** — GitHub API client (authenticated via App token)
+- **`app_config.rs`** — App manifest configuration (permissions, events, webhooks)
+
+**Commands:**
+- `/install-github-app [repo]` — Launch guided installer
+  - Displays GitHub App manifest URL
+  - Waits for OAuth callback (localhost:8080)
+  - Generates workflow files in `.github/workflows/`
+  - Tests initial workflow execution
+
+**Generated Workflows:**
+1. **oxicode-workflow-basic.yml** — Standard OxiCode analysis on PR
+2. **oxicode-workflow-advanced.yml** — Multi-model comparison, cost reporting
+3. **oxicode-workflow-custom.yml** — User-configured actions
+
+**Workflow Features:**
+- Runs OxiCode on PR comments (e.g., `@oxicode-bot analyze`)
+- Code quality checks via LLM reasoning
+- Automatic commit suggestions
+- Status checks integration
+
+**GitHub App Permissions:**
+- `contents:read` — Read repo code + workflows
+- `pull_requests:read` — Read PR details
+- `pull_requests:write` — Create PR comments
+- `workflows:write` — Create/update workflow files
+- `checks:write` — Report check runs
+
+**Configuration:**
+```toml
+[github]
+app_name = "oxicode"
+app_id = "123456"
+webhook_secret = "secret"
+```
+
+**Features:**
+- **Manifest-based Setup** — No manual GitHub App creation
+- **Workflow Templates** — Pre-built, customizable workflows
+- **Status Checks** — Integrates with GitHub branch protection
+- **Comment Triggers** — Listen for `@oxicode-bot` mentions in PR comments
+
+---
+
+## Cargo Features
+
+**Feature combinations for Phase 7:**
+
+```toml
+[features]
+default = ["bridge"]
+voice = ["cpal", "hound"]
+bridge = ["tokio-tungstenite", "jsonwebtoken"]
+telemetry-otlp = ["opentelemetry", "opentelemetry-otlp"]
+github = []  # Included by default
+full = ["voice", "bridge", "telemetry-otlp"]  # All Phase 7 features
+```
+
+**Build commands:**
+```bash
+cargo build --features voice                    # Voice only
+cargo build --features bridge                   # Bridge only
+cargo build --features telemetry-otlp           # Telemetry only
+cargo build --features full                     # All Phase 7
+cargo build --all-features                      # Everything
+```
+
+---
+
+## Next Steps (Phase 8+)
+
+1. **Phase 8 (UX Polish):** Vim mode, keybindings, onboarding wizard (COMPLETE ✓)
+2. **Phase 9 (Enterprise):** OAuth, GitHub SSO, advanced audit logging
+3. **Phase 10 (Extras):** Advanced bridging modes, community plugins, voice optimization
 

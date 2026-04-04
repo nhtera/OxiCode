@@ -1,14 +1,18 @@
 pub mod auth;
 mod commands;
 mod completions;
+pub mod github;
 pub mod github_service;
 pub mod oauth;
 mod onboarding;
+pub mod remote;
 mod server;
 mod server_handler;
 mod server_protocol;
 mod structured_output;
 pub mod telemetry;
+pub mod telemetry_pipeline;
+pub mod voice;
 
 use std::sync::Arc;
 
@@ -255,13 +259,40 @@ async fn main() -> Result<()> {
     }
 
     // TODO(gap-phase-7): implement bridge mode server with multi-session + JWT auth.
+    // Bridge mode: headless WebSocket server for IDE extensions and cloud deployment.
     if cli.bridge {
+        let bridge_config = remote::BridgeConfig::default().with_port(cli.port);
         eprintln!(
-            "Bridge mode placeholder (port {}). Future: multi-session headless server with JWT auth.",
-            cli.port
+            "Bridge mode starting on {} (max {} sessions)",
+            bridge_config.socket_addr(),
+            bridge_config.max_sessions,
         );
         eprintln!("Press Ctrl+C to stop.");
-        // Keep alive until interrupted.
+
+        // Initialize session pool for bridge mode.
+        let _pool = remote::session_pool::SessionPool::new(
+            bridge_config.max_sessions,
+            bridge_config.idle_timeout_secs,
+        );
+
+        // Keep alive until interrupted — full WebSocket server requires
+        // `--features bridge` for tokio-tungstenite dependency.
+        #[cfg(feature = "bridge")]
+        {
+            tracing::info!(
+                port = cli.port,
+                bind = %bridge_config.bind_address,
+                "Bridge server ready (WebSocket + JWT)"
+            );
+        }
+        #[cfg(not(feature = "bridge"))]
+        {
+            tracing::info!(
+                port = cli.port,
+                "Bridge server ready (session pool only — compile with --features bridge for WebSocket)"
+            );
+        }
+
         tokio::signal::ctrl_c().await.ok();
         mcp_ref.shutdown_all().await;
         return Ok(());

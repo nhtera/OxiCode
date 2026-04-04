@@ -17,6 +17,8 @@ pub struct StatusBar<'a> {
     vim_badge: &'a str,
     /// Auth status label (e.g. "⚡ user@example.com", "🔑 sk-...XXXX", or empty).
     auth_label: &'a str,
+    /// Voice mode indicator (e.g. "listening", "processing", or empty if off).
+    voice_status: &'a str,
 }
 
 impl<'a> StatusBar<'a> {
@@ -30,6 +32,7 @@ impl<'a> StatusBar<'a> {
             session_name: "",
             vim_badge: "",
             auth_label: "",
+            voice_status: "",
         }
     }
 
@@ -60,6 +63,12 @@ impl<'a> StatusBar<'a> {
     /// Set auth status label for display (e.g. "⚡ user@example.com").
     pub fn with_auth_label(mut self, label: &'a str) -> Self {
         self.auth_label = label;
+        self
+    }
+
+    /// Set voice mode status indicator (e.g. "listening", "processing").
+    pub fn with_voice_status(mut self, status: &'a str) -> Self {
+        self.voice_status = status;
         self
     }
 }
@@ -177,6 +186,23 @@ impl Widget for StatusBar<'_> {
             )
         };
 
+        // Voice mode indicator.
+        let voice_span = if self.voice_status.is_empty() {
+            Span::raw("")
+        } else {
+            let (icon, color) = match self.voice_status {
+                "listening" => ("\u{1f3a4}", Color::Red),     // 🎤 red when recording
+                "processing" => ("\u{1f3a4}", Color::Yellow), // 🎤 yellow when processing
+                _ => ("\u{1f3a4}", Color::DarkGray),
+            };
+            Span::styled(
+                format!(" {icon} {}", self.voice_status),
+                Style::default()
+                    .fg(color)
+                    .add_modifier(Modifier::BOLD),
+            )
+        };
+
         let line = Line::from(vec![
             status,
             provider_span,
@@ -185,6 +211,7 @@ impl Widget for StatusBar<'_> {
             cost_span,
             mcp_span,
             auth_span,
+            voice_span,
             vim_span,
             session_span,
         ]);

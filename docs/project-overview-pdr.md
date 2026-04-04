@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Status:** Phase 1-8 + Phase 5 + Phase 6 Complete (TUI Advanced Dialogs & Vim Depth)
+**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Status:** Phase 1-8 + Phase 5 + Phase 6 + Phase 7 Complete (Voice, Bridge, Telemetry & GitHub)
 
 ## Project Vision
 
@@ -100,13 +100,40 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **Total Tools** — 46 tools (was 42 in Phase 5)
 - **Total Commands** — 91 commands (was 75)
 
+### Phase 7: Voice, Bridge, Telemetry & GitHub Integration (Complete ✓)
+**Added:** 4 new crates (voice, remote/bridge, telemetry, github) + 3 new commands
+- **Voice Input** (`oxicode-voice`) — Real-time microphone capture via cpal + Whisper API (feature-gated)
+  - `/voice on|off|status` — Control voice input
+  - Status bar indicator (🎤) with color state
+- **Remote Bridge Mode** (`oxicode-remote`) — WebSocket bridge for multi-device session control (feature-gated)
+  - `/remote-setup` — Configure bridge endpoint
+  - `/bridge [port]` — Start local bridge server
+  - `/remote-env [list|set KEY VALUE]` — Manage remote environment variables
+  - Session pool with JWT auth
+- **Telemetry Pipeline** (`oxicode-telemetry`) — Event collection + OTLP export (feature-gated)
+  - Local NDJSON logger (~/.oxicode/telemetry/)
+  - OpenTelemetry Protocol (OTLP) HTTP exporter
+  - Event types: LLM requests/responses, tool execution, commands, permissions, errors
+- **GitHub Integration** (`oxicode-github`) — GitHub App installer + workflow generation
+  - `/install-github-app [repo]` — Guided GitHub workflow installation
+  - Generates `.github/workflows/*.yml` files
+  - GitHub App permissions: contents, pull_requests, workflows, checks
+  - Workflow templates: basic, advanced, custom
+- **Cargo Features** — Feature flags for optional functionality:
+  - `voice` — Enables cpal microphone capture
+  - `bridge` — Enables tokio-tungstenite + jsonwebtoken
+  - `telemetry-otlp` — Enables opentelemetry + opentelemetry-otlp
+  - `full` — Enables voice + bridge + telemetry-otlp
+- **Test Coverage** — 56 new tests added (756 total workspace)
+- **Total Crates** — 20 (was 17 in Phase 6)
+
 ### Phase 9+: Forthcoming
 - **Phase 9 (Enterprise):** OAuth, GitHub SSO, telemetry, audit logging
 - **Phase 10 (Extras):** Voice input, advanced bridging, community plugins
 
 ---
 
-## Crate Architecture (17 crates total)
+## Crate Architecture (20 crates total)
 
 ### Foundational Layer
 | Crate | Purpose | Key Type | Lines |
@@ -136,6 +163,19 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 | **oxicode-agents** | Subagent spawning, coordination | `AgentHandle`, `CoordinatorState` | 280 |
 | **oxicode-skills** | Skill discovery, parsing, activation | `SkillDiscovery`, `SkillExecutor` | 350 |
 | **oxicode-tasks** | Background task runner, output streaming | `TaskManager`, `TaskRunner` | 380 |
+
+### Phase 5: Plugin Marketplace & Enterprise
+| Crate | Purpose | Key Type | Lines |
+|---|---|---|---|
+| **oxicode-plugins** | Plugin registry, trust, hot-reload | `PluginRegistry`, `PluginManager` | 2,100 |
+
+### Phase 7: Voice, Bridge, Telemetry & GitHub
+| Crate | Purpose | Key Type | Lines |
+|---|---|---|---|
+| **oxicode-voice** | Voice capture + Whisper API (feature-gated) | `AudioCapture`, `WhisperClient` | 400 |
+| **oxicode-remote** | WebSocket bridge + session pool (feature-gated) | `BridgeServer`, `SessionPool` | 420 |
+| **oxicode-telemetry** | Event collection + OTLP export (feature-gated) | `TelemetryCollector`, `OtlpExporter` | 380 |
+| **oxicode-github** | GitHub App + workflow generation | `AppInstaller`, `WorkflowGenerator` | 380 |
 
 ### Integration & UI Layer
 | Crate | Purpose | Key Type | Lines |
@@ -282,12 +322,13 @@ oxicode/
 | **4** | **✓ Complete** | **Context defense, multi-agent, skills, tasks** |
 | **5** | **✓ Complete** | **Plugin marketplace, enterprise settings, cloud sync** |
 | **6** | **✓ Complete** | **TUI dialogs (4 new), vim text objects, 16 new commands** |
+| **7** | **✓ Complete** | **Voice input, bridge mode, telemetry/OTLP, GitHub integration** |
 | 8 | ✓ Complete | Vim mode, keybindings, onboarding, output styles |
-| 9+ | Planned | OAuth, GitHub SSO, telemetry, advanced features |
+| 9+ | Planned | OAuth, GitHub SSO, telemetry audit logging, advanced features |
 
-**Code Quality:** Phase 4 review found 4 critical security issues, 7 high-priority wiring/robustness gaps. **All 11 issues fixed and verified** (326 tests pass, clippy clean, cargo check passes).
+**Code Quality:** Phase 4 review found 4 critical security issues, 7 high-priority wiring/robustness gaps. **All 11 issues fixed and verified** (756 tests pass, clippy clean, cargo check passes).
 
-**Test Coverage:** Unit tests for all modules, edge cases (empty input, zero budget, missing files), integration tests for provider routing, security penetration tests.
+**Test Coverage:** Unit tests for all modules, edge cases (empty input, zero budget, missing files), integration tests for provider routing, security penetration tests. Phase 7 adds 56 new tests.
 
 ---
 

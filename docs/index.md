@@ -1,6 +1,6 @@
 # OxiCode Documentation Index
 
-**Version:** 0.2.0 | **Last Updated:** 2026-04-04 | **Phase:** 6 Complete
+**Version:** 0.2.0 | **Last Updated:** 2026-04-04 | **Phase:** 7 Complete
 
 Welcome to OxiCode documentation. This is your guide to understanding, developing, and extending the system.
 
@@ -82,6 +82,68 @@ Advanced text object support with operators:
 - **Zero warnings:** Clippy approved
 
 **See:** [Code Standards → Testing Standards](./code-standards.md)
+
+---
+
+## What's New in Phase 7
+
+**Added 4 new crates for voice, bridge, telemetry, and GitHub integration:**
+
+### 1. Voice Input Module (`oxicode-voice`)
+Real-time microphone capture and speech-to-text:
+- **Audio Capture** — cpal microphone management, PCM buffer handling
+- **Voice Activity Detection** — Silence detection, noise filtering
+- **Whisper API** — Async speech-to-text with retry logic
+- **Commands** — `/voice on|off|status` control
+- **TUI Integration** — 🎤 status indicator with color state
+
+**See:** [System Architecture → Voice Input Module](./system-architecture.md#voice-input-module-voice--feature-gated-voice)
+
+### 2. Remote Bridge Mode (`oxicode-remote`)
+WebSocket bridge for multi-device session control:
+- **WebSocket Server** — Session routing, multiplexed connections
+- **JWT Authentication** — Token-based session validation
+- **Message Relay** — QueryEngine messages streamed between endpoints
+- **Commands** — `/remote-setup`, `/bridge [port]`, `/remote-env [list|set KEY VALUE]`
+- **Environment Sync** — Remote environment variables accessible to tools
+
+**See:** [System Architecture → Remote Bridge Mode](./system-architecture.md#remote-bridge-mode-remote--feature-gated-bridge)
+
+### 3. Telemetry Pipeline (`oxicode-telemetry`)
+Structured event collection and OpenTelemetry (OTLP) export:
+- **Event Collection** — LLM, tool, command, permission, error events
+- **Local Logger** — NDJSON format with automatic rotation (~/.oxicode/telemetry/)
+- **OTLP Exporter** — Send events to telemetry backends (Jaeger, DataDog, etc)
+- **Metrics** — Counters, histograms, gauges for analysis
+- **Commands** — `/telemetry status`, `/telemetry export`, `/telemetry clear`
+
+**See:** [System Architecture → Telemetry Pipeline](./system-architecture.md#telemetry-pipeline-telemetry_pipeline--feature-gated-telemetry-otlp)
+
+### 4. GitHub Integration (`oxicode-github`)
+GitHub App installation and workflow generation:
+- **App Installer** — Guided GitHub App setup with OAuth callback
+- **Workflow Generator** — Generate `.github/workflows/*.yml` files
+- **GitHub API** — Authenticated client for repos, PRs, workflows
+- **Commands** — `/install-github-app [repo]` guided setup
+- **Workflow Templates** — Basic, advanced, custom pre-built workflows
+
+**See:** [System Architecture → GitHub Integration](./system-architecture.md#github-integration-github--included-by-default)
+
+### 5. Cargo Features for Phase 7
+Optional feature flags for selective compilation:
+- `voice` — Enable microphone capture (requires cpal, hound)
+- `bridge` — Enable WebSocket bridge (requires tokio-tungstenite, jsonwebtoken)
+- `telemetry-otlp` — Enable OTLP export (requires opentelemetry, opentelemetry-otlp)
+- `full` — Enable all Phase 7 features (voice + bridge + telemetry-otlp)
+
+**See:** [System Architecture → Cargo Features](./system-architecture.md#cargo-features)
+
+### 6. Test Coverage Expansion
+- **New Tests:** 56 tests added (756 total workspace)
+- **Voice Tests:** Audio capture, VAD, Whisper client tests
+- **Bridge Tests:** WebSocket connection, JWT validation, message relay
+- **Telemetry Tests:** Event collection, NDJSON logging, OTLP export
+- **GitHub Tests:** App installer flow, workflow generation
 
 ---
 
@@ -399,6 +461,18 @@ Located in `../plans/reports/`:
 ---
 
 ## Changelog
+
+### Phase 7 (2026-04-04) ✓ Complete
+- Added oxicode-voice (real-time microphone + Whisper API)
+- Added oxicode-remote (WebSocket bridge mode)
+- Added oxicode-telemetry (event collection + OTLP export)
+- Added oxicode-github (GitHub App installation + workflows)
+- Added 3 new slash commands (/install-github-app, /remote-setup, /remote-env)
+- Added /voice command with on/off/status controls
+- Added /bridge command for local bridge server
+- Feature flags for selective compilation (voice, bridge, telemetry-otlp, full)
+- Extended test coverage: 56 new tests (756 total workspace)
+- Total crates: 20 (was 17 in Phase 6)
 
 ### Phase 6 (2026-04-04) ✓ Complete
 - Added 4 new TUI widgets (dialogs)
