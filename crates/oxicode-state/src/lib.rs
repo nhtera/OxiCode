@@ -1,3 +1,5 @@
+pub mod cost_tracker;
+
 use oxicode_common::{FeatureFlags, Message, RateLimitInfo, Usage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -45,6 +47,8 @@ pub struct AppState {
     pub last_rate_limit: Option<RateLimitSnapshot>,
     /// Auth status display label (e.g. "⚡ user@example.com" or "🔑 sk-...XXXX").
     pub auth_label: String,
+    /// Per-model cost tracking with persistence.
+    pub cost_tracker: cost_tracker::CostTracker,
 }
 
 /// Snapshot of a rate limit event for display in /status.
@@ -59,8 +63,10 @@ pub struct RateLimitSnapshot {
 
 impl Default for AppState {
     fn default() -> Self {
+        let session_id = Uuid::new_v4().to_string();
         Self {
-            session_id: Uuid::new_v4().to_string(),
+            cost_tracker: cost_tracker::CostTracker::new(session_id.clone()),
+            session_id,
             messages: Vec::new(),
             is_streaming: false,
             current_model: oxicode_common::constants::DEFAULT_MODEL.to_string(),
@@ -133,11 +139,22 @@ impl StateStore {
         });
     }
 
-    /// Accumulate usage from a response.
-    pub fn add_usage(&self, usage: &Usage) {
+    /// Accumulate usage from a response, including cache tokens and cost tracking.
+    pub fn add_usage(&self, usage: &Usage, model: &str) {
         self.update(|state| {
             state.total_usage.input_tokens += usage.input_tokens;
             state.total_usage.output_tokens += usage.output_tokens;
+            // Accumulate cache tokens (Phase 3 fix).
+            state.total_usage.cache_read_input_tokens = Some(
+                state.total_usage.cache_read_input_tokens.unwrap_or(0)
+                    + usage.cache_read_input_tokens.unwrap_or(0),
+            );
+            state.total_usage.cache_creation_input_tokens = Some(
+                state.total_usage.cache_creation_input_tokens.unwrap_or(0)
+                    + usage.cache_creation_input_tokens.unwrap_or(0),
+            );
+            // Update per-model cost tracker.
+            state.cost_tracker.record(model, usage);
         });
     }
 
@@ -232,11 +249,16 @@ mod tests {
         let usage = Usage {
             input_tokens: 100,
             output_tokens: 50,
-            ..Default::default()
+            cache_read_input_tokens: Some(20),
+            cache_creation_input_tokens: Some(10),
         };
-        store.add_usage(&usage);
-        assert_eq!(store.current().total_usage.input_tokens, 100);
-        assert_eq!(store.current().total_usage.output_tokens, 50);
+        store.add_usage(&usage, "claude-sonnet-4-20250514");
+        let state = store.current();
+        assert_eq!(state.total_usage.input_tokens, 100);
+        assert_eq!(state.total_usage.output_tokens, 50);
+        assert_eq!(state.total_usage.cache_read_input_tokens, Some(20));
+        assert_eq!(state.total_usage.cache_creation_input_tokens, Some(10));
+        assert!(state.cost_tracker.total_cost() > 0.0);
     }
 
     #[test]

@@ -189,7 +189,7 @@ impl SlashCommand for McpCommand {
     }
 }
 
-/// /cost — show token usage and estimated cost.
+/// /cost — show token usage and estimated cost with per-model breakdown.
 pub struct CostCommand;
 
 impl SlashCommand for CostCommand {
@@ -201,17 +201,52 @@ impl SlashCommand for CostCommand {
     }
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
+        use oxicode_state::cost_tracker::CostTracker;
+        use std::fmt::Write;
+
         let state = ctx.state_store.current();
-        let usage = &state.total_usage;
+        let tracker = &state.cost_tracker;
+        let total = tracker.total_cost();
+        let (total_in, total_out) = tracker.total_tokens();
 
-        // Rough cost estimates for Claude Sonnet.
-        let input_cost = f64::from(usage.input_tokens) * 3.0 / 1_000_000.0;
-        let output_cost = f64::from(usage.output_tokens) * 15.0 / 1_000_000.0;
-        let total = input_cost + output_cost;
+        let mut output = String::new();
+        let _ = writeln!(output, "Total cost: {}", CostTracker::format_cost(total));
+        if tracker.has_unknown_model {
+            let _ = writeln!(output, "(costs may be inaccurate — unknown model pricing used)");
+        }
+        let _ = writeln!(output, "Tokens: {total_in} in / {total_out} out");
 
-        CommandOutput::Message(format!(
-            "Tokens: {}in / {}out\nEstimated cost: ${total:.4} (${input_cost:.4} in + ${output_cost:.4} out)",
-            usage.input_tokens, usage.output_tokens,
-        ))
+        let summary = tracker.summary();
+        if summary.len() > 1 {
+            let _ = writeln!(output, "\nBy model:");
+            for (model, usage) in &summary {
+                let _ = writeln!(
+                    output,
+                    "  {model}: {} in / {} out ({}) {}",
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    CostTracker::format_cost(usage.cost_usd),
+                    if usage.cache_read_tokens > 0 || usage.cache_write_tokens > 0 {
+                        format!(
+                            "[cache: {} read, {} write]",
+                            usage.cache_read_tokens, usage.cache_write_tokens
+                        )
+                    } else {
+                        String::new()
+                    },
+                );
+            }
+        } else if let Some((model, usage)) = summary.first() {
+            let _ = writeln!(output, "Model: {model}");
+            if usage.cache_read_tokens > 0 || usage.cache_write_tokens > 0 {
+                let _ = writeln!(
+                    output,
+                    "Cache: {} read / {} write",
+                    usage.cache_read_tokens, usage.cache_write_tokens
+                );
+            }
+        }
+
+        CommandOutput::Message(output.trim_end().to_string())
     }
 }

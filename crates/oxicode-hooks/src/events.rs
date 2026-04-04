@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Hook lifecycle events (28 total: 10 core + 16 extended + 2 rate limit).
+/// Hook lifecycle events (29 total: 10 core + 16 extended + 2 rate limit + 1 cost).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookEvent {
@@ -69,6 +69,10 @@ pub enum HookEvent {
     RateLimitWarning,
     /// Fires when rate limit is exceeded (429).
     RateLimitExceeded,
+
+    // ── Cost events (Phase 3 gap-closure) ──
+    /// Fires after cost tracker is updated with new usage data.
+    CostUpdate,
 }
 
 impl HookEvent {
@@ -105,6 +109,8 @@ impl HookEvent {
         // Rate limit
         Self::RateLimitWarning,
         Self::RateLimitExceeded,
+        // Cost
+        Self::CostUpdate,
     ];
 
     /// Event name as used in config keys.
@@ -138,6 +144,7 @@ impl HookEvent {
             Self::PermissionDeny => "permission_deny",
             Self::RateLimitWarning => "rate_limit_warning",
             Self::RateLimitExceeded => "rate_limit_exceeded",
+            Self::CostUpdate => "cost_update",
         }
     }
 }
@@ -179,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_all_events_count() {
-        assert_eq!(HookEvent::ALL.len(), 28);
+        assert_eq!(HookEvent::ALL.len(), 29);
     }
 
     #[test]

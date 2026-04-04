@@ -276,7 +276,7 @@ impl QueryEngine {
                     }
                 }
                 StreamEvent::UsageUpdate(usage) => {
-                    self.state_store.add_usage(&usage);
+                    self.state_store.add_usage(&usage, &self.model);
                     assistant_msg.usage = Some(usage);
                 }
                 StreamEvent::MessageStop { stop_reason } => {

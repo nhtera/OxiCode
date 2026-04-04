@@ -188,7 +188,7 @@ impl SlashCommand for RenameCommand {
     }
 }
 
-/// /usage — show combined token usage, cost, model, duration.
+/// /usage — show detailed token breakdown per model with cache tokens.
 pub struct UsageCommand;
 impl SlashCommand for UsageCommand {
     fn name(&self) -> &str {
@@ -198,31 +198,36 @@ impl SlashCommand for UsageCommand {
         "Show token usage and session statistics"
     }
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
+        use oxicode_state::cost_tracker::CostTracker;
+        use std::fmt::Write;
+
         let state = ctx.state_store.current();
-        let usage = &state.total_usage;
+        let tracker = &state.cost_tracker;
         let msg_count = state.messages.len();
+        let (total_in, total_out) = tracker.total_tokens();
 
-        // Rough cost estimates — rates vary by provider/model.
-        let (in_rate, out_rate) = match ctx.provider_name.as_str() {
-            "openai" => (2.5, 10.0),      // GPT-4o approx
-            "google" | "gemini" => (1.25, 5.0), // Gemini 1.5 Pro approx
-            _ => (3.0, 15.0),             // Anthropic Claude Sonnet default
-        };
-        let input_cost = f64::from(usage.input_tokens) * in_rate / 1_000_000.0;
-        let output_cost = f64::from(usage.output_tokens) * out_rate / 1_000_000.0;
-        let total_cost = input_cost + output_cost;
+        let mut output = String::new();
+        let _ = writeln!(output, "Session: {}", ctx.session_id);
+        let _ = writeln!(output, "Model: {}", ctx.model);
+        let _ = writeln!(output, "Provider: {}", ctx.provider_name);
+        let _ = writeln!(output, "Messages: {msg_count}");
+        let _ = writeln!(output, "Total tokens: {total_in} in / {total_out} out");
+        let _ = writeln!(output, "Total cost: {}", CostTracker::format_cost(tracker.total_cost()));
 
-        CommandOutput::Message(format!(
-            "Session: {}\n\
-             Model: {}\n\
-             Provider: {}\n\
-             Messages: {msg_count}\n\
-             Tokens: {} in / {} out\n\
-             Est. cost: ${total_cost:.4} (${input_cost:.4} in + ${output_cost:.4} out)\n\
-             (rates approximate for {})",
-            ctx.session_id, ctx.model, ctx.provider_name,
-            usage.input_tokens, usage.output_tokens, ctx.provider_name,
-        ))
+        let summary = tracker.summary();
+        if !summary.is_empty() {
+            let _ = writeln!(output, "\nToken breakdown:");
+            for (model, usage) in &summary {
+                let _ = writeln!(output, "  {model}:");
+                let _ = writeln!(output, "    Input:       {}", usage.input_tokens);
+                let _ = writeln!(output, "    Output:      {}", usage.output_tokens);
+                let _ = writeln!(output, "    Cache read:  {}", usage.cache_read_tokens);
+                let _ = writeln!(output, "    Cache write: {}", usage.cache_write_tokens);
+                let _ = writeln!(output, "    Cost:        {}", CostTracker::format_cost(usage.cost_usd));
+            }
+        }
+
+        CommandOutput::Message(output.trim_end().to_string())
     }
 }
 
