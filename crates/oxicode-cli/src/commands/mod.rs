@@ -5,6 +5,8 @@
 pub mod agent_commands;
 pub mod clipboard_commands;
 pub mod debug_commands;
+pub mod diagnostic_commands;
+pub mod discovery_commands;
 pub mod enterprise_commands;
 pub mod extras_commands;
 pub mod general;
@@ -14,6 +16,7 @@ pub mod hook_commands;
 pub mod info_commands;
 pub mod mcp_commands;
 pub mod new_commands;
+pub mod onboarding_commands;
 pub mod plan_commands;
 pub mod plugin_commands;
 pub mod project_detect;
@@ -325,6 +328,21 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(session_extras::BtwCommand));
     reg.register(Box::new(session_extras::ThinkbackCommand));
     reg.register(Box::new(session_extras::ReleaseNotesCommand));
+
+    // Phase 4 (gap-closure): Onboarding command
+    reg.register(Box::new(onboarding_commands::OnboardingCommand));
+
+    // Phase 4 (gap-closure): Discovery commands (dream, bughunter, ctx_viz, autofix-pr, backfill-sessions)
+    reg.register(Box::new(discovery_commands::DreamCommand));
+    reg.register(Box::new(discovery_commands::BughunterCommand));
+    reg.register(Box::new(discovery_commands::CtxVizCommand));
+    reg.register(Box::new(discovery_commands::AutofixPrCommand));
+    reg.register(Box::new(discovery_commands::BackfillSessionsCommand));
+
+    // Phase 4 (gap-closure): Diagnostic commands (heapdump, perf-issue, ant-trace)
+    reg.register(Box::new(diagnostic_commands::HeapdumpCommand));
+    reg.register(Box::new(diagnostic_commands::PerfIssueCommand));
+    reg.register(Box::new(diagnostic_commands::AntTraceCommand));
 
     // Phase 6: Info commands (/advisor, /insights, /stickers, /passes, /rate-limit-options, /reload-plugins)
     reg.register(Box::new(info_commands::AdvisorCommand));
