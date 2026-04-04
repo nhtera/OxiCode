@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use oxicode_common::{OxiError, OxiResult};
 
 use crate::config::{McpConfig, McpServerConfig, McpTransportType};
+use crate::in_process_transport::InProcessTransport;
 use crate::protocol::{McpToolDef, McpToolResult, ServerCapabilities};
 use crate::sse_transport::SseTransport;
 use crate::stdio_transport::StdioTransport;
@@ -17,6 +18,7 @@ enum ActiveTransport {
     Stdio(StdioTransport),
     Sse(SseTransport),
     WebSocket(WebSocketTransport),
+    InProcess(InProcessTransport),
 }
 
 impl ActiveTransport {
@@ -29,6 +31,7 @@ impl ActiveTransport {
             Self::Stdio(t) => t.request(method, params).await,
             Self::Sse(t) => t.request(method, params).await,
             Self::WebSocket(t) => t.request(method, params).await,
+            Self::InProcess(t) => t.request(method, params).await,
         }
     }
 }
@@ -101,6 +104,18 @@ impl McpServerManager {
                         }
                     }
                 }
+                McpTransportType::InProcess => {
+                    // TODO: In-process transport currently creates a pair but drops the server
+                    // side. Full integration requires a bundled MCP server handler that takes
+                    // ownership of the server transport. For now, this serves as scaffolding
+                    // for the transport plumbing — actual in-process servers will be added
+                    // when bundled tool servers are implemented.
+                    let (client, _server) = InProcessTransport::pair();
+                    tracing::warn!(
+                        "MCP server '{name}' uses in-process transport (server-side not yet wired)"
+                    );
+                    ActiveTransport::InProcess(client)
+                }
             };
 
             // Initialize the server.
@@ -138,9 +153,15 @@ impl McpServerManager {
             serde_json::from_value(result.get("capabilities").cloned().unwrap_or_default())
                 .unwrap_or_default();
 
-        // Send initialized notification (stdio only).
-        if let ActiveTransport::Stdio(ref stdio) = transport {
-            let _ = stdio.notify("notifications/initialized", None).await;
+        // Send initialized notification (stdio and in-process).
+        match &transport {
+            ActiveTransport::Stdio(ref stdio) => {
+                let _ = stdio.notify("notifications/initialized", None).await;
+            }
+            ActiveTransport::InProcess(ref inp) => {
+                let _ = inp.notify("notifications/initialized", None).await;
+            }
+            _ => {}
         }
 
         // Discover tools.
@@ -284,6 +305,7 @@ impl McpServerManager {
             match &server.transport {
                 ActiveTransport::Stdio(stdio) => stdio.shutdown().await,
                 ActiveTransport::WebSocket(ws) => ws.close().await,
+                ActiveTransport::InProcess(inp) => inp.shutdown().await,
                 ActiveTransport::Sse(_) => {} // SSE has no shutdown protocol.
             }
         }

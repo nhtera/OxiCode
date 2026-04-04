@@ -139,6 +139,17 @@ async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResu
                 Err(e) => Err(e),
             }
         }
+        McpTransportType::InProcess => {
+            // In-process transport is always healthy — no external connection to test.
+            return DiagResult {
+                server_name: name.to_string(),
+                status: DiagStatus::Ok,
+                latency: Some(start.elapsed()),
+                capabilities: None,
+                has_tools: false,
+                error_detail: None,
+            };
+        }
     };
 
     let latency = start.elapsed();

@@ -186,6 +186,7 @@ impl SlashCommand for McpCommand {
                 oxicode_mcp::config::McpTransportType::WebSocket => {
                     cfg.url.as_deref().unwrap_or("websocket")
                 }
+                oxicode_mcp::config::McpTransportType::InProcess => "inprocess",
             };
             let _ = writeln!(output, "  {name:<20} {transport}");
         }

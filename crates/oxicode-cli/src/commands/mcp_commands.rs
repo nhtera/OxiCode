@@ -121,6 +121,7 @@ impl SlashCommand for McpServersCommand {
                 oxicode_mcp::config::McpTransportType::WebSocket => {
                     cfg.url.as_deref().unwrap_or("websocket")
                 }
+                oxicode_mcp::config::McpTransportType::InProcess => "inprocess",
             };
             let _ = writeln!(output, "  {name:<20} [{transport}]");
         }
@@ -155,6 +156,7 @@ impl SlashCommand for McpDoctorCommand {
                 oxicode_mcp::config::McpTransportType::Stdio => "stdio",
                 oxicode_mcp::config::McpTransportType::Sse => "sse",
                 oxicode_mcp::config::McpTransportType::WebSocket => "websocket",
+                oxicode_mcp::config::McpTransportType::InProcess => "inprocess",
             };
             let _ = writeln!(output, "  {name:<20} [{transport}]");
 
@@ -170,6 +172,9 @@ impl SlashCommand for McpDoctorCommand {
                     if cfg.url.is_none() {
                         let _ = writeln!(output, "    ⚠ No URL configured");
                     }
+                }
+                oxicode_mcp::config::McpTransportType::InProcess => {
+                    // In-process transport needs no external config.
                 }
             }
 

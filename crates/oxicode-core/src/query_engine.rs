@@ -319,6 +319,13 @@ impl QueryEngine {
                     return Err(err);
                 }
                 StreamEvent::Ping => {}
+                StreamEvent::CacheBreakDetected(event) => {
+                    tracing::warn!(
+                        "Cache break detected: {:?} (diff: {} tokens)",
+                        event.reason,
+                        event.diff
+                    );
+                }
                 StreamEvent::RateLimited {
                     info,
                     attempt,

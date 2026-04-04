@@ -20,6 +20,8 @@ pub enum McpTransportType {
     Sse,
     #[serde(alias = "ws", alias = "websocket")]
     WebSocket,
+    #[serde(alias = "in_process", alias = "in-process")]
+    InProcess,
 }
 
 /// Configuration for a single MCP server.

@@ -1,6 +1,8 @@
 use oxicode_common::{RateLimitInfo, StopReason, Usage};
 use serde::{Deserialize, Serialize};
 
+use crate::prompt_cache_detection::CacheBreakEvent;
+
 /// Events emitted from an LLM streaming response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StreamEvent {
@@ -32,6 +34,9 @@ pub enum StreamEvent {
         max_retries: u32,
         retry_in_secs: f64,
     },
+
+    /// Prompt cache break detected — Anthropic cache invalidated.
+    CacheBreakDetected(CacheBreakEvent),
 
     /// Stream error.
     Error { message: String },
