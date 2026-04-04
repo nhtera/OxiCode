@@ -992,6 +992,67 @@ EnterpriseSettingsResponse {
 - `reqwest` (enhanced) — Plugin registry + enterprise endpoint fetches
 - `chrono` (enhanced) — Timestamp handling in cache/version tracking
 
+### Config Migrations (`oxicode-config/src/migrations.rs`)
+
+**Purpose:** Auto-run versioned migrations on startup to handle config schema evolution, model name renames, and format upgrades without data loss.
+
+**Architecture:**
+```
+Migration {
+  version: u32,
+  name: &str,
+  apply: fn(&mut Value) -> Result<()>
+}
+
+MigrationRunner
+  ├── Load raw config (TOML → serde_json::Value)
+  ├── Compare current config_version with latest migration
+  ├── Auto-detect pending migrations
+  ├── Create backup: {config_path}.bak.{timestamp}
+  ├── Apply each pending migration in order (idempotent)
+  ├── Write updated config with new config_version
+  └── Log results + rollback support
+```
+
+**Built-in Migrations:**
+1. **v0 → v1:** Bootstrap — Add `config_version: u32` field (default 0)
+2. **v1 → v2:** Model aliases — Rename deprecated model names (e.g., `claude-3-sonnet` → `claude-sonnet-4-5`)
+3. **v2 → v3:** Default features — Insert missing features section if absent
+4. **v3 → v4:** Permission mode — Normalize permission_mode values
+
+**Startup Flow:**
+```
+App::startup()
+  ↓
+Load raw config from disk
+  ↓
+MigrationRunner::run_migrations()
+  ├── Create backup if first migration
+  ├── Apply v1, v2, v3, v4 (only pending ones)
+  ├── Update config_version field
+  ├── Log "Applied N config migrations (v{old} → v{new})"
+  └── Return migrated config as Value
+  ↓
+Parse Value → Settings struct (now safe, schema matches code)
+  ↓
+Proceed with rest of startup
+```
+
+**Error Handling:**
+- If migration fails: Log error, fallback to original config (don't crash)
+- Backup enables manual recovery if needed
+- In-memory variant supports tests and programmatic migrations
+
+**Files:**
+- `crates/oxicode-config/src/migrations.rs` — Framework + 4 built-in migrations (~280 LOC)
+- `crates/oxicode-config/src/settings.rs` — Added `config_version: u32` field
+- `crates/oxicode-config/src/lib.rs` — Integrated `run_migrations()` before TOML parsing
+
+**Test Coverage:**
+- 54/54 oxicode-config tests passing
+- 1094 full workspace tests passing
+- Includes: framework mechanics, each migration, integration tests
+
 ---
 
 ## Phase 7: Voice, Bridge, Telemetry & GitHub Integration

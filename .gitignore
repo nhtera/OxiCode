@@ -21,3 +21,4 @@ Thumbs.db
 # Claude session state
 .claude/session-state/
 plans/
+docs/journals/

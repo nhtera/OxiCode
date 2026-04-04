@@ -2,6 +2,7 @@ pub mod claude_md;
 pub mod enterprise_settings;
 pub mod env;
 pub mod mdm;
+pub mod migrations;
 pub mod settings;
 pub mod sync;
 
@@ -27,6 +28,10 @@ pub fn config_dir(override_dir: Option<&str>) -> PathBuf {
 }
 
 /// Load settings with full 3-level merge: defaults < TOML file < env vars.
+///
+/// Before parsing the TOML file into `Settings`, pending config migrations
+/// are applied in-place (with a backup). Migration failures are logged but
+/// never crash — the original config is preserved.
 pub fn load_settings(config_dir_override: Option<&str>) -> Settings {
     let dir = config_dir(config_dir_override);
     let config_path = dir.join(constants::CONFIG_FILE_NAME);
@@ -34,7 +39,28 @@ pub fn load_settings(config_dir_override: Option<&str>) -> Settings {
     // Start with defaults
     let mut settings = Settings::default();
 
-    // Layer TOML file if it exists
+    // Run migrations before parsing (if file exists).
+    if config_path.is_file() {
+        match migrations::run_migrations(&config_path) {
+            Ok(result) if result.applied > 0 => {
+                tracing::info!(
+                    applied = result.applied,
+                    old = result.old_version,
+                    new = result.new_version,
+                    "applied {} config migration(s) (v{} → v{})",
+                    result.applied,
+                    result.old_version,
+                    result.new_version,
+                );
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "config migration failed — using original config");
+            }
+            _ => {} // No migrations needed.
+        }
+    }
+
+    // Layer TOML file if it exists (now potentially migrated).
     if config_path.is_file() {
         match std::fs::read_to_string(&config_path) {
             Ok(content) => match toml::from_str::<Settings>(&content) {
@@ -60,6 +86,8 @@ pub fn load_settings(config_dir_override: Option<&str>) -> Settings {
 
 /// Merge non-default values from source into target.
 fn merge_settings(target: &mut Settings, source: &Settings) {
+    // Always take config_version from file (tracks migration state).
+    target.config_version = source.config_version;
     if source.api_key.is_some() {
         target.api_key.clone_from(&source.api_key);
     }
@@ -158,5 +186,46 @@ custom_flag = true
         assert!(s.features.is_enabled("extended_thinking"));
         assert!(s.features.is_enabled("prompt_caching"));
         assert!(!s.features.is_enabled("proactive_agents"));
+    }
+
+    #[test]
+    fn test_default_config_version_is_zero() {
+        let s = Settings::default();
+        assert_eq!(s.config_version, 0);
+    }
+
+    #[test]
+    fn test_load_settings_runs_migrations() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+model = "claude-3-5-sonnet-20241022"
+permission_mode = "accept-edits"
+"#;
+        std::fs::write(tmp.path().join("settings.toml"), toml_content).unwrap();
+        let settings = load_settings(Some(tmp.path().to_str().unwrap()));
+
+        // Migration 2 should rename the model.
+        assert_eq!(settings.model, "claude-sonnet-4-20250514");
+        // Migration 5 should normalize permission_mode.
+        assert_eq!(settings.permission_mode, "accept_edits");
+        // config_version should be current.
+        assert_eq!(settings.config_version, migrations::CURRENT_VERSION);
+    }
+
+    #[test]
+    fn test_load_settings_creates_backup_on_migration() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toml_content = "model = \"claude-3-sonnet-20240229\"";
+        std::fs::write(tmp.path().join("settings.toml"), toml_content).unwrap();
+
+        let _settings = load_settings(Some(tmp.path().to_str().unwrap()));
+
+        // A backup file should exist.
+        let entries: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".bak."))
+            .collect();
+        assert_eq!(entries.len(), 1);
     }
 }

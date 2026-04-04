@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// Schema version — tracks which config migrations have been applied.
+    pub config_version: u32,
     /// Anthropic API key.
     pub api_key: Option<String>,
     /// Model ID to use.
@@ -28,6 +30,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            config_version: 0,
             api_key: None,
             model: oxicode_common::constants::DEFAULT_MODEL.to_string(),
             max_tokens: oxicode_common::constants::DEFAULT_MAX_TOKENS,
