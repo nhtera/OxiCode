@@ -42,8 +42,8 @@ pub mod policy {
 
 /// Client for fetching and caching org policy limits.
 ///
-/// Thread-safe via `RwLock`. Designed for background polling with
-/// `spawn_background_poller()`.
+/// Thread-safe via `RwLock`. Call `fetch()` periodically from a
+/// background tokio task to keep limits up-to-date.
 pub struct PolicyLimitsClient {
     /// Cached limits (shared across threads).
     limits: Arc<RwLock<PolicyLimits>>,
@@ -193,13 +193,13 @@ async fn fetch_policy_limits(
 }
 
 /// Load cached policy limits from disk.
-fn load_from_disk(path: &PathBuf) -> Option<PolicyLimits> {
+fn load_from_disk(path: &std::path::Path) -> Option<PolicyLimits> {
     let data = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
 /// Save policy limits to disk.
-fn save_to_disk(path: &PathBuf, limits: &PolicyLimits) -> Result<(), String> {
+fn save_to_disk(path: &std::path::Path, limits: &PolicyLimits) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
     }

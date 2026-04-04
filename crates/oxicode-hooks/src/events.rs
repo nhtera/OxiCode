@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Hook lifecycle events (26 total: 10 core + 16 extended).
+/// Hook lifecycle events (28 total: 10 core + 16 extended + 2 rate limit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookEvent {
