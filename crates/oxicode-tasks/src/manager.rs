@@ -127,6 +127,27 @@ impl TaskManager {
         tracing::debug!("Task {} removed", id);
     }
 
+    /// Kill a running task by ID. Verifies the task exists and is Running,
+    /// then updates status to Killed. The caller is responsible for actually
+    /// terminating the process (e.g., via signal).
+    pub fn kill_task(&mut self, id: &str) -> Result<(), String> {
+        let entry = self
+            .tasks
+            .get(id)
+            .ok_or_else(|| format!("Task '{id}' not found"))?;
+
+        if !matches!(entry.status, TaskStatus::Running) {
+            return Err(format!(
+                "Task '{id}' is not running (status: {:?})",
+                entry.status
+            ));
+        }
+
+        self.update_status(id, TaskStatus::Killed);
+        tracing::info!("Task {} killed", id);
+        Ok(())
+    }
+
     /// Drop all completed/failed/killed tasks older than 1 hour.
     pub fn cleanup_completed(&mut self) {
         let cutoff = Utc::now() - chrono::Duration::hours(1);
@@ -206,5 +227,41 @@ mod tests {
         mgr.update_status(&id, TaskStatus::Completed { exit_code: 0 });
         mgr.cleanup_completed();
         assert!(mgr.get_task(&id).is_some(), "recent task should be kept");
+    }
+
+    #[test]
+    fn kill_running_task() {
+        let mut mgr = make_manager();
+        let id = mgr.create_task(TaskType::LocalBash {
+            command: "sleep 60".into(),
+        });
+        mgr.update_status(&id, TaskStatus::Running);
+
+        let result = mgr.kill_task(&id);
+        assert!(result.is_ok());
+        assert!(matches!(
+            mgr.get_task(&id).unwrap().status,
+            TaskStatus::Killed
+        ));
+    }
+
+    #[test]
+    fn kill_non_running_task_fails() {
+        let mut mgr = make_manager();
+        let id = mgr.create_task(TaskType::LocalBash {
+            command: "true".into(),
+        });
+        // Still Pending, not Running.
+        let result = mgr.kill_task(&id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not running"));
+    }
+
+    #[test]
+    fn kill_nonexistent_task_fails() {
+        let mut mgr = make_manager();
+        let result = mgr.kill_task("does-not-exist");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
     }
 }

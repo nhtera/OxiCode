@@ -61,6 +61,8 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
 
 # Feature-gated dependencies (Phase 7)
 cpal = { version = "0.15", optional = true }

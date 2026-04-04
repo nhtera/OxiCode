@@ -55,9 +55,12 @@ pub mod todo_write;
 pub mod verify_plan_execution;
 pub mod workflow_tool;
 
+// Phase 7: KillBash + Teleport
+pub mod kill_bash;
+
 // Re-exports
 pub use registry::ToolRegistry;
-pub use tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
+pub use tool_trait::{BashProcess, BashProcessMap, PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
 /// Create a registry pre-loaded with all built-in tools.
 pub fn default_registry() -> ToolRegistry {
@@ -122,6 +125,9 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(synthetic_output::SyntheticOutputTool));
     reg.register(Box::new(verify_plan_execution::VerifyPlanExecutionTool));
     reg.register(Box::new(workflow_tool::WorkflowTool));
+
+    // Phase 7: KillBash tool
+    reg.register(Box::new(kill_bash::KillBashTool));
 
     reg
 }

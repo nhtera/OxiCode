@@ -13,6 +13,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::file_state_tracker::FileStateTracker;
 
+/// Metadata for a running bash process, used by KillBashTool.
+#[derive(Debug, Clone)]
+pub struct BashProcess {
+    pub pid: u32,
+    pub command: String,
+    pub started_at: std::time::Instant,
+}
+
+/// Shared map of task_id → running bash process info.
+/// Inserted on bash spawn, removed on completion/timeout.
+pub type BashProcessMap = Arc<Mutex<HashMap<String, BashProcess>>>;
+
 /// Result of a tool execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResult {
@@ -55,6 +67,8 @@ pub struct ToolContext {
     pub skill_executor: Option<Arc<SkillExecutor>>,
     /// Team manager for creating/deleting agent teams.
     pub team_manager: Arc<Mutex<TeamManager>>,
+    /// Tracks running bash processes by task_id for KillBashTool.
+    pub bash_processes: BashProcessMap,
 }
 
 impl fmt::Debug for ToolContext {
@@ -75,6 +89,7 @@ impl Default for ToolContext {
             mcp_manager: Arc::new(McpServerManager::default()),
             skill_executor: None,
             team_manager: Arc::new(Mutex::new(TeamManager::new())),
+            bash_processes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

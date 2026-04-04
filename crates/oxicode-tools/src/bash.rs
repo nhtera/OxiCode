@@ -11,7 +11,7 @@ use crate::bash_background::BackgroundRunner;
 use crate::bash_result_mapper;
 use crate::bash_sandbox::PathValidator;
 use crate::bash_security::{SecurityAnalyzer, SecurityLevel};
-use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
+use crate::tool_trait::{BashProcess, PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
 /// Execute a shell command via subprocess with security analysis,
 /// background execution, result mapping, and shell state management.
@@ -143,12 +143,20 @@ impl Tool for BashTool {
             .min(MAX_TIMEOUT_MS);
 
         let working_dir = &ctx.working_dir;
+        let bash_procs = ctx.bash_processes.clone();
+        let task_id = format!("fg-{}", uuid::Uuid::new_v4());
 
         let result = tokio::time::timeout(
             Duration::from_millis(timeout_ms),
-            run_command(command, working_dir),
+            run_command_tracked(command, working_dir, &task_id, &bash_procs),
         )
         .await;
+
+        // Ensure PID removed from map (timeout case).
+        {
+            let mut map = bash_procs.lock().expect("lock bash_processes");
+            map.remove(&task_id);
+        }
 
         // --- Step 4: Result mapping ---
         match result {
@@ -185,9 +193,12 @@ impl Tool for BashTool {
 /// Maximum stdout output size in bytes (10 MB).
 const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
-async fn run_command(
+/// Run a command with PID tracking for KillBashTool integration.
+async fn run_command_tracked(
     command: &str,
     working_dir: &Path,
+    task_id: &str,
+    bash_procs: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, BashProcess>>>,
 ) -> Result<(String, String, i32), std::io::Error> {
     let mut cmd = Command::new("bash");
     cmd.arg("-c")
@@ -197,17 +208,28 @@ async fn run_command(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    // Strip dangerous environment variables from the child process.
     for var in DANGEROUS_ENV_VARS {
         cmd.env_remove(var);
     }
 
     let mut child = cmd.spawn()?;
 
+    // Track PID in shared map so KillBashTool can find it.
+    if let Some(pid) = child.id() {
+        let mut map = bash_procs.lock().expect("lock bash_processes");
+        map.insert(
+            task_id.to_string(),
+            BashProcess {
+                pid,
+                command: command.to_string(),
+                started_at: std::time::Instant::now(),
+            },
+        );
+    }
+
     let mut stdout_pipe = child.stdout.take().expect("stdout piped");
     let mut stderr_pipe = child.stderr.take().expect("stderr piped");
 
-    // Read stdout with size cap to prevent OOM from runaway output.
     let stdout_handle = tokio::spawn(async move {
         let mut buf = Vec::with_capacity(8192);
         let mut tmp = [0u8; 8192];
@@ -227,7 +249,6 @@ async fn run_command(
         buf
     });
 
-    // Read stderr with size cap (2.5 MB).
     let stderr_cap = MAX_OUTPUT_BYTES / 4;
     let stderr_handle = tokio::spawn(async move {
         let mut buf = Vec::with_capacity(4096);
@@ -251,6 +272,12 @@ async fn run_command(
     let stdout_bytes = stdout_handle.await.unwrap_or_default();
     let stderr_bytes = stderr_handle.await.unwrap_or_default();
     let status = child.wait().await?;
+
+    // Remove PID from tracking map after completion.
+    {
+        let mut map = bash_procs.lock().expect("lock bash_processes");
+        map.remove(task_id);
+    }
 
     let mut stdout = String::from_utf8_lossy(&stdout_bytes).to_string();
     let mut stderr = String::from_utf8_lossy(&stderr_bytes).to_string();

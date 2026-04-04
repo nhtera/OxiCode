@@ -27,6 +27,7 @@ pub mod session_extras;
 pub mod session_view_commands;
 pub mod task_commands;
 pub mod team_commands;
+pub mod teleport_command;
 pub mod ui_commands;
 pub mod utility_commands;
 pub mod view_commands;
@@ -351,6 +352,9 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(info_commands::PassesCommand));
     reg.register(Box::new(info_commands::RateLimitOptionsCommand));
     reg.register(Box::new(info_commands::ReloadPluginsInfoCommand));
+
+    // Phase 7 (gap-closure): Teleport command
+    reg.register(Box::new(teleport_command::TeleportCommand));
 
     reg
 }
