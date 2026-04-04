@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod bedrock;
+pub mod files_api;
 pub mod openai_compatible;
 pub mod policy_limits;
 pub mod provider;

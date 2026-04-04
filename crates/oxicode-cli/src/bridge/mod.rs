@@ -11,6 +11,7 @@ pub mod daemon_listener;
 pub mod messages;
 pub mod permission_bridge;
 pub mod session_bridge;
+pub mod session_ingress;
 
 use serde::{Deserialize, Serialize};
 

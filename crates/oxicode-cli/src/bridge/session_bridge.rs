@@ -11,6 +11,8 @@ use oxicode_core::Conversation;
 use oxicode_session::Session;
 use tokio::sync::{oneshot, Mutex};
 
+use super::session_ingress::{self, IngressClaims, IngressError};
+
 /// Shared map of pending permission reply channels.
 pub type PermMap = Arc<Mutex<HashMap<String, oneshot::Sender<PermissionResponse>>>>;
 
@@ -148,6 +150,31 @@ impl SessionBridge {
             let _ = oxicode_session::save_session(&state.session, None);
         }
     }
+
+    /// Validate an ingress token and route to an active session.
+    ///
+    /// Extracts `Bearer {token}` from an authorization header value,
+    /// validates the HMAC-SHA256 signature + expiry, and checks that
+    /// the referenced session is currently loaded.
+    pub async fn validate_ingress(
+        &self,
+        auth_header: &str,
+        secret: &[u8],
+    ) -> Result<IngressClaims, IngressError> {
+        let token = auth_header
+            .strip_prefix("Bearer ")
+            .unwrap_or(auth_header);
+
+        let claims = session_ingress::validate_ingress_token(token, secret)?;
+
+        // Verify session exists in our active map.
+        let sessions = self.sessions.lock().await;
+        if !sessions.contains_key(&claims.session_id) {
+            return Err(IngressError::SessionNotFound(claims.session_id.clone()));
+        }
+
+        Ok(claims)
+    }
 }
 
 impl Default for SessionBridge {
@@ -230,5 +257,40 @@ mod tests {
         let bridge = SessionBridge::default();
         // Verify sessions map is accessible.
         let _sessions = bridge.sessions();
+    }
+
+    #[tokio::test]
+    async fn validate_ingress_valid_token() {
+        let secret = b"test-bridge-secret";
+        let bridge = SessionBridge::new();
+        let id = bridge.create_session("model").await;
+
+        let token = session_ingress::generate_ingress_token(&id, secret);
+        let auth_header = format!("Bearer {token}");
+
+        let claims = bridge.validate_ingress(&auth_header, secret).await.unwrap();
+        assert_eq!(claims.session_id, id);
+    }
+
+    #[tokio::test]
+    async fn validate_ingress_invalid_token() {
+        let bridge = SessionBridge::new();
+        let _id = bridge.create_session("model").await;
+
+        let result = bridge.validate_ingress("Bearer invalid.token", b"secret").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn validate_ingress_session_not_loaded() {
+        let secret = b"test-bridge-secret";
+        let bridge = SessionBridge::new();
+
+        // Generate token for a session that doesn't exist in bridge.
+        let token = session_ingress::generate_ingress_token("nonexistent", secret);
+        let auth_header = format!("Bearer {token}");
+
+        let result = bridge.validate_ingress(&auth_header, secret).await;
+        assert!(matches!(result, Err(IngressError::SessionNotFound(_))));
     }
 }

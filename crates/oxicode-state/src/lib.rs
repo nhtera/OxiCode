@@ -47,6 +47,8 @@ pub struct AppState {
     pub last_rate_limit: Option<RateLimitSnapshot>,
     /// Auth status display label (e.g. "⚡ user@example.com" or "🔑 sk-...XXXX").
     pub auth_label: String,
+    /// Ingress token for bridge session routing (HMAC-SHA256).
+    pub session_ingress_token: Option<String>,
     /// Per-model cost tracking with persistence.
     pub cost_tracker: cost_tracker::CostTracker,
 }
@@ -77,6 +79,7 @@ impl Default for AppState {
             feature_flags: FeatureFlags::default(),
             last_rate_limit: None,
             auth_label: String::new(),
+            session_ingress_token: None,
         }
     }
 }
