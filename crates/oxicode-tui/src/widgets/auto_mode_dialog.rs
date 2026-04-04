@@ -50,18 +50,19 @@ impl Widget for AutoModeDialog {
             ))
             .title_alignment(Alignment::Center);
 
-        let mut lines = Vec::new();
-        lines.push(Line::from(Span::styled(
-            "Bypass permissions mode allows ALL",
-            Style::default().fg(Color::Red),
-        )));
-        lines.push(Line::from(Span::styled(
-            "tool calls without approval.",
-            Style::default().fg(Color::Red),
-        )));
-        lines.push(Line::from(""));
-        lines.push(Line::from("Enable bypass mode?"));
-        lines.push(Line::from(""));
+        let mut lines = vec![
+            Line::from(Span::styled(
+                "Bypass permissions mode allows ALL",
+                Style::default().fg(Color::Red),
+            )),
+            Line::from(Span::styled(
+                "tool calls without approval.",
+                Style::default().fg(Color::Red),
+            )),
+            Line::from(""),
+            Line::from("Enable bypass mode?"),
+            Line::from(""),
+        ];
 
         for (i, option) in OPTIONS.iter().enumerate() {
             let style = if i == self.selected {

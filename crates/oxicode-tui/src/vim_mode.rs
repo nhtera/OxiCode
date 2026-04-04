@@ -280,12 +280,10 @@ impl VimState {
                 #[allow(clippy::cast_possible_wrap)]
                 VimAction::MoveCursorBy(n as isize)
             }
-            (_, KeyCode::Char('j') | KeyCode::Down) => {
-                // In single-line input, j does nothing meaningful.
-                // But we keep it for consistency.
+            (_, KeyCode::Char('j' | 'k') | KeyCode::Down | KeyCode::Up) => {
+                // In single-line input, j/k and arrows do nothing meaningful.
                 VimAction::Noop
             }
-            (_, KeyCode::Char('k') | KeyCode::Up) => VimAction::Noop,
 
             // Word motions.
             (_, KeyCode::Char('w')) => {
@@ -302,9 +300,8 @@ impl VimState {
             }
 
             // Line motions.
-            (_, KeyCode::Char('0')) => VimAction::MoveToLineStart,
+            (_, KeyCode::Char('0' | '^')) => VimAction::MoveToLineStart,
             (_, KeyCode::Char('$')) => VimAction::MoveToLineEnd,
-            (_, KeyCode::Char('^')) => VimAction::MoveToLineStart,
 
             // Global motions.
             (_, KeyCode::Char('g')) => {
@@ -375,7 +372,7 @@ impl VimState {
 
         match (op, key.code) {
             // Text object modifier: di_, ci_, yi_, da_, ca_, ya_
-            (_, KeyCode::Char('i')) | (_, KeyCode::Char('a')) => {
+            (_, KeyCode::Char('i' | 'a')) => {
                 if let KeyCode::Char(modifier) = key.code {
                     self.pending_text_obj = Some(modifier);
                     return VimAction::Noop;
@@ -446,9 +443,8 @@ impl VimState {
     fn resolve_text_object(&mut self, op: char, modifier: char, key: KeyEvent) -> VimAction {
         // The key determines the text object target. We emit a specialized action
         // that app.rs will handle using vim_text_objects functions with actual text.
-        let target = match key.code {
-            KeyCode::Char(c) => c,
-            _ => return VimAction::Noop,
+        let KeyCode::Char(target) = key.code else {
+            return VimAction::Noop;
         };
 
         // Validate target is a recognized text object.

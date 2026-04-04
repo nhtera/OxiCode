@@ -61,6 +61,7 @@ impl fmt::Display for DiagResult {
 }
 
 /// Diagnose a single MCP server: attempt connection, initialize, list tools.
+#[allow(clippy::too_many_lines)] // diagnostic function with necessary transport-specific branches
 async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResult {
     let start = Instant::now();
     let init_params = serde_json::json!({
@@ -100,7 +101,7 @@ async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResu
                 }
             };
             let res = transport.request("initialize", Some(init_params)).await;
-            let _ = transport.shutdown().await;
+            let () = transport.shutdown().await;
             res
         }
         McpTransportType::Sse => {

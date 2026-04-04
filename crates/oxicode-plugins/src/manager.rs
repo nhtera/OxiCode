@@ -338,9 +338,7 @@ impl PluginManager {
                 if let Some(parent) = dest.parent() {
                     std::fs::create_dir_all(parent).ok();
                     parent
-                        .canonicalize()
-                        .map(|p| p.join(dest.file_name().unwrap_or_default()))
-                        .unwrap_or_else(|_| dest.clone())
+                        .canonicalize().map_or_else(|_| dest.clone(), |p| p.join(dest.file_name().unwrap_or_default()))
                 } else {
                     dest.clone()
                 }

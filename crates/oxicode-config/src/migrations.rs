@@ -200,12 +200,12 @@ pub fn run_migrations_in_memory(content: &str) -> Result<(String, MigrationResul
 // ---------------------------------------------------------------------------
 
 /// Read `config_version` from a TOML value, defaulting to 0.
+#[allow(clippy::cast_sign_loss)] // config_version is always non-negative
 fn read_version(value: &toml::Value) -> u32 {
     value
         .get("config_version")
-        .and_then(|v| v.as_integer())
-        .map(|v| v as u32)
-        .unwrap_or(0)
+        .and_then(toml::Value::as_integer)
+        .map_or(0, |v| v as u32)
 }
 
 /// Write `config_version` into a TOML table.
@@ -239,18 +239,19 @@ fn backup_config(config_path: &Path) -> Result<PathBuf, String> {
 // ---------------------------------------------------------------------------
 
 /// Migration 1: Bootstrap — ensure `config_version` field exists.
+#[allow(clippy::unnecessary_wraps)] // signature must match Migration.apply fn pointer
 fn m001_bootstrap_config_version(value: &mut toml::Value) -> Result<(), String> {
     // Idempotent: if already present, leave it.
-    if value.get("config_version").is_some() {
-        return Ok(());
+    if value.get("config_version").is_none() {
+        write_version(value, 1);
     }
-    write_version(value, 1);
     Ok(())
 }
 
 /// Migration 2: Rename legacy model identifiers.
 ///
 /// Maps old model names to current canonical names.
+#[allow(clippy::unnecessary_wraps)] // signature must match Migration.apply fn pointer
 fn m002_rename_legacy_models(value: &mut toml::Value) -> Result<(), String> {
     let model_remap: &[(&str, &str)] = &[
         ("claude-3-sonnet-20240229", "claude-sonnet-4-20250514"),
@@ -265,7 +266,7 @@ fn m002_rename_legacy_models(value: &mut toml::Value) -> Result<(), String> {
         for (old, new) in model_remap {
             if model_val == *old {
                 if let Some(table) = value.as_table_mut() {
-                    table.insert("model".to_string(), toml::Value::String(new.to_string()));
+                    table.insert("model".to_string(), toml::Value::String((*new).to_string()));
                 }
                 break;
             }
@@ -296,7 +297,7 @@ fn m003_add_default_features(value: &mut toml::Value) -> Result<(), String> {
     if let Some(ftable) = features.as_table_mut() {
         for (key, default_val) in defaults {
             ftable
-                .entry(key.to_string())
+                .entry((*key).to_string())
                 .or_insert(toml::Value::Boolean(*default_val));
         }
     }
@@ -307,6 +308,7 @@ fn m003_add_default_features(value: &mut toml::Value) -> Result<(), String> {
 /// Migration 4: Normalize `permission_mode` values.
 ///
 /// Rename legacy values to canonical forms.
+#[allow(clippy::unnecessary_wraps)] // signature must match Migration.apply fn pointer
 fn m004_normalize_permission_mode(value: &mut toml::Value) -> Result<(), String> {
     let mode_remap: &[(&str, &str)] = &[
         ("accept-edits", "accept_edits"),
@@ -322,7 +324,7 @@ fn m004_normalize_permission_mode(value: &mut toml::Value) -> Result<(), String>
                 if let Some(table) = value.as_table_mut() {
                     table.insert(
                         "permission_mode".to_string(),
-                        toml::Value::String(new.to_string()),
+                        toml::Value::String((*new).to_string()),
                     );
                 }
                 break;

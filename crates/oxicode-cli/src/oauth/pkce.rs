@@ -14,6 +14,7 @@ pub struct PkceChallenge {
 /// Uses platform-specific cryptographic randomness:
 /// - Unix: `/dev/urandom` with checked read
 /// - Windows: `BCryptGenRandom` via std::hash
+///
 /// Falls back to mixing multiple entropy sources if primary fails.
 pub fn generate_pkce() -> PkceChallenge {
     let random_bytes = generate_secure_random();
@@ -118,6 +119,8 @@ pub fn simple_sha256_pub(data: &[u8]) -> [u8; 32] {
 }
 
 /// Minimal SHA-256 (pure Rust, no deps). Used only for PKCE challenge derivation.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+// SHA-256 implementation inherently uses single-char variables (a..h) per spec
 fn simple_sha256(data: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
         0x428a_2f98,

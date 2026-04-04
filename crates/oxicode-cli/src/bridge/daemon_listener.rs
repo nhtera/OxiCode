@@ -126,7 +126,7 @@ pub fn is_daemon_running() -> Option<DaemonLockfile> {
         // PID not running — stale lockfile.
         tracing::info!(pid = lockfile.pid, "stale lockfile detected, removing");
         remove_lockfile();
-        return None;
+        None
     }
 
     #[cfg(not(unix))]

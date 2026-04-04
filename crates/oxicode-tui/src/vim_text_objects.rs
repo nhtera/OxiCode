@@ -71,8 +71,8 @@ pub fn inner_quote(text: &str, cursor: usize, quote: char) -> Option<(usize, usi
 
     // Find the opening quote (at or before cursor).
     let mut open = None;
-    for i in (0..=cursor).rev() {
-        if chars[i] == quote {
+    for (i, &ch) in chars[..=cursor].iter().enumerate().rev() {
+        if ch == quote {
             open = Some(i);
             break;
         }
@@ -82,8 +82,8 @@ pub fn inner_quote(text: &str, cursor: usize, quote: char) -> Option<(usize, usi
     // Find the closing quote (after opening).
     let search_start = if open == cursor { open + 1 } else { cursor };
     let mut close = None;
-    for i in (open + 1)..chars.len() {
-        if chars[i] == quote {
+    for (i, &ch) in chars.iter().enumerate().skip(open + 1) {
+        if ch == quote {
             // Ensure cursor is between open and close.
             if i >= search_start {
                 close = Some(i);
@@ -134,10 +134,10 @@ pub fn inner_bracket(text: &str, cursor: usize, open: char, close: char) -> Opti
     // Find matching closing bracket (scan right from open).
     let mut depth = 0i32;
     let mut close_pos = None;
-    for i in (open_pos + 1)..chars.len() {
-        if chars[i] == open {
+    for (i, &ch) in chars.iter().enumerate().skip(open_pos + 1) {
+        if ch == open {
             depth += 1;
-        } else if chars[i] == close {
+        } else if ch == close {
             if depth == 0 {
                 close_pos = Some(i);
                 break;

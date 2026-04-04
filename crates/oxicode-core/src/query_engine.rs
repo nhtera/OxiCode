@@ -210,6 +210,7 @@ impl QueryEngine {
         request
     }
 
+    #[allow(clippy::too_many_lines)] // core streaming loop with necessary event handling
     async fn stream_one_turn(
         &self,
         conversation: &mut Conversation,

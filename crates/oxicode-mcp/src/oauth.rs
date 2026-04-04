@@ -75,7 +75,7 @@ fn generate_pkce() -> PkceChallenge {
 /// Base64 URL-safe encoding without padding.
 fn base64_url_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut result = String::with_capacity((data.len() * 4 + 2) / 3);
+    let mut result = String::with_capacity((data.len() * 4).div_ceil(3));
     for chunk in data.chunks(3) {
         let b0 = u32::from(chunk[0]);
         let b1 = chunk.get(1).map_or(0u32, |&b| u32::from(b));
@@ -95,6 +95,8 @@ fn base64_url_encode(data: &[u8]) -> String {
 }
 
 /// Minimal SHA-256 (pure Rust, no deps). Used only for PKCE challenge derivation.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+// SHA-256 implementation inherently uses single-char variables (a..h) per spec
 fn simple_sha256(data: &[u8]) -> [u8; 32] {
     // SHA-256 constants.
     const K: [u32; 64] = [

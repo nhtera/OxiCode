@@ -4,7 +4,7 @@
 //! local management (install/remove/list), and plugin update checks.
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{CommandContext, CommandOutput, SlashCommand};
 
@@ -95,7 +95,7 @@ fn execute_browse(args: &str) -> CommandOutput {
             }
 
             let total = entries.len();
-            let total_pages = (total + page_size - 1) / page_size;
+            let total_pages = total.div_ceil(page_size);
             let start = (page.saturating_sub(1)) * page_size;
 
             if start >= total {
@@ -234,8 +234,8 @@ fn execute_info(name: &str) -> CommandOutput {
     }
 
     // Check local installed plugin first.
-    let plugins_dir = user_plugins_dir();
-    let plugin_dir = plugins_dir.join(name);
+    let base_dir = user_plugins_dir();
+    let plugin_dir = base_dir.join(name);
     if plugin_dir.exists() {
         let manifest_path = plugin_dir.join("plugin.toml");
         if manifest_path.exists() {
@@ -281,7 +281,7 @@ fn execute_info(name: &str) -> CommandOutput {
 }
 
 /// /plugin install <path-or-name> — install from local path.
-fn execute_install(target: &str, plugins_dir: &PathBuf) -> CommandOutput {
+fn execute_install(target: &str, plugins_dir: &Path) -> CommandOutput {
     if target.is_empty() {
         return CommandOutput::Error("Usage: /plugin install <path-or-name>".into());
     }
@@ -338,7 +338,7 @@ fn execute_update(name: &str) -> CommandOutput {
 }
 
 /// /plugin remove <name> — uninstall a plugin.
-fn execute_remove(name: &str, plugins_dir: &PathBuf) -> CommandOutput {
+fn execute_remove(name: &str, plugins_dir: &Path) -> CommandOutput {
     if name.is_empty() {
         return CommandOutput::Error("Usage: /plugin remove <name>".into());
     }
@@ -352,7 +352,7 @@ fn execute_remove(name: &str, plugins_dir: &PathBuf) -> CommandOutput {
 }
 
 /// /plugin list — list installed plugins.
-fn execute_list(plugins_dir: &PathBuf) -> CommandOutput {
+fn execute_list(plugins_dir: &Path) -> CommandOutput {
     if !plugins_dir.exists() {
         return CommandOutput::Message(format!(
             "No plugins directory.\nCreate: {}",
@@ -366,7 +366,7 @@ fn execute_list(plugins_dir: &PathBuf) -> CommandOutput {
     }
 
     let mut output = String::from("Installed plugins:\n\n");
-    let _ = writeln!(output, "{:<20} {:<10} {}", "NAME", "VERSION", "DESCRIPTION");
+    let _ = writeln!(output, "{:<20} {:<10} DESCRIPTION", "NAME", "VERSION");
     let _ = writeln!(output, "{}", "-".repeat(60));
 
     for plugin in &installed {
@@ -402,14 +402,12 @@ fn format_registry_entry(entry: &serde_json::Value) -> String {
         .unwrap_or("N/A");
     let permissions = entry
         .get("permissions")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
+        .and_then(|v| v.as_array()).map_or_else(|| "none".into(), |arr| {
             arr.iter()
                 .filter_map(|p| p.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
-        })
-        .unwrap_or_else(|| "none".into());
+        });
     let keywords = entry
         .get("keywords")
         .and_then(|v| v.as_array())

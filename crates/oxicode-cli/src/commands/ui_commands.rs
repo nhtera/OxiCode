@@ -76,7 +76,8 @@ impl SlashCommand for KeybindingsCommand {
 
         let mut out = String::from("Keybindings:\n");
         for (key, action) in &bindings {
-            out.push_str(&format!("  {key:<20} {action}\n"));
+            use std::fmt::Write;
+            let _ = writeln!(out, "  {key:<20} {action}");
         }
         out.push_str("\nEdit: ~/.oxicode/keybindings.toml");
         CommandOutput::Message(out)
@@ -145,13 +146,17 @@ impl SlashCommand for TerminalSetupCommand {
         let truecolor = colorterm == "truecolor" || colorterm == "24bit";
 
         let mut out = String::from("Terminal Setup:\n");
-        out.push_str(&format!("  TERM: {term}\n"));
-        out.push_str(&format!("  Program: {term_program}\n"));
-        out.push_str(&format!(
-            "  True color: {}\n",
-            if truecolor { "yes" } else { "no" }
-        ));
-        out.push_str(&format!("  Size: {cols}x{lines}\n"));
+        {
+            use std::fmt::Write;
+            let _ = writeln!(out, "  TERM: {term}");
+            let _ = writeln!(out, "  Program: {term_program}");
+            let _ = writeln!(
+                out,
+                "  True color: {}",
+                if truecolor { "yes" } else { "no" }
+            );
+            let _ = writeln!(out, "  Size: {cols}x{lines}");
+        }
         out.push('\n');
 
         if !truecolor {

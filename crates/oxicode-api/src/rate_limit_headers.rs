@@ -64,6 +64,7 @@ fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<f64> {
     if let Ok(date) = DateTime::parse_from_rfc2822(val) {
         let now = Utc::now();
         let diff = date.signed_duration_since(now);
+        #[allow(clippy::cast_precision_loss)] // seconds value is small, precision loss irrelevant
         return Some(diff.num_seconds().max(0) as f64);
     }
     None
@@ -116,6 +117,7 @@ fn header_as_datetime(headers: &reqwest::header::HeaderMap, name: &str) -> Optio
 }
 
 /// Build a human-readable message for TUI display.
+#[allow(clippy::trivially_copy_pass_by_ref)] // matches header-parsing API signatures
 fn build_rate_limit_message(retry_after: Option<f64>, limit_type: &RateLimitType) -> String {
     match retry_after {
         Some(secs) => format!("Rate limited ({limit_type}). Retry after {secs:.0}s"),

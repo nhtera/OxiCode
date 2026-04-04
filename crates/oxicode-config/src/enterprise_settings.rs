@@ -216,21 +216,18 @@ pub fn load_enterprise_settings_from_env() -> Option<ManagedSettings> {
 
     // Block on async fetch — only called during startup.
     let rt = tokio::runtime::Handle::try_current();
-    match rt {
-        Ok(handle) => {
-            // We're already in an async context, use block_in_place.
-            match tokio::task::block_in_place(|| handle.block_on(client.fetch_managed())) {
-                Ok(settings) => Some(settings),
-                Err(e) => {
-                    tracing::warn!("Failed to load enterprise settings: {e}");
-                    None
-                }
+    if let Ok(handle) = rt {
+        // We're already in an async context, use block_in_place.
+        match tokio::task::block_in_place(|| handle.block_on(client.fetch_managed())) {
+            Ok(settings) => Some(settings),
+            Err(e) => {
+                tracing::warn!("Failed to load enterprise settings: {e}");
+                None
             }
         }
-        Err(_) => {
-            tracing::debug!("No tokio runtime for enterprise settings fetch");
-            None
-        }
+    } else {
+        tracing::debug!("No tokio runtime for enterprise settings fetch");
+        None
     }
 }
 

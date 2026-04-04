@@ -87,6 +87,7 @@ fn provider_color(provider: &str) -> Color {
 }
 
 impl Widget for StatusBar<'_> {
+    #[allow(clippy::too_many_lines)] // render method with sequential layout sections
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Streaming indicator.
         let status = if self.is_streaming {

@@ -22,9 +22,8 @@ pub enum PathOperation {
 /// Detects path traversal (../ sequences) and classifies operations as read vs write
 /// using a conservative heuristic (unknown → treated as write).
 ///
-/// TODO(phase-2): Integrate PathValidator into BashTool::execute() pipeline.
-/// Currently available but not yet wired into the execution flow — will be
-/// connected when the permission pipeline gains path-level granularity.
+/// Wired into `BashTool::execute()` — blocks commands with paths that escape the
+/// working directory before execution begins.
 pub struct PathValidator;
 
 impl PathValidator {

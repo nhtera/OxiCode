@@ -9,6 +9,7 @@ use tokio::process::Command;
 
 use crate::bash_background::BackgroundRunner;
 use crate::bash_result_mapper;
+use crate::bash_sandbox::PathValidator;
 use crate::bash_security::{SecurityAnalyzer, SecurityLevel};
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
@@ -105,6 +106,21 @@ impl Tool for BashTool {
         } else {
             String::new()
         };
+
+        // --- Step 1b: Path validation ---
+        // Check for path traversal or out-of-bounds file access.
+        let path_verdicts = PathValidator::validate(command, &ctx.working_dir);
+        let violations: Vec<&str> = path_verdicts
+            .iter()
+            .filter(|v| v.is_traversal || v.outside_bounds)
+            .map(|v| v.path.as_str())
+            .collect();
+        if !violations.is_empty() {
+            return Ok(ToolResult::error(format!(
+                "Command blocked — path escapes working directory: {}",
+                violations.join(", ")
+            )));
+        }
 
         // --- Step 2: Background mode ---
         if run_in_background {
@@ -402,5 +418,95 @@ mod tests {
 
         assert!(!result.is_error);
         assert!(result.content.contains("unset"));
+    }
+
+    // --- Path validation integration tests ---
+
+    #[tokio::test]
+    async fn test_path_traversal_blocked() {
+        let tool = BashTool;
+        let dir = tempfile::TempDir::new().unwrap();
+        let ctx = ToolContext {
+            working_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = tool
+            .execute(
+                serde_json::json!({"command": "cat ../../../etc/passwd"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result.content.contains("blocked"));
+        assert!(result.content.contains("path escapes"));
+    }
+
+    #[tokio::test]
+    async fn test_absolute_path_outside_bounds_blocked() {
+        let tool = BashTool;
+        let dir = tempfile::TempDir::new().unwrap();
+        let ctx = ToolContext {
+            working_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = tool
+            .execute(
+                serde_json::json!({"command": "cat /etc/hosts"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert!(result.content.contains("blocked"));
+        assert!(result.content.contains("path escapes"));
+    }
+
+    #[tokio::test]
+    async fn test_safe_relative_path_allowed() {
+        let tool = BashTool;
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("test.txt"), "safe content").unwrap();
+        let ctx = ToolContext {
+            working_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = tool
+            .execute(
+                serde_json::json!({"command": "cat ./test.txt"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert!(result.content.contains("safe content"));
+    }
+
+    #[tokio::test]
+    async fn test_no_path_command_allowed() {
+        let tool = BashTool;
+        let dir = tempfile::TempDir::new().unwrap();
+        let ctx = ToolContext {
+            working_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        // Commands without file paths should pass through path validation.
+        let result = tool
+            .execute(
+                serde_json::json!({"command": "echo hello world"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert!(result.content.contains("hello world"));
     }
 }

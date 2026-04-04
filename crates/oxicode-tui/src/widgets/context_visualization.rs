@@ -80,6 +80,7 @@ impl Widget for ContextVisualization {
 
         // Bar: [████████░░░░░] 65% (130K/200K tokens)
         let bar_width = (inner.width as usize).saturating_sub(2);
+        #[allow(clippy::cast_sign_loss, clippy::cast_precision_loss, clippy::cast_possible_truncation)]
         let filled = ((pct / 100.0) * bar_width as f64).round() as usize;
         let empty = bar_width.saturating_sub(filled);
 

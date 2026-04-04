@@ -59,6 +59,7 @@ pub struct SecurityAnalyzer {
 }
 
 impl SecurityAnalyzer {
+    #[allow(clippy::too_many_lines)] // security patterns table is inherently long
     pub fn new() -> Self {
         let raw_patterns: Vec<(&str, &str, SecurityLevel)> = vec![
             // -- Destructive file operations --

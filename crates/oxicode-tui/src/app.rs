@@ -613,14 +613,11 @@ impl App {
                     let text = self.input_text[start_byte..end_byte].to_string();
                     self.vim.yank(&text);
 
-                    match action {
-                        VimAction::YankTextObject(_, _) => {
-                            // Yank only, don't delete.
-                        }
-                        _ => {
-                            self.input_text.replace_range(start_byte..end_byte, "");
-                            self.input_cursor = start;
-                        }
+                    if let VimAction::YankTextObject(_, _) = action {
+                        // Yank only, don't delete.
+                    } else {
+                        self.input_text.replace_range(start_byte..end_byte, "");
+                        self.input_cursor = start;
                     }
                 }
             }

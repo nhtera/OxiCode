@@ -42,8 +42,7 @@ impl RetryPolicy {
         let backoff = self.delay_for(attempt);
         let retry_after = info
             .retry_after_secs
-            .map(Duration::from_secs_f64)
-            .unwrap_or(Duration::ZERO);
+            .map_or(Duration::ZERO, Duration::from_secs_f64);
         backoff.max(retry_after).min(self.max_delay)
     }
 

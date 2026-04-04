@@ -57,7 +57,7 @@ impl BridgeSessionState {
     pub fn state_label(&self) -> &'static str {
         if self.is_streaming {
             "streaming"
-        } else if !self.active_perms.try_lock().map_or(false, |p| p.is_empty()) {
+        } else if !self.active_perms.try_lock().is_ok_and(|p| p.is_empty()) {
             // If lock contended (map_or false → !false = true) → conservatively report awaiting.
             // If lock acquired and non-empty → also report awaiting.
             "awaiting_permission"

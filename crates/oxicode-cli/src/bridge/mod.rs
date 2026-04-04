@@ -20,8 +20,10 @@ pub const PROTOCOL_VERSION: &str = "1.0";
 /// Transport mode for the bridge server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum Transport {
     /// JSON-RPC over stdin/stdout (default, Phase A).
+    #[default]
     Stdio,
     /// TCP socket (Phase B, requires `bridge` feature).
     Tcp,
@@ -29,11 +31,6 @@ pub enum Transport {
     WebSocket,
 }
 
-impl Default for Transport {
-    fn default() -> Self {
-        Self::Stdio
-    }
-}
 
 impl std::fmt::Display for Transport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

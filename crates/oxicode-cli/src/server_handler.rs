@@ -91,13 +91,14 @@ impl ServerHandler {
     // Bridge protocol handlers (IDE integration)
     // -----------------------------------------------------------------------
 
+    #[allow(clippy::too_many_lines)] // method dispatch with necessary per-method handling
     async fn handle_bridge_method(
         &self,
         id: RpcId,
         method: &str,
         params: serde_json::Value,
     ) -> RpcResponse {
-        use bridge::messages::*;
+        use bridge::messages::{METHOD_INITIALIZE, InitializeParams, InitializeResult, METHOD_GET_STATUS, GetStatusParams, GetStatusResult, METHOD_GET_CONVERSATION, GetConversationParams, METHOD_SEND_MESSAGE, SendMessageParams, METHOD_APPROVE_PERMISSION, ApprovePermissionParams, METHOD_CANCEL_TURN, CancelTurnParams, METHOD_SWITCH_MODEL, SwitchModelParams};
 
         match method {
             METHOD_INITIALIZE => {
@@ -163,7 +164,7 @@ impl ServerHandler {
                 let perm_pending = !state
                     .active_perms
                     .try_lock()
-                    .map_or(false, |p| p.is_empty());
+                    .is_ok_and(|p| p.is_empty());
 
                 let status_str = if is_streaming {
                     "streaming"
@@ -729,6 +730,7 @@ fn spawn_event_forwarder(
 }
 
 /// Map a single TurnEvent to the appropriate RPC notification.
+#[allow(clippy::too_many_lines)] // event dispatch with per-variant handling
 async fn forward_turn_event(
     notify_tx: &mpsc::Sender<RpcNotification>,
     perm_tx: &mpsc::Sender<(String, oneshot::Sender<PermissionResponse>)>,

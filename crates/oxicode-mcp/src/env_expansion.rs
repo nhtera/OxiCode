@@ -76,6 +76,7 @@ pub fn expand_env_with(input: &str, lookup: impl Fn(&str) -> Option<String>) -> 
 }
 
 /// Expand all environment variables in a map of key-value pairs (e.g., server env config).
+#[allow(clippy::implicit_hasher)] // callers always use default hasher
 pub fn expand_env_map(map: &HashMap<String, String>) -> HashMap<String, String> {
     map.iter()
         .map(|(k, v)| (k.clone(), expand_env(v)))
