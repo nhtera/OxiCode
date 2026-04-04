@@ -5,6 +5,10 @@ pub mod tool_trait;
 
 // Tool implementations
 pub mod bash;
+pub mod bash_background;
+pub mod bash_result_mapper;
+pub mod bash_sandbox;
+pub mod bash_security;
 pub mod file_edit;
 pub mod file_read;
 pub mod file_write;
