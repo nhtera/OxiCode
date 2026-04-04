@@ -289,6 +289,78 @@ IDE Extension ←──stdin/stdout──→ oxicode --server
 
 ---
 
+## Phase 2: Memory Extraction Service
+
+### Memory Selection (Relevance-Based)
+**Purpose:** Inject top 5 relevant memories from historical project knowledge into system prompt per query.
+
+**Flow:**
+1. `QueryEngine` calls `MemorySelector::select_relevant(query, all_memories)`
+2. Selector builds manifest of 200-cap memories with indices + summaries
+3. Calls LLM (Haiku) with selection prompt: "Pick indices of top {N} relevant to this query"
+4. Parses JSON response, returns selected `MemoryEntry` objects
+5. Falls back to recency-based selection if LLM fails
+
+**Integration:** `oxicode-core/src/system_prompt.rs` assembles `relevant_memories` parameter into context
+
+**Implementation:** `oxicode-session/src/memory_selector.rs` (~200 LOC, `SelectionLlm` trait for testability)
+
+### Memory Extraction (Auto-Extract)
+**Purpose:** Persistently capture decisions, preferences, context from conversation at session end.
+
+**Flow:**
+1. Session ends (user quit or `/save`)
+2. `SessionEnd` hook triggers `MemoryExtractor::extract_and_save(messages, session_id)`
+3. Pattern-based extraction: identifies decisions ("decided to", "will use"), preferences ("prefer X over Y"), context facts
+4. Deduplicates against existing memories by content similarity
+5. Caps at 10 memories per session to avoid noise
+6. Saves to project memdir as `.md` files with YAML frontmatter + content
+
+**Implementation:** `oxicode-session/src/memory_extractor.rs` (~250 LOC)
+
+**Data format:**
+```yaml
+---
+id: mem-001
+type: Decision
+created_at: 2026-04-05T12:34:56Z
+session_id: sess-123
+tags: [architecture, testing]
+---
+
+Decided to use property-based testing for integer ranges.
+```
+
+### Memory Freshness (Age Caveats)
+**Purpose:** Warn about stale memories so LLM questions older information.
+
+**Rules:**
+- < 1 day old: no caveat
+- 1-7 days old: append `"(X days ago)"`
+- > 7 days old: append `"(X days ago — verify before using)"`
+
+**Implementation:** `oxicode-session/src/memory_freshness.rs` (~80 LOC, called before injection)
+
+### Team Memory Sync (Feature-Gated)
+**Purpose:** Share project memories across team members via delta-sync (bandwidth-efficient).
+
+**Flow (if feature `team_memory_sync` enabled):**
+1. On config, compute SHA-256 for each local memory
+2. POST to team endpoint: `{ project_id, checksums: [...] }`
+3. Endpoint responds with missing/outdated memory IDs
+4. Download missing memories, upload new ones
+5. Cache response with TTL
+
+**Configuration:** `settings.toml`
+```toml
+[team]
+memory_sync_url = "https://team.example.com/api/team_memory/sync"
+```
+
+**Implementation:** `oxicode-session/src/team_memory_sync.rs` (~300 LOC, feature-gated)
+
+---
+
 ## Phase 4: Context Defense Layers
 
 ### Layer 1: Truncation (Eager, L1)

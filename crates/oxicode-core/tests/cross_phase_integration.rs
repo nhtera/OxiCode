@@ -66,6 +66,7 @@ fn system_prompt_with_all_components_and_modes() {
         Some("project rules"),
         Some("skill definitions"),
         Some("memory facts"),
+        None,
         &skills,
     );
 

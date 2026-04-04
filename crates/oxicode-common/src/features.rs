@@ -15,6 +15,7 @@ pub mod flag {
     pub const REMOTE_AGENTS: &str = "remote_agents";
     pub const TEAMMATE_TASKS: &str = "teammate_tasks";
     pub const VOICE_INPUT: &str = "voice_input";
+    pub const TEAM_MEMORY_SYNC: &str = "team_memory_sync";
     pub const VIM_MODE: &str = "vim_mode";
     pub const LSP_INTEGRATION: &str = "lsp_integration";
     pub const TELEMETRY: &str = "telemetry";
@@ -34,6 +35,7 @@ pub struct FeatureFlags {
     pub remote_agents: bool,
     pub teammate_tasks: bool,
     pub voice_input: bool,
+    pub team_memory_sync: bool,
     pub vim_mode: bool,
     pub lsp_integration: bool,
     pub telemetry: bool,
@@ -52,6 +54,7 @@ impl Default for FeatureFlags {
             remote_agents: false,
             teammate_tasks: false,
             voice_input: false,
+            team_memory_sync: false,
             vim_mode: false,
             lsp_integration: false,
             telemetry: false,
@@ -71,6 +74,7 @@ impl FeatureFlags {
             flag::REMOTE_AGENTS => self.remote_agents,
             flag::TEAMMATE_TASKS => self.teammate_tasks,
             flag::VOICE_INPUT => self.voice_input,
+            flag::TEAM_MEMORY_SYNC => self.team_memory_sync,
             flag::VIM_MODE => self.vim_mode,
             flag::LSP_INTEGRATION => self.lsp_integration,
             flag::TELEMETRY => self.telemetry,
@@ -88,6 +92,7 @@ impl FeatureFlags {
             flag::REMOTE_AGENTS => &mut self.remote_agents,
             flag::TEAMMATE_TASKS => &mut self.teammate_tasks,
             flag::VOICE_INPUT => &mut self.voice_input,
+            flag::TEAM_MEMORY_SYNC => &mut self.team_memory_sync,
             flag::VIM_MODE => &mut self.vim_mode,
             flag::LSP_INTEGRATION => &mut self.lsp_integration,
             flag::TELEMETRY => &mut self.telemetry,
@@ -111,6 +116,7 @@ impl FeatureFlags {
             flag::REMOTE_AGENTS => &mut self.remote_agents,
             flag::TEAMMATE_TASKS => &mut self.teammate_tasks,
             flag::VOICE_INPUT => &mut self.voice_input,
+            flag::TEAM_MEMORY_SYNC => &mut self.team_memory_sync,
             flag::VIM_MODE => &mut self.vim_mode,
             flag::LSP_INTEGRATION => &mut self.lsp_integration,
             flag::TELEMETRY => &mut self.telemetry,
@@ -136,6 +142,7 @@ impl FeatureFlags {
             (flag::REMOTE_AGENTS, self.remote_agents),
             (flag::TEAMMATE_TASKS, self.teammate_tasks),
             (flag::VOICE_INPUT, self.voice_input),
+            (flag::TEAM_MEMORY_SYNC, self.team_memory_sync),
             (flag::VIM_MODE, self.vim_mode),
             (flag::LSP_INTEGRATION, self.lsp_integration),
             (flag::TELEMETRY, self.telemetry),

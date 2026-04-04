@@ -11,6 +11,7 @@ pub fn assemble_system_prompt(
         project_claude_md,
         skills_prompt,
         memory_content,
+        None,
         &[],
     )
 }
@@ -39,11 +40,13 @@ pub fn mode_injection_text(active_skills: &[String]) -> Option<String> {
 /// `active_skills` is the list from `AppState::active_skills`.
 /// When "advisor_mode" is present, an advisor directive is injected.
 /// When "sandbox_mode" is present, a sandbox notice is injected.
+/// `relevant_memories` is the formatted output from `memory_selector::format_memories_for_prompt`.
 pub fn assemble_system_prompt_with_modes(
     global_claude_md: Option<&str>,
     project_claude_md: Option<&str>,
     skills_prompt: Option<&str>,
     memory_content: Option<&str>,
+    relevant_memories: Option<&str>,
     active_skills: &[String],
 ) -> String {
     let mut parts = vec![BASE_SYSTEM_PROMPT.to_string()];
@@ -71,6 +74,12 @@ pub fn assemble_system_prompt_with_modes(
     if let Some(memory) = memory_content {
         if !memory.is_empty() {
             parts.push(format!("\n# Project Memory\n\n{memory}"));
+        }
+    }
+
+    if let Some(relevant) = relevant_memories {
+        if !relevant.is_empty() {
+            parts.push(format!("\n{relevant}"));
         }
     }
 
@@ -177,7 +186,7 @@ mod tests {
     #[test]
     fn test_advisor_mode_injection() {
         let skills = vec!["advisor_mode".to_string()];
-        let prompt = assemble_system_prompt_with_modes(None, None, None, None, &skills);
+        let prompt = assemble_system_prompt_with_modes(None, None, None, None, None, &skills);
         assert!(prompt.contains("Active Modes"));
         assert!(prompt.contains("advisor mode"));
         assert!(prompt.contains("ask the user for confirmation"));
@@ -186,7 +195,7 @@ mod tests {
     #[test]
     fn test_sandbox_mode_injection() {
         let skills = vec!["sandbox_mode".to_string()];
-        let prompt = assemble_system_prompt_with_modes(None, None, None, None, &skills);
+        let prompt = assemble_system_prompt_with_modes(None, None, None, None, None, &skills);
         assert!(prompt.contains("Active Modes"));
         assert!(prompt.contains("Sandbox mode is active"));
     }
@@ -194,7 +203,7 @@ mod tests {
     #[test]
     fn test_both_modes_injection() {
         let skills = vec!["advisor_mode".to_string(), "sandbox_mode".to_string()];
-        let prompt = assemble_system_prompt_with_modes(None, None, None, None, &skills);
+        let prompt = assemble_system_prompt_with_modes(None, None, None, None, None, &skills);
         assert!(prompt.contains("advisor mode"));
         assert!(prompt.contains("Sandbox mode"));
     }
@@ -202,14 +211,14 @@ mod tests {
     #[test]
     fn test_no_modes_no_section() {
         let skills = vec!["extended_thinking".to_string()];
-        let prompt = assemble_system_prompt_with_modes(None, None, None, None, &skills);
+        let prompt = assemble_system_prompt_with_modes(None, None, None, None, None, &skills);
         assert!(!prompt.contains("Active Modes"));
     }
 
     #[test]
     fn test_modes_appear_before_global_instructions() {
         let skills = vec!["advisor_mode".to_string()];
-        let prompt = assemble_system_prompt_with_modes(Some("global"), None, None, None, &skills);
+        let prompt = assemble_system_prompt_with_modes(Some("global"), None, None, None, None, &skills);
         let modes_pos = prompt.find("Active Modes").unwrap();
         let global_pos = prompt.find("Global Instructions").unwrap();
         assert!(
@@ -239,5 +248,45 @@ mod tests {
         let skills = vec!["sandbox_mode".to_string()];
         let text = mode_injection_text(&skills).unwrap();
         assert!(text.contains("Sandbox mode"));
+    }
+
+    // -- Relevant memories tests --
+
+    #[test]
+    fn test_relevant_memories_injected() {
+        let prompt = assemble_system_prompt_with_modes(
+            None,
+            None,
+            None,
+            Some("MEMORY.md content"),
+            Some("## Relevant Memories\n\n- Use Rust for CLI\n- Prefer snake_case\n"),
+            &[],
+        );
+        assert!(prompt.contains("Project Memory"));
+        assert!(prompt.contains("Relevant Memories"));
+        assert!(prompt.contains("Use Rust for CLI"));
+    }
+
+    #[test]
+    fn test_relevant_memories_after_project_memory() {
+        let prompt = assemble_system_prompt_with_modes(
+            None,
+            None,
+            None,
+            Some("memory"),
+            Some("## Relevant Memories\n\n- fact"),
+            &[],
+        );
+        let mem_pos = prompt.find("Project Memory").unwrap();
+        let rel_pos = prompt.find("Relevant Memories").unwrap();
+        assert!(rel_pos > mem_pos);
+    }
+
+    #[test]
+    fn test_empty_relevant_memories_skipped() {
+        let prompt = assemble_system_prompt_with_modes(
+            None, None, None, None, Some(""), &[],
+        );
+        assert!(!prompt.contains("Relevant Memories"));
     }
 }

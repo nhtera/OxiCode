@@ -267,29 +267,38 @@ pub fn replace_messages(&self, messages: Vec<Message>);  // Phase 1: used by /co
 
 ---
 
-#### oxicode-session (~180 LOC)
-**Purpose:** Session persistence to disk (JSONL format)
+#### oxicode-session (~1,000 LOC)
+**Purpose:** Session persistence (JSONL) + memory extraction, selection, and team sync (Phase 2)
+
+**Core modules:**
+- `memory.rs` — Pattern-based memory extraction from text
+- `memory_types.rs` — MemoryEntry, MemoryType enum (Decision, Preference, Context, etc)
+- `memory_scanner.rs` — Scan project memdir for memories
+- **`memory_selector.rs` (NEW)** — LLM-based relevance selection (top 5 from 200)
+- **`memory_extractor.rs` (NEW)** — Auto-extract at session end, max 10 per session
+- **`memory_freshness.rs` (NEW)** — Append age caveats ("X days ago — verify")
+- **`team_memory_sync.rs` (NEW)** — Delta-sync with SHA-256 checksums (feature: `team_memory_sync`)
 
 **Key exports:**
 - `SessionManager` (load, save, append)
-- `Session` struct (messages + metadata)
-
-**Format:** One JSON object per line (JSONL)
-```json
-{"id":"msg_1","role":"user","content":[...],"created_at":"2026-04-02T..."}
-{"id":"msg_2","role":"assistant","content":[...],"usage":{"input_tokens":100}}
-```
+- `MemoryEntry`, `MemoryType` (persistence)
+- `MemorySelector::select_relevant()` (LLM-based filtering)
+- `MemoryExtractor::extract_and_save()` (auto-extraction)
+- `freshness_warning()` (age annotation)
+- `TeamMemorySync::sync()` (feature-gated team sync)
 
 **Key methods:**
 ```rust
 pub fn load(session_dir: &Path) -> OxiResult<Session>;
 pub fn save(&self, path: &Path) -> OxiResult<()>;
-pub fn append_message(&self, msg: &Message) -> OxiResult<()>;
+pub async fn select_relevant(llm, query, memories, max) -> SelectionResult;
+pub fn extract_and_save(messages, session_id) -> ExtractionResult;
+pub fn freshness_warning(created_at) -> Option<String>;
 ```
 
-**Used by:** CLI (load/save sessions), TUI (persist conversation)
+**Used by:** CLI (load/save), TUI (persist + memory injection), QueryEngine (system prompt)
 
-**Quality:** Atomic writes, version support, recovery from corruption
+**Quality:** Atomic writes, pattern extraction, LLM fallbacks, comprehensive tests (59 tests)
 
 ---
 

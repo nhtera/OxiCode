@@ -1,7 +1,13 @@
 pub mod memdir;
 pub mod memory;
+pub mod memory_extractor;
+pub mod memory_freshness;
 pub mod memory_scanner;
+pub mod memory_selector;
 pub mod memory_types;
+
+#[cfg(feature = "team_memory_sync")]
+pub mod team_memory_sync;
 
 use std::fs;
 use std::path::{Path, PathBuf};
