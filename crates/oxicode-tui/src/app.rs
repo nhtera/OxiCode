@@ -14,6 +14,7 @@ use tokio::sync::{mpsc, watch};
 use crate::events::{CoreEvent, UiEvent};
 use crate::keybindings::{Action, KeybindingRegistry};
 use crate::vim_mode::{self, VimAction, VimState};
+use crate::vim_text_objects;
 use crate::widgets::{
     ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageView, Notification,
     NotificationWidget, PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel,
@@ -242,6 +243,8 @@ impl App {
                         status: a.status.clone(),
                         started_at: a.started_at.clone(),
                         duration: String::new(),
+                        model: String::new(),
+                        restricted_tools: Vec::new(),
                     })
                     .collect();
 
@@ -423,8 +426,15 @@ impl App {
                     self.should_quit = true;
                 }
             }
-            VimAction::Noop
-            | VimAction::SwitchToInsert
+            VimAction::Noop => {
+                // When entering visual mode, set the anchor to current cursor.
+                if self.vim.mode == crate::vim_mode::Mode::Visual
+                    || self.vim.mode == crate::vim_mode::Mode::VisualLine
+                {
+                    self.vim.set_visual_anchor(self.input_cursor);
+                }
+            }
+            VimAction::SwitchToInsert
             | VimAction::EnterCommandMode
             | VimAction::ExecuteCommand(_) => {}
             VimAction::InsertChar(c) => {
@@ -467,14 +477,23 @@ impl App {
             | VimAction::OpenLineBelow => {
                 self.input_cursor = self.input_text.chars().count();
             }
-            VimAction::MoveWordForward => {
-                self.input_cursor = vim_mode::next_word_pos(&self.input_text, self.input_cursor);
+            VimAction::MoveWordForward(count) => {
+                for _ in 0..count {
+                    self.input_cursor =
+                        vim_mode::next_word_pos(&self.input_text, self.input_cursor);
+                }
             }
-            VimAction::MoveWordBackward => {
-                self.input_cursor = vim_mode::prev_word_pos(&self.input_text, self.input_cursor);
+            VimAction::MoveWordBackward(count) => {
+                for _ in 0..count {
+                    self.input_cursor =
+                        vim_mode::prev_word_pos(&self.input_text, self.input_cursor);
+                }
             }
-            VimAction::MoveWordEnd => {
-                self.input_cursor = vim_mode::word_end_pos(&self.input_text, self.input_cursor);
+            VimAction::MoveWordEnd(count) => {
+                for _ in 0..count {
+                    self.input_cursor =
+                        vim_mode::word_end_pos(&self.input_text, self.input_cursor);
+                }
             }
             VimAction::DeleteLine => {
                 self.vim.yank(&self.input_text);
@@ -534,6 +553,140 @@ impl App {
             VimAction::EnterSearch => {
                 self.search.activate();
             }
+            VimAction::DeleteRange(start, end) => {
+                // For visual mode: range is (0,0) placeholder — use anchor+cursor.
+                let (s, e) = if start == 0 && end == 0 {
+                    let anchor = self.vim.visual_anchor();
+                    let cursor = self.input_cursor;
+                    (anchor.min(cursor), anchor.max(cursor).saturating_add(1))
+                } else {
+                    (start, end)
+                };
+                let char_count = self.input_text.chars().count();
+                let e = e.min(char_count);
+                let start_byte = char_to_byte_index(&self.input_text, s);
+                let end_byte = char_to_byte_index(&self.input_text, e);
+                let deleted = self.input_text[start_byte..end_byte].to_string();
+                self.vim.yank(&deleted);
+                self.input_text.replace_range(start_byte..end_byte, "");
+                self.input_cursor = s;
+            }
+            VimAction::ChangeRange(start, end) => {
+                let (s, e) = if start == 0 && end == 0 {
+                    let anchor = self.vim.visual_anchor();
+                    let cursor = self.input_cursor;
+                    (anchor.min(cursor), anchor.max(cursor).saturating_add(1))
+                } else {
+                    (start, end)
+                };
+                let char_count = self.input_text.chars().count();
+                let e = e.min(char_count);
+                let start_byte = char_to_byte_index(&self.input_text, s);
+                let end_byte = char_to_byte_index(&self.input_text, e);
+                let deleted = self.input_text[start_byte..end_byte].to_string();
+                self.vim.yank(&deleted);
+                self.input_text.replace_range(start_byte..end_byte, "");
+                self.input_cursor = s;
+            }
+            VimAction::YankRange(start, end) => {
+                let (s, e) = if start == 0 && end == 0 {
+                    let anchor = self.vim.visual_anchor();
+                    let cursor = self.input_cursor;
+                    (anchor.min(cursor), anchor.max(cursor).saturating_add(1))
+                } else {
+                    (start, end)
+                };
+                let char_count = self.input_text.chars().count();
+                let e = e.min(char_count);
+                let start_byte = char_to_byte_index(&self.input_text, s);
+                let end_byte = char_to_byte_index(&self.input_text, e);
+                let yanked = self.input_text[start_byte..end_byte].to_string();
+                self.vim.yank(&yanked);
+            }
+            VimAction::EnterVisualLine => {
+                self.vim.set_visual_anchor(self.input_cursor);
+            }
+            VimAction::DeleteTextObject(modifier, target)
+            | VimAction::ChangeTextObject(modifier, target)
+            | VimAction::YankTextObject(modifier, target) => {
+                if let Some((start, end)) = self.resolve_text_object(modifier, target) {
+                    let start_byte = char_to_byte_index(&self.input_text, start);
+                    let end_byte = char_to_byte_index(&self.input_text, end);
+                    let text = self.input_text[start_byte..end_byte].to_string();
+                    self.vim.yank(&text);
+
+                    match action {
+                        VimAction::YankTextObject(_, _) => {
+                            // Yank only, don't delete.
+                        }
+                        _ => {
+                            self.input_text.replace_range(start_byte..end_byte, "");
+                            self.input_cursor = start;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Resolve a text object to a char range using the current input text.
+    fn resolve_text_object(&self, modifier: char, target: char) -> Option<(usize, usize)> {
+        let text = &self.input_text;
+        let cursor = self.input_cursor;
+        let inner = modifier == 'i';
+
+        match target {
+            'w' => {
+                if inner {
+                    vim_text_objects::inner_word(text, cursor)
+                } else {
+                    vim_text_objects::a_word(text, cursor)
+                }
+            }
+            '"' => {
+                if inner {
+                    vim_text_objects::inner_quote(text, cursor, '"')
+                } else {
+                    vim_text_objects::a_quote(text, cursor, '"')
+                }
+            }
+            '\'' | '`' => {
+                let q = target;
+                if inner {
+                    vim_text_objects::inner_quote(text, cursor, q)
+                } else {
+                    vim_text_objects::a_quote(text, cursor, q)
+                }
+            }
+            '(' | ')' => {
+                if inner {
+                    vim_text_objects::inner_bracket(text, cursor, '(', ')')
+                } else {
+                    vim_text_objects::a_bracket(text, cursor, '(', ')')
+                }
+            }
+            '{' | '}' => {
+                if inner {
+                    vim_text_objects::inner_bracket(text, cursor, '{', '}')
+                } else {
+                    vim_text_objects::a_bracket(text, cursor, '{', '}')
+                }
+            }
+            '[' | ']' => {
+                if inner {
+                    vim_text_objects::inner_bracket(text, cursor, '[', ']')
+                } else {
+                    vim_text_objects::a_bracket(text, cursor, '[', ']')
+                }
+            }
+            '<' | '>' => {
+                if inner {
+                    vim_text_objects::inner_bracket(text, cursor, '<', '>')
+                } else {
+                    vim_text_objects::a_bracket(text, cursor, '<', '>')
+                }
+            }
+            _ => None,
         }
     }
 

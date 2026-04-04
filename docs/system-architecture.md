@@ -1,6 +1,6 @@
 # OxiCode — System Architecture
 
-**Version:** 0.4.0 | **Last Updated:** 2026-04-04 | **Phase:** 5 (Plugin Marketplace & Enterprise Settings) | **Cumulative:** Phase 1-8 + Phase 5 plugin/enterprise subsystems
+**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Phase:** 6 (TUI Advanced Dialogs & Vim Depth) | **Cumulative:** Phase 1-8 + Phase 5 plugin/enterprise + Phase 6 vim/dialogs
 
 ## Architecture Overview
 
@@ -830,146 +830,62 @@ Insert ←──→ Normal ←──→ Visual
 - `StatusBar` — Display current mode (-- INSERT --, -- VISUAL --)
 - Settings toggle: `/vim` command or config.editor_mode = "vim"
 
-### Configurable Keybindings
+---
 
-User-customizable key → action mappings via TOML configuration.
+## Phase 6: TUI Advanced Dialogs & Vim Text Objects (NEW)
 
-**File:** `~/.oxicode/keybindings.toml` (loaded at startup)
+### Vim Text Objects
 
-**Format:**
-```toml
-[[bindings]]
-key = "Ctrl+K"
-action = "search"
+**Implementation:** `oxicode-tui/src/vim_text_objects.rs` (NEW in Phase 6)
 
-[[bindings]]
-key = "Ctrl+R"
-action = "history_search"
+**Text object syntax:** `{action}{text_object}` where:
+- **Actions:** d (delete), c (change), y (yank)
+- **Objects:** 
+  - `iw` — inner word (word content)
+  - `aw` — a word (word + surrounding whitespace)
+  - `i"` — inner double quotes
+  - `a"` — a double quotes (including quotes)
+  - `i(` — inner parentheses
+  - `a(` — a parentheses (including parens)
+  - `i{` — inner braces
+  - `a{` — a braces (including braces)
 
-[[bindings]]
-key = "Alt+Left"
-action = "move_word_left"
+**Examples:**
+```
+diw  → Delete inner word
+ci"  → Change inner quoted string
+ya{  → Yank around braces
 ```
 
-**Implementation:** `oxicode-tui/src/keybindings.rs`
-- Default bindings registry (fallback if no config file)
-- TOML parsing + validation
-- Chord sequence state machine (Ctrl+K → Ctrl+C for multi-step bindings)
-- `/keybindings` command to list all active bindings
+**Integration:** Works with operator composition, count prefixes (3diw)
 
-**Integrated Shortcuts:**
-- `Ctrl+K` — Search overlay (/)
-- `Ctrl+?` — Shortcuts panel
-- `Ctrl+R` — History search
-- `Ctrl+U` — Clear line
-- `Ctrl+W` — Delete word backward
-- `Alt+Left/Right` — Move word-level cursor
-- `Shift+Enter` — Multi-line input
-- `Alt+Enter` — Smart newline (context-aware)
+### Advanced TUI Dialogs (Phase 6 NEW)
 
-### Onboarding Wizard
+**4 new dialog widgets:**
 
-First-run setup experience for new users — interactive initialization of API key, model, permissions, and theme.
+#### 1. ContextVisualization (`widgets/context_visualization.rs`)
+- Displays token budget as visual bar chart
+- Shows L1-L5 defense layer activations
+- Real-time budget status (Healthy/Warning/Danger/Critical)
+- Helps users understand context consumption
 
-**Implementation:** `oxicode-cli/src/onboarding.rs`
+#### 2. CostDialog (`widgets/cost_dialog.rs`)
+- Estimates model costs based on message history
+- Per-token pricing from model metadata
+- Input + output cost breakdown
+- Projected costs for long conversations
 
-**Flow:**
-1. Detect first run: no `~/.oxicode/` directory
-2. Launch interactive wizard (raw terminal mode via crossterm)
-3. Step 1: API key input (masked via `rpassword`)
-4. Step 2: Model selection (list + cursor nav)
-5. Step 3: Permission mode (Bypass/ApprovalOnly/Ask)
-6. Step 4: Theme (Light/Dark/Auto)
-7. Write `settings.toml` with choices
-8. Create config directory structure
+#### 3. AutoModeDialog (`widgets/auto_mode_dialog.rs`)
+- Selector for auto-completion modes
+- Toggle between manual/auto tool approval
+- Batch operations selection
+- Mode-specific hint text
 
-**Configuration Integration:**
-- Settings stored in `~/.oxicode/settings.toml`
-- Fields added: `editor_mode`, `output_style`, `keybindings_path`
-- CLI flag: `--no-onboard` to skip wizard
-
-**Settings (oxicode-config):**
-```rust
-pub struct Settings {
-    pub api_key: String,              // Masked in wizard
-    pub model: String,                 // Claude default
-    pub permission_mode: String,       // "ask", "approval_only", "bypass"
-    pub theme: String,                 // "light", "dark", "auto"
-    pub editor_mode: String,           // "normal" (default), "vim"
-    pub output_style: String,          // "markdown", "plain", "minimal", "verbose"
-}
-```
-
-### Output Style Variants
-
-Multiple rendering modes for LLM responses — control formatting, detail level, and visual presentation.
-
-**Styles:**
-- **markdown** (default) — Formatted output with syntax highlighting
-- **plain** — No formatting, raw text only
-- **minimal** — Compact output, no borders or extra whitespace
-- **verbose** — Full tool call details, thinking block contents, token counts
-
-**Activation:**
-- Initial selection in onboarding wizard
-- Toggle via `/output-style` command (cycles through variants)
-- Persist choice in settings.toml
-
-**Implementation:** Integrated into MessageView rendering logic
-- Check `AppState.settings.output_style` before render
-- Apply style-specific filters to message content
-- Minimal: strip all ANSI codes, reduce spacing
-- Verbose: expand collapsed sections, show metadata
-
-### Enhanced Input Box
-
-Multi-line editing, command history, and readline-style shortcuts.
-
-**Features:**
-- **Multi-line:** Shift+Enter for newline, Alt+Enter for smart break
-- **History:** Up/Down arrows navigate previous commands (file-based: `~/.oxicode/history`)
-- **History search:** Ctrl+R overlay for fuzzy search of command history
-- **Word movement:** Alt+Left/Right jump by word
-- **Clipboard:** Ctrl+V paste support (via `clipboard-win` crate)
-- **Line editing:** Ctrl+K kill to end, Ctrl+U clear line, Ctrl+W delete word
-
-**Integration Points:**
-- `InputBox::history_path()` — Load/save from `~/.oxicode/history`
-- `SearchOverlay` — Reuse from command palette for history search
-- `vim_mode.rs` — Vim operators work with multi-line content
-
-**Session-level State:**
-```rust
-pub struct InputState {
-    pub text: String,              // Current input
-    pub cursor_pos: usize,         // Insertion point
-    pub history: Vec<String>,      // Last 500 commands
-    pub history_index: usize,      // Current history offset
-    pub selection: Option<(usize, usize)>,  // Vim visual selection
-}
-```
-
-### Implementation Summary
-
-**Files Created:**
-- `crates/oxicode-tui/src/vim_mode.rs` (400 LOC) — State machine, motions, operators
-- `crates/oxicode-tui/src/keybindings.rs` (300 LOC) — Config loader, dispatch
-- `crates/oxicode-cli/src/onboarding.rs` (250 LOC) — Wizard, setup flow
-- (output_styles integrated into existing MessageView rendering)
-
-**Files Modified:**
-- `oxicode-tui/src/app.rs` — Keybinding dispatch loop, vim mode integration
-- `oxicode-tui/src/widgets/input_box.rs` — Vim handling, multi-line, history
-- `oxicode-tui/src/widgets/status_bar.rs` — Mode indicator display
-- `oxicode-cli/src/main.rs` — Onboarding check pre-TUI launch
-- `oxicode-config/src/settings.rs` — Settings fields for keybindings, output_style
-- `oxicode-tui/Cargo.toml` — Added `rpassword`, `toml` dependencies
-
-**Tests:**
-- 50 TUI tests (vim_mode: 30, keybindings: 15, input_box: 5)
-- 9 config tests (settings, keybindings TOML parsing)
-- Zero clippy warnings in new code
-- Full workspace compilation passes
+#### 4. OAuthDialog (`widgets/oauth_dialog.rs`)
+- OAuth 2.0 flow UI for plugin/service auth
+- Displays authorization URL
+- Poll for completion status
+- Token refresh handling
 
 ---
 

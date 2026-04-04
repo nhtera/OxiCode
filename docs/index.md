@@ -1,6 +1,6 @@
 # OxiCode Documentation Index
 
-**Version:** 0.1.0 | **Last Updated:** 2026-04-02 | **Phase:** 4 Complete
+**Version:** 0.2.0 | **Last Updated:** 2026-04-04 | **Phase:** 6 Complete
 
 Welcome to OxiCode documentation. This is your guide to understanding, developing, and extending the system.
 
@@ -44,46 +44,66 @@ docs/
 
 ---
 
-## What's New in Phase 4
+## What's New in Phase 6
 
-**Added 4 new crates + 31 new files + ~2800 LOC:**
+**Added 4 new TUI widgets, vim text objects, 16 new slash commands:**
 
-### 1. Context Defense (oxicode-context)
-Automated token budget management with 5 graduated layers:
-- **L1: Truncation** — Remove oldest middle messages
-- **L2: Microcompact** — Compress thinking blocks + tool results
-- **L3: Auto-Compact** — LLM-assisted summarization (70% trigger)
-- **L4: Reactive** — Emergency mid-stream compaction (95% trigger)
-- **L5: Collapse** — Hard reset to disk state (100% trigger)
+### 1. Vim Text Objects
+Advanced text object support with operators:
+- **Objects** — iw/aw (word), i"/a" (quotes), i(/a( (parens), i{/a{ (braces)
+- **Operators** — diw (delete inner word), ci" (change inner quote), ya{ (yank around brace)
+- **Composition** — Count prefixes: 3diw, 2ci"
+- **Integration** — Works in Normal mode, VisualLine mode (V)
 
-**See:** [System Architecture → Context Defense Layers](./system-architecture.md#phase-4-context-defense-layers)
+**See:** [System Architecture → Vim Text Objects](./system-architecture.md#vim-text-objects)
 
-### 2. Multi-Agent System (oxicode-agents)
-Spawn and coordinate subagents with shared messaging:
-- **Spawner:** Launch child processes with config
-- **Coordinator:** Manage agent teams, delegate tasks
-- **MessageBus:** Inter-agent JSON communication
-- **Team:** Collective operations, shared state
+### 2. Advanced TUI Dialogs
+4 new modal dialog widgets:
+- **ContextVisualization** — Visual token budget display, defense layer indicators
+- **CostDialog** — Model cost estimation (per-token pricing)
+- **AutoModeDialog** — Auto-completion mode selector
+- **OAuthDialog** — OAuth 2.0 flow UI for service auth
 
-**See:** [System Architecture → Multi-Agent System](./system-architecture.md#phase-4-multi-agent-system)
+**See:** [System Architecture → Advanced TUI Dialogs](./system-architecture.md#advanced-tui-dialogs-phase-6-new)
 
-### 3. Skill System (oxicode-skills)
-Dynamic prompt injection based on conditions:
-- **Discovery:** Scan `~/.oxicode/skills/` for `SKILL.md` files
-- **Parser:** Extract YAML frontmatter + markdown prompts
-- **Executor:** Activate on file type, keywords, user intent
-- **Activation:** Automatic injection into system prompt
+### 3. Extended Commands
+16 new slash commands for power users:
+- **UI Control** — /color, /statusline, /keybindings, /terminal-setup
+- **Content Org** — /tag, /btw (notes), /thinkback (review thinking)
+- **Info** — /release-notes, /advisor, /insights, /stickers
+- **System** — /passes (optimizations), /rate-limit-options
 
-**See:** [System Architecture → Skill System](./system-architecture.md#phase-4-skill-system)
+**See:** [System Architecture → CLI Commands](./system-architecture.md#oxicode-cli-400-loc)
 
-### 4. Background Tasks (oxicode-tasks)
-Long-running process management with streaming output:
-- **TaskManager:** In-process registry, status tracking
-- **TaskRunner:** Async process spawning, I/O redirection
-- **OutputReader:** Incremental JSONL log reading
-- **Notifications:** De-duplicating status updates
+### 4. Test Coverage Expansion
+- **TUI Tests:** 81 passing (was ~50 in Phase 5)
+- **Text Objects:** Full operator composition tests
+- **Dialogs:** Modal interaction tests
+- **Zero warnings:** Clippy approved
 
-**See:** [System Architecture → Background Task Management](./system-architecture.md#phase-4-background-task-management)
+**See:** [Code Standards → Testing Standards](./code-standards.md)
+
+---
+
+## What's New in Phase 5
+
+**Added Plugin Marketplace & Enterprise Settings:**
+
+### 1. Plugin Registry (oxicode-plugins crate)
+Plugin discovery, installation, trust assessment:
+- Fetch remote index, cache locally (1-hour TTL)
+- Search/filter by keywords, version constraints
+- Trust levels: Verified (signed), Community (voted), Unverified
+- Hot-reload capability without restart
+
+### 2. Enterprise Managed Settings
+Remote admin endpoint with HMAC-SHA256 validation:
+- Fetch settings from admin server
+- Cloud sync (push/pull with OAuth tokens)
+- Conflict resolution (latest-wins)
+- Locked keys prevent user override
+
+**See:** [Codebase Summary → Phase 5 Plugin Marketplace](./codebase-summary.md#layer-5-phase-5--plugin-marketplace--enterprise-settings)
 
 ---
 
@@ -379,6 +399,21 @@ Located in `../plans/reports/`:
 ---
 
 ## Changelog
+
+### Phase 6 (2026-04-04) ✓ Complete
+- Added 4 new TUI widgets (dialogs)
+- Added vim text objects (iw/aw/i"/a"/i(/a(/i{/a{)
+- Added 16 new slash commands
+- Extended command total to 91 (from 75)
+- Extended tool total to 46 (from 42)
+- TUI test coverage: 81 tests (from ~50)
+
+### Phase 5 (2026-04-03) ✓ Complete
+- Added oxicode-plugins (2.1K LOC)
+- Added enterprise settings to oxicode-config
+- Plugin registry + marketplace integration
+- Hot-reload capability
+- Cloud sync + HMAC validation
 
 ### Phase 4 (2026-04-02) ✓ Complete
 - Added oxicode-context (5-layer context defense)

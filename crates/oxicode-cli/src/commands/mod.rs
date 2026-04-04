@@ -7,6 +7,7 @@ pub mod clipboard_commands;
 pub mod debug_commands;
 pub mod enterprise_commands;
 pub mod extras_commands;
+pub mod info_commands;
 pub mod utility_commands;
 pub mod general;
 pub mod git_commands;
@@ -20,9 +21,11 @@ pub mod plugin_commands;
 pub mod provider;
 pub mod reasoning_commands;
 pub mod session_commands;
+pub mod session_extras;
 pub mod session_view_commands;
 pub mod task_commands;
 pub mod team_commands;
+pub mod ui_commands;
 pub mod view_commands;
 pub mod workflow_commands;
 
@@ -306,6 +309,26 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(utility_commands::AddDirCommand));
     reg.register(Box::new(utility_commands::ExtraUsageCommand));
     reg.register(Box::new(mcp_commands::McpDoctorCommand));
+
+    // Phase 6: UI commands (/color, /keybindings, /statusline, /terminal-setup)
+    reg.register(Box::new(ui_commands::ColorCommand));
+    reg.register(Box::new(ui_commands::KeybindingsCommand));
+    reg.register(Box::new(ui_commands::StatuslineCommand));
+    reg.register(Box::new(ui_commands::TerminalSetupCommand));
+
+    // Phase 6: Session extras (/tag, /btw, /thinkback, /release-notes)
+    reg.register(Box::new(session_extras::TagCommand));
+    reg.register(Box::new(session_extras::BtwCommand));
+    reg.register(Box::new(session_extras::ThinkbackCommand));
+    reg.register(Box::new(session_extras::ReleaseNotesCommand));
+
+    // Phase 6: Info commands (/advisor, /insights, /stickers, /passes, /rate-limit-options, /reload-plugins)
+    reg.register(Box::new(info_commands::AdvisorCommand));
+    reg.register(Box::new(info_commands::InsightsCommand));
+    reg.register(Box::new(info_commands::StickersCommand));
+    reg.register(Box::new(info_commands::PassesCommand));
+    reg.register(Box::new(info_commands::RateLimitOptionsCommand));
+    reg.register(Box::new(info_commands::ReloadPluginsInfoCommand));
 
     reg
 }

@@ -149,7 +149,7 @@ impl Widget for StatusBar<'_> {
             let badge_color = match self.vim_badge {
                 "N" => Color::Blue,
                 "I" => Color::Green,
-                "V" => Color::Magenta,
+                "V" | "VL" => Color::Magenta,
                 "C" => Color::Yellow,
                 _ => Color::White,
             };

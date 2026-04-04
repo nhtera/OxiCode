@@ -5,6 +5,7 @@ pub mod prompt_suggestions;
 pub mod themes;
 pub mod tips_service;
 pub mod vim_mode;
+pub mod vim_text_objects;
 pub mod widgets;
 
 pub use app::App;

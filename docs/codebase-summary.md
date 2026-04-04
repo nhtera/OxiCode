@@ -1,6 +1,6 @@
 # OxiCode — Codebase Summary
 
-**Version:** 0.4.0 | **Last Updated:** 2026-04-04 | **Scope:** Phase 5 Complete (Plugin Marketplace & Enterprise Settings) | **Total:** 17 crates, 39 oxicode-tools files, ~120K tokens
+**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Scope:** Phase 6 Complete (TUI Advanced Dialogs & Vim Depth) | **Total:** 17 crates, 46 oxicode-tools files, ~130K tokens
 
 ---
 
@@ -580,16 +580,26 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 
 ---
 
-#### oxicode-tui (~600 LOC)
-**Purpose:** Terminal UI (ratatui), event loop, rendering
+#### oxicode-tui (~800 LOC)
+**Purpose:** Terminal UI (ratatui), event loop, rendering, vim mode, advanced dialogs
 
 **Key exports:**
 - `App` — main TUI struct (state, input, rendering)
 - `Renderer` — draw functions for each component
 - Event loop (keyboard → UiEvent → core → StateStore → redraw)
-- Widgets: MessageView, InputBox, StatusBar, (Phase 5: AgentPanel, TaskPanel, NotificationPanel)
+- Widgets: MessageView, InputBox, StatusBar, AgentPanel, TaskPanel, NotificationPanel
+- **Phase 6 NEW:** ContextVisualization, CostDialog, AutoModeDialog, OAuthDialog widgets
+- **Phase 6 NEW:** VimTextObjects (iw/aw, i"/a", i(/a(, i{/a{, operators: diw, ci", ya{)
 
 **Top file:** tui/app.rs (2,456 tokens, 2.4% of codebase)
+
+**Phase 6 additions:**
+- `vim_mode.rs` — Vim text object support (iw, aw, i", a", i(, a(, i{, a{ with operators)
+- `vim_text_objects.rs` (NEW) — Text object parsing & execution
+- `widgets/context_visualization.rs` (NEW) — Token budget visualization
+- `widgets/cost_dialog.rs` (NEW) — Model cost estimation dialog
+- `widgets/auto_mode_dialog.rs` (NEW) — Auto-completion mode selector
+- `widgets/oauth_dialog.rs` (NEW) — OAuth flow UI
 
 **Layout:**
 ```
@@ -615,14 +625,14 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 
 ---
 
-#### oxicode-cli (~280 LOC)
+#### oxicode-cli (~400 LOC)
 **Purpose:** Slash commands (/help, /model, /agent, /skills, /tasks, etc)
 
 **Key exports:**
 - `CommandRegistry` — HashMap of slash commands
 - `SlashCommand` trait (execute, completions)
 - `CommandOutput` enum (Message, Silent, Quit, Error)
-- **Built-in commands: 75 total (was 42 real + 27 stubs)**
+- **Built-in commands: 91 total (was 75 in Phase 5)**
   - Core: help, version, clear, status, quit, config, model, permissions
   - Session: save, load, export, undo, redo, rename, resume
   - Git: commit, pr, branch, log, stash, push, pull (7 Phase 5)
@@ -631,7 +641,24 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
   - Team/Agents: team, agents, task, plugin, plan
   - View: theme, shortcuts, about, tools, history, vim, review (+ many workflow stubs)
   - **Phase 5:** All 27 stubs replaced + 6 new commands (vim, rename, usage, context, resume, review)
+  - **Phase 6 NEW:** 16 new slash commands (color, keybindings, statusline, terminal-setup, tag, btw, thinkback, release-notes, advisor, insights, stickers, passes, rate-limit-options, reload-plugins)
   - **File management:** view_commands.rs split into 3 modules (each <200 lines)
+
+**Phase 6 new commands:**
+- `/color` — Theme + color palette editor
+- `/keybindings` — View/edit keybindings (Phase 8 enhancement)
+- `/statusline` — Customize status bar display
+- `/terminal-setup` — Terminal initialization & setup
+- `/tag` — Tag messages for organization
+- `/btw` — Quick note/aside insertion
+- `/thinkback` — Review thinking block history
+- `/release-notes` — Show changelog + release info
+- `/advisor` — Get AI advisor recommendations
+- `/insights` — Extract insights from conversation
+- `/stickers` — ASCII art sticker library
+- `/passes` — Token optimization passes
+- `/rate-limit-options` — Rate limiting configuration
+- `/reload-plugins` — Hot-reload plugins (Phase 5)
 
 **Files:**
 - commands/mod.rs (registry)
@@ -654,14 +681,15 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 
 | Metric | Value |
 |--------|-------|
-| Total Crates | 16 |
-| Total Files | 121 |
-| Total Tokens | 101,835 |
-| Total Chars | 450,032 |
-| LOC (non-test) | ~5,500 |
-| Test LOC | ~2,000 |
+| Total Crates | 17 |
+| Total Files | 131 |
+| Total Tokens | 130,500 |
+| Total Chars | 480,000 |
+| LOC (non-test) | ~6,200 |
+| Test LOC | ~2,800 |
 | Unsafe Code | 0 (forbidden) |
 | Panics in Prod | 0 |
+| TUI Tests | 81 (was ~50 in Phase 5)
 
 ### Top 5 Files by Size
 1. openai_compatible.rs — 3,681 tokens (3.6%)
@@ -677,7 +705,7 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 | oxicode-config | 150 | Config loading |
 | oxicode-api | 600 | Provider traits |
 | oxicode-core | 400 | Query execution |
-| oxicode-tools | 450 | Tool system (42 tools as of Phase 3) |
+| oxicode-tools | 520 | Tool system (46 tools as of Phase 6) |
 | oxicode-permissions | 300 | Access control |
 | oxicode-state | 150 | State management |
 | oxicode-session | 180 | Persistence |
@@ -688,9 +716,9 @@ pub fn sync_status(&self) -> OxiResult<SyncStatus>;
 | **oxicode-tasks** | **380** | **Background tasks (P4)** |
 | **oxicode-plugins** | **2,100** | **Plugin marketplace + registry (P5)** |
 | oxicode-mcp | 200 | MCP bridging |
-| oxicode-tui | 600 | Terminal UI |
-| oxicode-cli | 280 | Commands/REPL |
-| **Total** | **~8,240** | **16 crates + plugins** |
+| oxicode-tui | 800 | Terminal UI (P6: +200 LOC for vim depth + dialogs) |
+| oxicode-cli | 400 | Commands/REPL (P6: +16 new commands) |
+| **Total** | **~9,060** | **17 crates + Phase 6 enhancements** |
 
 ---
 
@@ -887,13 +915,13 @@ cargo build --release
 
 ---
 
-## Next Steps (Phase 5+)
+## Next Steps (Phase 7+)
 
-1. ✅ **Phase 5 COMPLETE** — All 27 stubs replaced (75 total commands, all real)
-2. **Phase 6:** Advanced features (server mode, Web UI, plugin marketplace)
-3. **Bug fixes:** Address H1, H2 priority issues from Phase 4 review
-4. **Performance:** Token counting optimization, context window tuning
-5. **Observability:** Metrics, trace export, debug mode enhancements
+1. ✅ **Phase 6 COMPLETE** — Advanced TUI dialogs, vim text objects, 16 new commands
+2. **Phase 7:** Server improvements, team UI enhancements
+3. **Bug fixes:** Monitor performance of new text object operators
+4. **Observability:** Extended metrics for dialog interactions
+5. **Community:** Marketplace plugins + advanced features
 
 ---
 

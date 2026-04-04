@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.4.0 | **Last Updated:** 2026-04-04 | **Status:** Phase 1-8 + Phase 5 Complete (Plugin Marketplace & Enterprise Settings)
+**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Status:** Phase 1-8 + Phase 5 + Phase 6 Complete (TUI Advanced Dialogs & Vim Depth)
 
 ## Project Vision
 
@@ -88,13 +88,25 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **Conflict Resolution** — Latest-wins with logging of overridden keys
 - **Dependencies Added** — flate2, tar, hmac, sha2, hex
 
+### Phase 6: TUI Advanced Dialogs & Vim Depth (Complete ✓)
+**Added:** 4 new TUI widgets, vim text objects, 16 new slash commands
+- **Vim Text Objects** — iw/aw, i"/a", i(/a(, i{/a{ with operator composition (diw, ci", ya{)
+- **VisualLine Mode** — V for line-wise selection, text object actions
+- **TUI Dialogs:** ContextVisualization, CostDialog, AutoModeDialog, OAuthDialog
+- **Agent Panel Coordinator** — model, restricted_tools fields, extended coordinator view
+- **16 New Commands** — /color, /keybindings, /statusline, /terminal-setup, /tag, /btw, /thinkback, /release-notes, /advisor, /insights, /stickers, /passes, /rate-limit-options, /reload-plugins, +more
+- **Files Added** — 7 new files (4 widgets + vim text objects + command modules)
+- **Test Coverage** — 81 TUI tests pass (was ~50), 0 warnings
+- **Total Tools** — 46 tools (was 42 in Phase 5)
+- **Total Commands** — 91 commands (was 75)
+
 ### Phase 9+: Forthcoming
 - **Phase 9 (Enterprise):** OAuth, GitHub SSO, telemetry, audit logging
 - **Phase 10 (Extras):** Voice input, advanced bridging, community plugins
 
 ---
 
-## Crate Architecture (16 crates total)
+## Crate Architecture (17 crates total)
 
 ### Foundational Layer
 | Crate | Purpose | Key Type | Lines |
@@ -269,6 +281,7 @@ oxicode/
 | **2 (API)** | **✓ Complete** | **Prompt caching, extended thinking, Bedrock, Vertex** |
 | **4** | **✓ Complete** | **Context defense, multi-agent, skills, tasks** |
 | **5** | **✓ Complete** | **Plugin marketplace, enterprise settings, cloud sync** |
+| **6** | **✓ Complete** | **TUI dialogs (4 new), vim text objects, 16 new commands** |
 | 8 | ✓ Complete | Vim mode, keybindings, onboarding, output styles |
 | 9+ | Planned | OAuth, GitHub SSO, telemetry, advanced features |
 

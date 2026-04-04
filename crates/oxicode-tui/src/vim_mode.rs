@@ -14,6 +14,8 @@ pub enum Mode {
     Insert,
     /// Visual mode: character-level selection.
     Visual,
+    /// Visual Line mode: line-level selection.
+    VisualLine,
     /// Command-line mode (`:` prefix).
     Command,
 }
@@ -25,6 +27,7 @@ impl Mode {
             Mode::Normal => "N",
             Mode::Insert => "I",
             Mode::Visual => "V",
+            Mode::VisualLine => "VL",
             Mode::Command => "C",
         }
     }
@@ -75,12 +78,12 @@ pub enum VimAction {
     MoveToStart,
     /// Move cursor to end of text (G).
     MoveToEnd,
-    /// Move forward one word.
-    MoveWordForward,
-    /// Move backward one word.
-    MoveWordBackward,
-    /// Move to end of word.
-    MoveWordEnd,
+    /// Move forward one word (with count).
+    MoveWordForward(usize),
+    /// Move backward one word (with count).
+    MoveWordBackward(usize),
+    /// Move to end of word (with count).
+    MoveWordEnd(usize),
     /// Delete from cursor to end of line (D).
     DeleteToEnd,
     /// Delete word forward (dw).
@@ -97,6 +100,20 @@ pub enum VimAction {
     InsertAtLineStart,
     /// Open line below (o).
     OpenLineBelow,
+    /// Delete a range defined by char indices (start, end exclusive).
+    DeleteRange(usize, usize),
+    /// Change a range (delete + enter insert).
+    ChangeRange(usize, usize),
+    /// Yank a range to register.
+    YankRange(usize, usize),
+    /// Enter Visual Line mode (V).
+    EnterVisualLine,
+    /// Delete text object: (modifier 'i'/'a', target char like 'w'/'"'/'(' etc).
+    DeleteTextObject(char, char),
+    /// Change text object: delete + enter insert.
+    ChangeTextObject(char, char),
+    /// Yank text object to register.
+    YankTextObject(char, char),
 }
 
 /// Vim mode state machine.
@@ -105,6 +122,8 @@ pub struct VimState {
     pub mode: Mode,
     /// Pending operator (e.g. 'd' waiting for motion).
     pending_op: Option<char>,
+    /// Pending text object modifier ('i' for inner, 'a' for around).
+    pending_text_obj: Option<char>,
     /// Pending count prefix (e.g. "3" in "3dd").
     count_buf: String,
     /// Command-line buffer (after ':').
@@ -112,8 +131,7 @@ pub struct VimState {
     /// Yank register (single line for now).
     yank_register: String,
     /// Visual mode anchor position.
-    #[allow(dead_code)]
-    visual_anchor: usize,
+    pub visual_anchor: usize,
     /// Whether vim mode is enabled.
     pub enabled: bool,
 }
@@ -123,6 +141,7 @@ impl VimState {
         Self {
             mode: Mode::Normal,
             pending_op: None,
+            pending_text_obj: None,
             count_buf: String::new(),
             command_buf: String::new(),
             yank_register: String::new(),
@@ -138,6 +157,7 @@ impl VimState {
             self.mode = Mode::Normal;
         }
         self.pending_op = None;
+        self.pending_text_obj = None;
         self.count_buf.clear();
         self.command_buf.clear();
     }
@@ -150,6 +170,16 @@ impl VimState {
     /// Get yanked text.
     pub fn yanked(&self) -> &str {
         &self.yank_register
+    }
+
+    /// Set visual anchor position (called when entering visual mode).
+    pub fn set_visual_anchor(&mut self, pos: usize) {
+        self.visual_anchor = pos;
+    }
+
+    /// Get visual anchor position.
+    pub fn visual_anchor(&self) -> usize {
+        self.visual_anchor
     }
 
     /// Get current command buffer (for command mode display).
@@ -174,7 +204,7 @@ impl VimState {
         match self.mode {
             Mode::Normal => self.handle_normal(key, text_len),
             Mode::Insert => self.handle_insert(key),
-            Mode::Visual => self.handle_visual(key, text_len),
+            Mode::Visual | Mode::VisualLine => self.handle_visual(key, text_len),
             Mode::Command => self.handle_command(key),
         }
     }
@@ -188,6 +218,17 @@ impl VimState {
                 self.count_buf.push(c);
                 return VimAction::Noop;
             }
+        }
+
+        // Check for pending text object modifier (i/a after operator).
+        if let Some(modifier) = self.pending_text_obj {
+            if let Some(op) = self.pending_op {
+                let result = self.resolve_text_object(op, modifier, key);
+                self.pending_op = None;
+                self.pending_text_obj = None;
+                return result;
+            }
+            self.pending_text_obj = None;
         }
 
         // Check for pending operator + motion.
@@ -219,7 +260,13 @@ impl VimState {
             }
             (_, KeyCode::Char('v')) => {
                 self.mode = Mode::Visual;
+                self.visual_anchor = 0; // Will be set by caller to current cursor
                 VimAction::Noop
+            }
+            (_, KeyCode::Char('V')) => {
+                self.mode = Mode::VisualLine;
+                self.visual_anchor = 0;
+                VimAction::EnterVisualLine
             }
 
             // Basic motions.
@@ -244,16 +291,16 @@ impl VimState {
 
             // Word motions.
             (_, KeyCode::Char('w')) => {
-                let _n = self.consume_count();
-                VimAction::MoveWordForward
+                let n = self.consume_count();
+                VimAction::MoveWordForward(n)
             }
             (_, KeyCode::Char('b')) => {
-                let _n = self.consume_count();
-                VimAction::MoveWordBackward
+                let n = self.consume_count();
+                VimAction::MoveWordBackward(n)
             }
             (_, KeyCode::Char('e')) => {
-                let _n = self.consume_count();
-                VimAction::MoveWordEnd
+                let n = self.consume_count();
+                VimAction::MoveWordEnd(n)
             }
 
             // Line motions.
@@ -325,6 +372,7 @@ impl VimState {
             // Esc clears pending state.
             (_, KeyCode::Esc) => {
                 self.pending_op = None;
+                self.pending_text_obj = None;
                 self.count_buf.clear();
                 VimAction::Noop
             }
@@ -335,38 +383,102 @@ impl VimState {
 
     /// Handle pending operator + motion (e.g. dd, dw, yy, cw).
     fn handle_operator_motion(&mut self, op: char, key: KeyEvent, _text_len: usize) -> VimAction {
-        self.pending_op = None;
         let _count = self.consume_count();
 
         match (op, key.code) {
+            // Text object modifier: di_, ci_, yi_, da_, ca_, ya_
+            (_, KeyCode::Char('i')) | (_, KeyCode::Char('a')) => {
+                if let KeyCode::Char(modifier) = key.code {
+                    self.pending_text_obj = Some(modifier);
+                    return VimAction::Noop;
+                }
+                self.pending_op = None;
+                VimAction::Noop
+            }
+
             // dd = delete line, yy = yank line, cc = change line.
-            ('d', KeyCode::Char('d')) => VimAction::DeleteLine,
-            ('y', KeyCode::Char('y')) => VimAction::YankLine,
+            ('d', KeyCode::Char('d')) => {
+                self.pending_op = None;
+                VimAction::DeleteLine
+            }
+            ('y', KeyCode::Char('y')) => {
+                self.pending_op = None;
+                VimAction::YankLine
+            }
             ('c', KeyCode::Char('c')) => {
+                self.pending_op = None;
                 self.mode = Mode::Insert;
                 VimAction::DeleteLine
             }
 
             // dw = delete word, cw = change word.
-            ('d', KeyCode::Char('w')) => VimAction::DeleteWordForward,
+            ('d', KeyCode::Char('w')) => {
+                self.pending_op = None;
+                VimAction::DeleteWordForward
+            }
             ('c', KeyCode::Char('w')) => {
+                self.pending_op = None;
                 self.mode = Mode::Insert;
                 VimAction::DeleteWordForward
             }
 
             // db = delete word backward.
-            ('d', KeyCode::Char('b')) => VimAction::DeleteWordBackward,
+            ('d', KeyCode::Char('b')) => {
+                self.pending_op = None;
+                VimAction::DeleteWordBackward
+            }
 
             // d$ = delete to end.
-            ('d', KeyCode::Char('$')) => VimAction::DeleteToEnd,
+            ('d', KeyCode::Char('$')) => {
+                self.pending_op = None;
+                VimAction::DeleteToEnd
+            }
             ('c', KeyCode::Char('$')) => {
+                self.pending_op = None;
                 self.mode = Mode::Insert;
                 VimAction::ChangeToEnd
             }
 
             // gg = go to start.
-            ('g', KeyCode::Char('g')) => VimAction::MoveToStart,
+            ('g', KeyCode::Char('g')) => {
+                self.pending_op = None;
+                VimAction::MoveToStart
+            }
 
+            _ => {
+                self.pending_op = None;
+                VimAction::Noop
+            }
+        }
+    }
+
+    /// Resolve a text object: operator + modifier (i/a) + target char.
+    /// `text` is provided by the caller — but we only have key here.
+    /// Returns a VimAction with the range for the caller to resolve.
+    fn resolve_text_object(&mut self, op: char, modifier: char, key: KeyEvent) -> VimAction {
+        // The key determines the text object target. We emit a specialized action
+        // that app.rs will handle using vim_text_objects functions with actual text.
+        let target = match key.code {
+            KeyCode::Char(c) => c,
+            _ => return VimAction::Noop,
+        };
+
+        // Validate target is a recognized text object.
+        let valid = matches!(
+            target,
+            'w' | '"' | '\'' | '(' | ')' | '{' | '}' | '[' | ']' | '<' | '>' | '`'
+        );
+        if !valid {
+            return VimAction::Noop;
+        }
+
+        match op {
+            'd' => VimAction::DeleteTextObject(modifier, target),
+            'c' => {
+                self.mode = Mode::Insert;
+                VimAction::ChangeTextObject(modifier, target)
+            }
+            'y' => VimAction::YankTextObject(modifier, target),
             _ => VimAction::Noop,
         }
     }
@@ -404,19 +516,24 @@ impl VimState {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => VimAction::Passthrough(key),
             (_, KeyCode::Char('h') | KeyCode::Left) => VimAction::MoveCursorBy(-1),
             (_, KeyCode::Char('l') | KeyCode::Right) => VimAction::MoveCursorBy(1),
-            (_, KeyCode::Char('w')) => VimAction::MoveWordForward,
-            (_, KeyCode::Char('b')) => VimAction::MoveWordBackward,
+            (_, KeyCode::Char('w')) => VimAction::MoveWordForward(1),
+            (_, KeyCode::Char('b')) => VimAction::MoveWordBackward(1),
             (_, KeyCode::Char('0')) => VimAction::MoveToLineStart,
             (_, KeyCode::Char('$')) => VimAction::MoveToLineEnd,
-            // d in visual = delete selection.
+            // d/x in visual = delete selection range.
             (_, KeyCode::Char('d' | 'x')) => {
                 self.mode = Mode::Normal;
-                VimAction::DeleteChar
+                VimAction::DeleteRange(0, 0) // Placeholder — app.rs resolves with anchor+cursor
             }
-            // y in visual = yank selection.
+            // c in visual = change selection range.
+            (_, KeyCode::Char('c')) => {
+                self.mode = Mode::Insert;
+                VimAction::ChangeRange(0, 0) // Placeholder — app.rs resolves with anchor+cursor
+            }
+            // y in visual = yank selection range.
             (_, KeyCode::Char('y')) => {
                 self.mode = Mode::Normal;
-                VimAction::YankLine
+                VimAction::YankRange(0, 0) // Placeholder — app.rs resolves with anchor+cursor
             }
             _ => VimAction::Noop,
         }
