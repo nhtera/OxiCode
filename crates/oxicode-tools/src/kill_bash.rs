@@ -101,10 +101,13 @@ impl Tool for KillBashTool {
             map.remove(task_id);
         }
 
-        // Also update TaskManager status to Killed.
+        // Update TaskManager status if task is registered (background tasks only;
+        // foreground tasks use fg-{uuid} IDs not registered in TaskManager).
         {
             let mut mgr = ctx.task_manager.lock().expect("lock task_manager");
-            mgr.update_status(task_id, oxicode_tasks::TaskStatus::Killed);
+            if mgr.get_task(task_id).is_some() {
+                mgr.update_status(task_id, oxicode_tasks::TaskStatus::Killed);
+            }
         }
 
         let method = if escalated { "SIGKILL" } else { "SIGTERM" };

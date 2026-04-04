@@ -135,10 +135,10 @@ fn handle_import(args: &[&str]) -> CommandOutput {
     match extract_archive(&path) {
         Ok(stats) => CommandOutput::Message(format!(
             "Session imported successfully!\n\
-             Messages restored: {}\n\
+             Messages found: {} (load via session file)\n\
              Memories imported: {} (skipped {} duplicates)\n\
              Settings: {}\n\n\
-             Restart OxiCode to load the imported session.",
+             Session data saved to ~/.oxicode/ — restart OxiCode to use.",
             stats.messages,
             stats.memories_imported,
             stats.memories_skipped,
@@ -316,6 +316,12 @@ fn extract_archive(archive_path: &Path) -> Result<ImportStats, String> {
                 .as_array()
                 .map_or(0, Vec::len);
         } else if let Some(name) = path_str.strip_prefix("memory/") {
+            // Security: only allow flat filenames — reject subdirectory paths.
+            if name.contains('/') || name.contains('\\') {
+                return Err(format!(
+                    "Memory path contains subdirectory: {name} — rejected for security"
+                ));
+            }
             // Import memory file with deduplication by SHA-256.
             let target = memory_dir.join(name);
             if target.exists() {
