@@ -196,6 +196,11 @@ custom_flag = true
 
     #[test]
     fn test_load_settings_runs_migrations() {
+        // Guard against shell env vars (e.g. ANTHROPIC_DEFAULT_SONNET_MODEL)
+        // that could override the migrated model value.
+        let sonnet_prev = std::env::var("ANTHROPIC_DEFAULT_SONNET_MODEL").ok();
+        std::env::remove_var("ANTHROPIC_DEFAULT_SONNET_MODEL");
+
         let tmp = tempfile::tempdir().unwrap();
         let toml_content = r#"
 model = "claude-3-5-sonnet-20241022"
@@ -210,6 +215,11 @@ permission_mode = "accept-edits"
         assert_eq!(settings.permission_mode, "accept_edits");
         // config_version should be current.
         assert_eq!(settings.config_version, migrations::CURRENT_VERSION);
+
+        // Restore env var.
+        if let Some(v) = sonnet_prev {
+            std::env::set_var("ANTHROPIC_DEFAULT_SONNET_MODEL", v);
+        }
     }
 
     #[test]

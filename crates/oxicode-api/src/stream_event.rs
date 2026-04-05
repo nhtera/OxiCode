@@ -100,6 +100,12 @@ pub(crate) enum RawDelta {
     InputJsonDelta { partial_json: String },
     #[serde(rename = "thinking_delta")]
     ThinkingDelta { thinking: String },
+    /// Model output signature (Anthropic signing). Silently ignored.
+    #[serde(rename = "signature_delta")]
+    SignatureDelta {
+        #[allow(dead_code)]
+        signature: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +153,7 @@ impl RawSseEvent {
                 RawDelta::ThinkingDelta { thinking } => {
                     vec![StreamEvent::ThinkingDelta { thinking }]
                 }
+                RawDelta::SignatureDelta { .. } => vec![], // Silently ignored.
             },
             Self::ContentBlockStop { index } => vec![StreamEvent::ContentBlockStop { index }],
             Self::MessageDelta { delta, usage } => {
@@ -355,5 +362,13 @@ mod tests {
 
         // Ensure they serialize differently
         assert_ne!(text_json, rate_limited_json);
+    }
+
+    #[test]
+    fn test_signature_delta_silently_ignored() {
+        let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"abc123signaturedata"}}"#;
+        let raw: RawSseEvent = serde_json::from_str(json).unwrap();
+        let events = raw.into_stream_events();
+        assert!(events.is_empty(), "signature_delta should produce no stream events");
     }
 }

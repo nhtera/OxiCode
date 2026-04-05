@@ -159,8 +159,11 @@ impl App {
 
             tokio::select! {
                 Some(ev) = term_rx.recv() => {
-                    if let Event::Key(key) = ev {
-                        self.handle_key(key).await;
+                    match ev {
+                        Event::Key(key) => self.handle_key(key).await,
+                        // Resize triggers immediate redraw on next loop iteration.
+                        Event::Resize(_, _) => {}
+                        _ => {}
                     }
                 }
                 Some(core_event) = self.core_rx.recv() => {
@@ -174,6 +177,9 @@ impl App {
 
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
+        // Prune expired notifications to prevent unbounded growth.
+        self.notifications.retain(Notification::is_active);
+
         let state = self.state_rx.borrow().clone();
         let vim_enabled = self.vim.enabled;
         let vim_badge = if vim_enabled {
@@ -914,6 +920,10 @@ impl App {
             }
             CoreEvent::Error(msg) => {
                 tracing::error!("Core error: {}", msg);
+                self.notifications.push(Notification::new(
+                    msg,
+                    crate::widgets::notification::NotificationLevel::Error,
+                ));
                 // Clear streaming state on error (engine may not send StreamEnd).
                 self.streaming_text.clear();
                 self.active_tools.clear();

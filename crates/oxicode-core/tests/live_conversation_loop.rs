@@ -15,6 +15,9 @@ use oxicode_state::{AppState, StateStore};
 use oxicode_tools::file_state_tracker::FileStateTracker;
 use oxicode_tools::tool_trait::ToolContext;
 
+/// Serialize live API tests to avoid provider-side 429s from parallel test workers.
+static LIVE_API_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 /// Build a ToolContext pointing at the given temp directory.
 fn make_tool_context(dir: &Path) -> ToolContext {
     ToolContext {
@@ -61,6 +64,7 @@ fn make_live_engine(dir: &Path) -> (Arc<QueryEngine>, Arc<StateStore>) {
 #[tokio::test]
 #[ignore]
 async fn test_simple_text_conversation() {
+    let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
     let (engine, state_store) = make_live_engine(tmp.path());
 
@@ -96,6 +100,7 @@ async fn test_simple_text_conversation() {
 #[tokio::test]
 #[ignore]
 async fn test_conversation_with_tool_use() {
+    let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
 
     // Create a file for the model to read.
@@ -136,6 +141,7 @@ async fn test_conversation_with_tool_use() {
 #[tokio::test]
 #[ignore]
 async fn test_conversation_bash_tool() {
+    let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
     let (engine, _) = make_live_engine(tmp.path());
 
@@ -157,6 +163,7 @@ async fn test_conversation_bash_tool() {
 #[tokio::test]
 #[ignore]
 async fn test_conversation_glob_tool() {
+    let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
 
     // Create some files for glob to find.
@@ -186,6 +193,7 @@ async fn test_conversation_glob_tool() {
 #[tokio::test]
 #[ignore]
 async fn test_conversation_multi_tool_sequence() {
+    let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
 
     // Create a file.
@@ -226,6 +234,7 @@ async fn test_conversation_multi_tool_sequence() {
 #[tokio::test]
 #[ignore]
 async fn test_conversation_state_has_usage() {
+    let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
     let (engine, state_store) = make_live_engine(tmp.path());
 

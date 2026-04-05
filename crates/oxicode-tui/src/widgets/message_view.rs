@@ -202,12 +202,70 @@ impl Widget for MessageView<'_> {
             .title(" Conversation ");
 
         let text = self.format_messages();
+        let scroll_y = resolve_scroll_offset(self.scroll_offset, area, text.lines.len());
 
         let paragraph = Paragraph::new(text)
             .block(block)
             .wrap(Wrap { trim: false })
-            .scroll((self.scroll_offset, 0));
+            .scroll((scroll_y, 0));
 
         paragraph.render(area, buf);
+    }
+}
+
+/// Convert requested scroll offset into a safe value for ratatui.
+///
+/// `u16::MAX` is used by the app as an auto-scroll sentinel ("jump to bottom").
+/// Passing it directly to `Paragraph::scroll` can overflow internal math
+/// (`area.height + scroll_y`) and panic. This helper resolves sentinel values
+/// and clamps all offsets into a safe, visible range.
+fn resolve_scroll_offset(requested: u16, area: Rect, line_count: usize) -> u16 {
+    let viewport_height = area.height.saturating_sub(2); // account for Block borders
+    let content_height = u16::try_from(line_count).unwrap_or(u16::MAX);
+    let max_content_scroll = content_height.saturating_sub(viewport_height);
+
+    let desired = if requested == u16::MAX {
+        max_content_scroll
+    } else {
+        requested.min(max_content_scroll)
+    };
+
+    // Paragraph internally computes `area.height + scroll_y` (u16), so clamp to
+    // prevent integer overflow even for very small/large terminal sizes.
+    desired.min(u16::MAX.saturating_sub(area.height))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assistant_text_message(text: &str) -> Message {
+        let mut msg = Message::assistant();
+        msg.content.push(ContentBlock::Text {
+            text: text.to_string(),
+        });
+        msg
+    }
+
+    #[test]
+    fn test_resolve_scroll_offset_auto_scroll_sentinel() {
+        let area = Rect::new(0, 0, 80, 10);
+        let scroll = resolve_scroll_offset(u16::MAX, area, 3);
+        assert_eq!(scroll, 0);
+    }
+
+    #[test]
+    fn test_render_with_max_scroll_offset_does_not_panic() {
+        let messages = vec![Message::user("hi"), assistant_text_message("hello")];
+        let active_tools: &[ActiveToolInfo<'_>] = &[];
+        let widget = MessageView::new(&messages, Some("streaming..."), active_tools, u16::MAX);
+        let area = Rect::new(0, 0, 80, 24);
+        let mut buf = Buffer::empty(area);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            widget.render(area, &mut buf);
+        }));
+
+        assert!(result.is_ok(), "render should not panic with max scroll");
     }
 }

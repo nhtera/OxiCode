@@ -188,7 +188,8 @@ pub async fn ensure_valid_token() -> Option<String> {
 
 /// Resolve the best available auth source.
 ///
-/// Priority: OAuth token > ANTHROPIC_API_KEY env > credentials.toml > None
+/// Priority: OAuth token > ANTHROPIC_API_KEY env > ANTHROPIC_AUTH_TOKEN env
+/// > credentials.toml > None
 pub async fn resolve_auth_source() -> AuthSource {
     // 1. Try OAuth.
     if let Some(tokens) = token_store::load_tokens() {
@@ -211,6 +212,15 @@ pub async fn resolve_auth_source() -> AuthSource {
         if !key.is_empty() {
             let display = mask_api_key(&key);
             return AuthSource::ApiKey { key, display };
+        }
+    }
+    if let Ok(token) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
+        if !token.is_empty() {
+            let display = mask_api_key(&token);
+            return AuthSource::ApiKey {
+                key: token,
+                display,
+            };
         }
     }
 
