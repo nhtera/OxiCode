@@ -120,6 +120,12 @@ impl<'a> MessageView<'a> {
             }
         }
     }
+
+    /// Maximum safe vertical scroll offset for this content in `area`.
+    pub fn max_scroll_offset(&self, area: Rect) -> u16 {
+        let text = self.format_messages();
+        max_content_scroll(area, text.lines.len())
+    }
 }
 
 /// Render content blocks (text, tool use, tool result, thinking) into lines.
@@ -215,14 +221,12 @@ impl Widget for MessageView<'_> {
 
 /// Convert requested scroll offset into a safe value for ratatui.
 ///
-/// `u16::MAX` is used by the app as an auto-scroll sentinel ("jump to bottom").
-/// Passing it directly to `Paragraph::scroll` can overflow internal math
-/// (`area.height + scroll_y`) and panic. This helper resolves sentinel values
-/// and clamps all offsets into a safe, visible range.
+/// `u16::MAX` may be used by callers as an auto-scroll sentinel ("jump to
+/// bottom"). Passing it directly to `Paragraph::scroll` can overflow internal
+/// math (`area.height + scroll_y`) and panic. This helper resolves sentinel
+/// values and clamps all offsets into a safe, visible range.
 fn resolve_scroll_offset(requested: u16, area: Rect, line_count: usize) -> u16 {
-    let viewport_height = area.height.saturating_sub(2); // account for Block borders
-    let content_height = u16::try_from(line_count).unwrap_or(u16::MAX);
-    let max_content_scroll = content_height.saturating_sub(viewport_height);
+    let max_content_scroll = max_content_scroll(area, line_count);
 
     let desired = if requested == u16::MAX {
         max_content_scroll
@@ -233,6 +237,12 @@ fn resolve_scroll_offset(requested: u16, area: Rect, line_count: usize) -> u16 {
     // Paragraph internally computes `area.height + scroll_y` (u16), so clamp to
     // prevent integer overflow even for very small/large terminal sizes.
     desired.min(u16::MAX.saturating_sub(area.height))
+}
+
+fn max_content_scroll(area: Rect, line_count: usize) -> u16 {
+    let viewport_height = area.height.saturating_sub(2); // account for Block borders
+    let content_height = u16::try_from(line_count).unwrap_or(u16::MAX);
+    content_height.saturating_sub(viewport_height)
 }
 
 #[cfg(test)]

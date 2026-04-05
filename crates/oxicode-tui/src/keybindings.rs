@@ -140,6 +140,16 @@ impl KeybindingRegistry {
             Action::TogglePanel,
         );
 
+        // Conversation scrolling.
+        bindings.insert(
+            KeyCombo::new(KeyModifiers::NONE, KeyCode::PageUp),
+            Action::PageUp,
+        );
+        bindings.insert(
+            KeyCombo::new(KeyModifiers::NONE, KeyCode::PageDown),
+            Action::PageDown,
+        );
+
         // Readline shortcuts.
         bindings.insert(
             KeyCombo::new(KeyModifiers::CONTROL, KeyCode::Char('k')),
@@ -332,7 +342,11 @@ mod tests {
     fn test_default_bindings_exist() {
         let reg = KeybindingRegistry::with_defaults();
         let quit_key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let pgup = KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE);
+        let pgdn = KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE);
         assert_eq!(reg.lookup(&quit_key), Some(&Action::Quit));
+        assert_eq!(reg.lookup(&pgup), Some(&Action::PageUp));
+        assert_eq!(reg.lookup(&pgdn), Some(&Action::PageDown));
     }
 
     #[test]

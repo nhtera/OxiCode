@@ -2,11 +2,14 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+    MouseEvent, MouseEventKind,
+};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use oxicode_state::{AppState, StateStore};
-use ratatui::backend::CrosstermBackend;
+use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Terminal;
 use tokio::sync::{mpsc, watch};
@@ -47,7 +50,12 @@ pub struct App {
     input_text: String,
     /// Cursor position as character index (not byte index).
     input_cursor: usize,
+    /// Current message-view scroll offset from top.
     scroll_offset: u16,
+    /// When true, keep message view pinned to bottom as new content arrives.
+    auto_scroll: bool,
+    /// Last computed max scroll offset for the current viewport/content.
+    max_scroll_offset: u16,
     streaming_text: String,
     should_quit: bool,
     /// Manages left/right split layout and ratio.
@@ -89,6 +97,8 @@ impl App {
             input_text: String::new(),
             input_cursor: 0,
             scroll_offset: 0,
+            auto_scroll: true,
+            max_scroll_offset: 0,
             streaming_text: String::new(),
             should_quit: false,
             split_pane: SplitPane::new(),
@@ -120,26 +130,25 @@ impl App {
         // Setup terminal
         terminal::enable_raw_mode()?;
         io::stdout().execute(EnterAlternateScreen)?;
+        io::stdout().execute(EnableMouseCapture)?;
         let backend = CrosstermBackend::new(io::stdout());
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
 
-        let result = self.event_loop(&mut terminal).await;
+        let mut term_rx = Self::spawn_terminal_event_listener();
+        let result = self.event_loop(&mut terminal, &mut term_rx).await;
 
         // Restore terminal (always, even on error)
         let _ = terminal::disable_raw_mode();
+        let _ = io::stdout().execute(DisableMouseCapture);
         let _ = io::stdout().execute(LeaveAlternateScreen);
 
         result
     }
 
-    async fn event_loop(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    ) -> io::Result<()> {
-        // C1 FIX: Single dedicated thread for all crossterm I/O.
-        // Sends terminal events over mpsc channel to avoid race conditions.
-        let (term_tx, mut term_rx) = mpsc::channel::<Event>(32);
+    /// Spawn a dedicated crossterm event thread and return its receiver.
+    fn spawn_terminal_event_listener() -> mpsc::Receiver<Event> {
+        let (term_tx, term_rx) = mpsc::channel::<Event>(32);
         tokio::task::spawn_blocking(move || loop {
             if event::poll(Duration::from_millis(50)).unwrap_or(false) {
                 if let Ok(ev) = event::read() {
@@ -149,7 +158,14 @@ impl App {
                 }
             }
         });
+        term_rx
+    }
 
+    async fn event_loop(
+        &mut self,
+        terminal: &mut Terminal<impl Backend>,
+        term_rx: &mut mpsc::Receiver<Event>,
+    ) -> io::Result<()> {
         loop {
             self.draw(terminal)?;
 
@@ -161,6 +177,7 @@ impl App {
                 Some(ev) = term_rx.recv() => {
                     match ev {
                         Event::Key(key) => self.handle_key(key).await,
+                        Event::Mouse(mouse) => self.handle_mouse(mouse),
                         // Resize triggers immediate redraw on next loop iteration.
                         Event::Resize(_, _) => {}
                         _ => {}
@@ -176,7 +193,7 @@ impl App {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn draw(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
+    fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> io::Result<()> {
         // Prune expired notifications to prevent unbounded growth.
         self.notifications.retain(Notification::is_active);
 
@@ -233,6 +250,14 @@ impl App {
                     result: t.result.as_ref().map(|(c, e)| (c.as_str(), *e)),
                 })
                 .collect();
+            let preview_view = MessageView::new(&state.messages, streaming, &active_tool_info, 0);
+            self.max_scroll_offset = preview_view.max_scroll_offset(left_area);
+            if self.auto_scroll {
+                self.scroll_offset = self.max_scroll_offset;
+            } else {
+                self.scroll_offset = self.scroll_offset.min(self.max_scroll_offset);
+            }
+
             let message_view = MessageView::new(
                 &state.messages,
                 streaming,
@@ -402,6 +427,12 @@ impl App {
             }
             (_, KeyCode::Down) => {
                 self.history_next();
+            }
+            (_, KeyCode::PageUp) => {
+                self.scroll_up_by(20);
+            }
+            (_, KeyCode::PageDown) => {
+                self.scroll_down_by(20);
             }
             (_, KeyCode::Home) => {
                 self.input_cursor = 0;
@@ -717,6 +748,43 @@ impl App {
         }
     }
 
+    /// Handle mouse events used by message scrolling.
+    fn handle_mouse(&mut self, mouse: MouseEvent) {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => self.scroll_up_by(3),
+            MouseEventKind::ScrollDown => self.scroll_down_by(3),
+            _ => {}
+        }
+    }
+
+    fn scroll_up_by(&mut self, lines: u16) {
+        if lines == 0 {
+            return;
+        }
+
+        if self.auto_scroll {
+            self.scroll_offset = self.max_scroll_offset;
+            self.auto_scroll = false;
+        }
+
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+
+    fn scroll_down_by(&mut self, lines: u16) {
+        if lines == 0 {
+            return;
+        }
+
+        let current = if self.auto_scroll {
+            self.max_scroll_offset
+        } else {
+            self.scroll_offset
+        };
+        let next = current.saturating_add(lines).min(self.max_scroll_offset);
+        self.scroll_offset = next;
+        self.auto_scroll = next >= self.max_scroll_offset;
+    }
+
     /// Execute a keybinding action.
     async fn execute_keybinding_action(&mut self, action: Action) {
         match action {
@@ -735,16 +803,16 @@ impl App {
                 self.split_pane.toggle_right();
             }
             Action::ScrollUp => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                self.scroll_up_by(1);
             }
             Action::ScrollDown => {
-                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                self.scroll_down_by(1);
             }
             Action::PageUp => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(20);
+                self.scroll_up_by(20);
             }
             Action::PageDown => {
-                self.scroll_offset = self.scroll_offset.saturating_add(20);
+                self.scroll_down_by(20);
             }
             Action::ClearLine => {
                 self.input_text.clear();
@@ -908,7 +976,7 @@ impl App {
         match event {
             CoreEvent::TextDelta(text) => {
                 self.streaming_text.push_str(&text);
-                self.scroll_offset = u16::MAX;
+                self.auto_scroll = true;
             }
             CoreEvent::StreamStart => {
                 self.streaming_text.clear();
@@ -916,7 +984,7 @@ impl App {
             CoreEvent::StreamEnd | CoreEvent::MessageComplete => {
                 self.streaming_text.clear();
                 self.active_tools.clear();
-                self.scroll_offset = u16::MAX;
+                self.auto_scroll = true;
             }
             CoreEvent::Error(msg) => {
                 tracing::error!("Core error: {}", msg);
@@ -936,7 +1004,7 @@ impl App {
                     input_summary: summary,
                     result: None,
                 });
-                self.scroll_offset = u16::MAX;
+                self.auto_scroll = true;
             }
             CoreEvent::ToolResult {
                 tool_use_id,
@@ -946,7 +1014,7 @@ impl App {
                 if let Some(tool) = self.active_tools.iter_mut().find(|t| t.id == tool_use_id) {
                     tool.result = Some((content, is_error));
                 }
-                self.scroll_offset = u16::MAX;
+                self.auto_scroll = true;
             }
             CoreEvent::PermissionAsk {
                 tool_name,
@@ -1009,6 +1077,10 @@ fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use insta::assert_snapshot;
+    use oxicode_common::PermissionResponse;
+    use ratatui::backend::TestBackend;
+    use tokio::sync::oneshot;
 
     #[test]
     fn test_char_to_byte_index_ascii() {
@@ -1032,5 +1104,254 @@ mod tests {
         assert_eq!(char_to_byte_index(s, 1), 1); // emoji starts at byte 1
         assert_eq!(char_to_byte_index(s, 2), 5); // 'b' starts at byte 5
         assert_eq!(char_to_byte_index(s, 3), 6); // past end
+    }
+
+    fn make_test_app() -> (App, mpsc::Receiver<UiEvent>, mpsc::Sender<CoreEvent>) {
+        let state_store = Arc::new(StateStore::default());
+        let (ui_tx, ui_rx) = mpsc::channel::<UiEvent>(32);
+        let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
+        let app = App::new(&state_store, ui_tx, core_rx);
+        (app, ui_rx, core_tx)
+    }
+
+    fn normalized_rendered_text(terminal: &Terminal<TestBackend>) -> String {
+        format!("{}", terminal.backend())
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn test_draw_with_test_backend_renders_baseline_ui() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        app.draw(&mut terminal).expect("draw succeeds");
+        let rendered = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_baseline", rendered.as_str());
+
+        assert!(
+            rendered.contains("Ready"),
+            "status bar should render readiness"
+        );
+        assert!(
+            rendered.contains("Type your message..."),
+            "input placeholder should render"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_event_loop_keyboard_input_emits_ui_events() {
+        let (mut app, mut ui_rx, _core_tx) = make_test_app();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+        let (term_tx, mut term_rx) = mpsc::channel::<Event>(16);
+
+        term_tx
+            .send(Event::Key(KeyEvent::new(
+                KeyCode::Char('h'),
+                KeyModifiers::NONE,
+            )))
+            .await
+            .expect("send h");
+        term_tx
+            .send(Event::Key(KeyEvent::new(
+                KeyCode::Char('i'),
+                KeyModifiers::NONE,
+            )))
+            .await
+            .expect("send i");
+        term_tx
+            .send(Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .await
+            .expect("send enter");
+        term_tx
+            .send(Event::Key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+            )))
+            .await
+            .expect("send ctrl+c");
+        drop(term_tx);
+
+        app.event_loop(&mut terminal, &mut term_rx)
+            .await
+            .expect("event loop exits");
+
+        assert!(
+            matches!(ui_rx.recv().await, Some(UiEvent::UserInput(text)) if text == "hi"),
+            "expected submitted input event"
+        );
+        assert!(
+            matches!(ui_rx.recv().await, Some(UiEvent::Quit)),
+            "expected quit event"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_event_loop_permission_dialog_overlay_renders_and_denies_on_ctrl_c() {
+        let (mut app, mut ui_rx, core_tx) = make_test_app();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+        let (reply_tx, reply_rx) = oneshot::channel::<PermissionResponse>();
+
+        core_tx
+            .send(CoreEvent::PermissionAsk {
+                tool_name: "bash".to_string(),
+                input_summary: "echo hello".to_string(),
+                prompt: "This command can modify files".to_string(),
+                reply_tx,
+            })
+            .await
+            .expect("send permission ask");
+
+        // Pull the core event and render one frame while the permission dialog is active.
+        let core_event = app
+            .core_rx
+            .recv()
+            .await
+            .expect("permission event delivered to app");
+        app.handle_core_event(core_event);
+        app.draw(&mut terminal)
+            .expect("draw with permission dialog");
+
+        let rendered = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_permission_dialog_overlay", rendered.as_str());
+        assert!(
+            rendered.contains("Permission Required"),
+            "permission dialog title should render"
+        );
+        assert!(
+            rendered.contains("Tool: bash"),
+            "permission dialog should include tool name"
+        );
+
+        // Ctrl+C while the dialog is open should deny the permission and request app quit.
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
+
+        let response = tokio::time::timeout(Duration::from_secs(1), reply_rx)
+            .await
+            .expect("permission response timeout")
+            .expect("permission response channel closed");
+        assert_eq!(
+            response,
+            PermissionResponse::Deny,
+            "Ctrl+C on permission dialog should deny"
+        );
+        assert!(
+            matches!(ui_rx.recv().await, Some(UiEvent::Quit)),
+            "Ctrl+C should also emit quit"
+        );
+    }
+
+    #[test]
+    fn test_draw_snapshots_active_tool_lifecycle() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        app.handle_core_event(CoreEvent::StreamStart);
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "tu_1".to_string(),
+            name: "bash".to_string(),
+            input: serde_json::json!({"command": "echo hello"}),
+        });
+        app.draw(&mut terminal).expect("draw with running tool");
+        assert_snapshot!(
+            "app_active_tool_running",
+            normalized_rendered_text(&terminal).as_str()
+        );
+
+        app.handle_core_event(CoreEvent::ToolResult {
+            tool_use_id: "tu_1".to_string(),
+            content: "hello".to_string(),
+            is_error: false,
+        });
+        app.draw(&mut terminal)
+            .expect("draw with completed tool result");
+        assert_snapshot!(
+            "app_active_tool_done",
+            normalized_rendered_text(&terminal).as_str()
+        );
+
+        app.handle_core_event(CoreEvent::MessageComplete);
+        app.draw(&mut terminal)
+            .expect("draw after message complete");
+        let after_complete = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_after_message_complete", after_complete.as_str());
+        assert!(
+            !after_complete.contains("[running]"),
+            "active tool list should clear on message complete"
+        );
+    }
+
+    #[test]
+    fn test_scroll_up_from_auto_scroll_switches_to_manual_mode() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = true;
+        app.max_scroll_offset = 120;
+        app.scroll_offset = 0;
+
+        app.scroll_up_by(1);
+
+        assert!(!app.auto_scroll, "scrolling up should disable auto-scroll");
+        assert_eq!(app.scroll_offset, 119);
+    }
+
+    #[test]
+    fn test_scroll_down_to_bottom_reenables_auto_scroll() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = false;
+        app.max_scroll_offset = 120;
+        app.scroll_offset = 110;
+
+        app.scroll_down_by(20);
+
+        assert_eq!(app.scroll_offset, 120);
+        assert!(app.auto_scroll, "reaching bottom should enable auto-scroll");
+    }
+
+    #[test]
+    fn test_mouse_wheel_uses_message_scrolling() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = true;
+        app.max_scroll_offset = 50;
+
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.scroll_offset, 47);
+        assert!(!app.auto_scroll);
+
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.scroll_offset, 50);
+        assert!(app.auto_scroll);
+    }
+
+    #[tokio::test]
+    async fn test_pageup_key_scrolls_up_from_bottom() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = true;
+        app.max_scroll_offset = 100;
+
+        app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
+            .await;
+
+        assert_eq!(app.scroll_offset, 80);
+        assert!(!app.auto_scroll);
     }
 }
