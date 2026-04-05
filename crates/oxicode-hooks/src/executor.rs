@@ -40,7 +40,7 @@ pub async fn execute_hook(
         }
         HookType::Http => {
             let config = hook_def.http_config();
-            execute_http_hook(payload, &config).await
+            execute_http_hook(payload, &config, None).await
         }
     }
 }

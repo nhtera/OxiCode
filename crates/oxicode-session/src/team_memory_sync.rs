@@ -169,6 +169,35 @@ mod inner {
 
         result
     }
+
+    /// Configuration for the background polling loop.
+    #[derive(Debug, Clone)]
+    pub struct SyncPollerConfig {
+        /// Sync endpoint URL (HTTPS required).
+        pub sync_url: String,
+        /// Project identifier.
+        pub project_id: String,
+        /// Poll interval (default 5 minutes).
+        pub interval: std::time::Duration,
+    }
+
+    impl Default for SyncPollerConfig {
+        fn default() -> Self {
+            Self {
+                sync_url: String::new(),
+                project_id: String::new(),
+                interval: std::time::Duration::from_secs(300),
+            }
+        }
+    }
+
+    /// Check if a sync poll should trigger based on time elapsed.
+    pub fn should_poll(
+        last_poll: Option<std::time::Instant>,
+        interval: std::time::Duration,
+    ) -> bool {
+        last_poll.map_or(true, |t| t.elapsed() >= interval)
+    }
 }
 
 #[cfg(feature = "team_memory_sync")]

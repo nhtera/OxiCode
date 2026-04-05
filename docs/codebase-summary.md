@@ -1,6 +1,6 @@
 # OxiCode — Codebase Summary
 
-**Version:** 0.5.0 | **Last Updated:** 2026-04-05 | **Scope:** Phase 7 Complete + MCP SDK Parity Migration | **Total:** 20 crates, 46 oxicode-tools files, ~158K tokens
+**Version:** 0.5.1 | **Last Updated:** 2026-04-05 | **Scope:** Gap Closure (Phases 7-10) Complete + 24 New Modules | **Total:** 20 crates, 46 oxicode-tools files, 170K tokens
 
 ---
 
@@ -121,8 +121,8 @@
 
 ---
 
-#### oxicode-api (~600 LOC)
-**Purpose:** LLM provider traits + message types + streaming
+#### oxicode-api (~900 LOC, Gap Closure +300 LOC)
+**Purpose:** LLM provider traits + message types + streaming + multipart uploads + policy limits
 
 **Key exports:**
 - `LlmProvider` async trait (stream_message, name)
@@ -134,6 +134,9 @@
   - `OpenAiProvider` — OpenAI API, compatible with Azure
   - `CompatibleProvider` — Any OpenAI-compatible endpoint
   - `McpProvider` — External MCP servers
+- **Gap Closure NEW:**
+  - `MultipartUploader` — Multipart file upload with MIME detection
+  - `PolicyLimitsPoller` — ETag-cached policy limits polling (rate limit aware)
 
 **Files:**
 - provider.rs (trait definition)
@@ -141,10 +144,12 @@
 - openai.rs
 - compatible.rs
 - mcp.rs
+- **files_multipart.rs** (Multipart form parser + MIME detection)
+- **policy_limits_poller.rs** (ETag-based caching, 5min TTL)
 
-**Used by:** Core (QueryEngine), TUI (streaming display)
+**Used by:** Core (QueryEngine), TUI (streaming display), Tools (file upload)
 
-**Quality:** Stream error handling, SSE parsing, retry logic
+**Quality:** Stream error handling, SSE parsing, retry logic, MIME validation
 
 **Top file:** openai_compatible.rs (3,681 tokens, 3.6% of codebase)
 
@@ -152,27 +157,45 @@
 
 ### Layer 2: Core Execution
 
-#### oxicode-core (~400 LOC)
-**Purpose:** Main query execution loop, LLM orchestration
+#### oxicode-core (~1,200 LOC, Gap Closure +800 LOC)
+**Purpose:** Main query execution loop, LLM orchestration, suggestion engine, session recording
 
 **Key exports:**
 - `QueryEngine` struct (main loop: stream → extract tools → execute → recurse)
 - `assemble_system_prompt()` — compose system message from multiple sources
 - `MAX_TOOL_TURNS = 50` (prevent infinite loops)
+- **Gap Closure NEW:**
+  - `AutoDreamService` — Context-aware suggestion engine (LSTM-style pattern matching)
+  - `VcrRecorder` — Session recording with gzip JSON serialization
+  - `VcrPlayer` — Session replay + diagnostics
+  - `PerfMetrics` — Latency tracking with p50/p95 percentiles
+  - `DiagnosticTracker` — Opt-in telemetry for debugging
+  - `ThinkingBlockStore` — Bounded VecDeque for thinking history
 
 **Files:**
 - query_engine.rs (main loop)
 - system_prompt.rs (prompt assembly)
 - message_builder.rs (helper)
+- **auto_dream_config.rs** (Context aggregator, pattern DB)
+- **auto_dream_service.rs** (Suggestion inference engine)
+- **vcr_recorder.rs** (Session recording + compression)
+- **vcr_player.rs** (Session playback state machine)
+- **vcr_storage.rs** (VCR file I/O, gzip JSON)
+- **perf_metrics.rs** (Latency tracking + percentiles)
+- **diagnostic_tracker.rs** (Feature-gated telemetry)
+- **thinking_block_store.rs** (Circular buffer for thinking blocks)
 
-**Key method:**
+**Key methods:**
 ```rust
 pub async fn execute_turn(&self, conversation: &mut Conversation) -> OxiResult<Message>
+pub fn suggest_next_action(&self, context: &SuggestionContext) -> Vec<String>
+pub fn record_session(&mut self, messages: &[Message]) -> OxiResult<()>
+pub async fn replay_session(&self, vcr_path: &Path) -> OxiResult<Vec<Message>>
 ```
 
-**Used by:** CLI, TUI
+**Used by:** CLI, TUI, Server mode
 
-**Quality:** No panics, proper error propagation, tool execution hooks
+**Quality:** No panics, proper error propagation, tool execution hooks, feature-gated telemetry
 
 ---
 
@@ -302,8 +325,8 @@ pub fn freshness_warning(created_at) -> Option<String>;
 
 ---
 
-#### oxicode-hooks (~1,050 LOC)
-**Purpose:** 29 lifecycle event hooks with 3 execution modes (command, agent, HTTP)
+#### oxicode-hooks (~1,200 LOC, Gap Closure +150 LOC)
+**Purpose:** 29 lifecycle event hooks with 3 execution modes (command, agent, HTTP), DNS pinning for TOCTOU protection
 
 **Key exports:**
 - `HookManager` (fire events, dispatch to executors)
@@ -311,6 +334,8 @@ pub fn freshness_warning(created_at) -> Option<String>;
 - `HookType` enum (Command | Agent | Http) — default Command for backward compat
 - `HookDef` (per-event config with type-specific settings)
 - `HookPayload` / `HookResponse` (Pass | ModifyPrompt | Abort | OverrideResult)
+- **Gap Closure NEW:**
+  - `PinnedResolver` — DNS-pinned resolver with 30s TTL cache + private IP rejection
 
 **Modules:**
 - `config.rs` — TOML parsing, supports string + table forms, inline + nested agent/http config
@@ -319,10 +344,17 @@ pub fn freshness_warning(created_at) -> Option<String>;
 - `manager.rs` — Central coordinator, session/model context injection
 - `agent_hook_executor.rs` — LLM-based hooks with structured output parsing, 60s timeout
 - `http_hook_executor.rs` — HTTP POST hooks with SSRF guard (private IP rejection), 10min timeout
+- **pinned_resolver.rs** (DNS cache + TOCTOU protection, rejects 127.0.0.1, ::1, 192.168.0.0/16, etc)
 
-**Used by:** QueryEngine (hook points), CLI (user-defined hooks)
+**DNS Pinning Features:**
+- 30-second TTL cache for resolved addresses
+- SSRF protection: reject private IP ranges (127.0.0.1, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7)
+- Prevent time-of-check-time-of-use attacks
+- Configurable cache size (default: 1000 entries)
 
-**Quality:** Fail-open design (timeout/error → Pass), comprehensive SSRF protection, 88 tests
+**Used by:** QueryEngine (hook points), HTTP hook executor (SSRF guard), CLI (user-defined hooks)
+
+**Quality:** Fail-open design (timeout/error → Pass), comprehensive SSRF protection, DNS cache validation, 94 tests
 
 ---
 
@@ -750,8 +782,8 @@ flush_interval_secs = 60
 
 ---
 
-#### oxicode-mcp (~250 LOC)
-**Purpose:** MCP (Model Context Protocol) client & server via rmcp SDK
+#### oxicode-mcp (~1,050 LOC, Gap Closure +800 LOC)
+**Purpose:** MCP (Model Context Protocol) client & server, bridge debugging, diagnostics, health checks
 
 **Key exports:**
 - `McpServerManager` — manages multiple MCP client connections (stdio, HTTP/SSE transports)
@@ -760,6 +792,16 @@ flush_interval_secs = 60
 - `list_prompts()`, `get_prompt()` — query MCP prompt catalog
 - `OxiMcpServer` + `OxiMcpServerBuilder` — expose OxiCode as MCP server to external clients
 - Type bridge: `mcp_tool_to_schema()`, `mcp_resource_to_toolschema()`
+- **Gap Closure NEW (9 modules):**
+  - `BridgeDebugLogger` — Ring-buffer message logger (feature-gated: bridge_debug)
+  - `BridgeStatusTracker` — Connection state machine (Connected/Connecting/Reconnecting/Disconnected)
+  - `BridgeDiagnostics` — Per-type latency tracking (p50/p95)
+  - `BridgeMessageInspector` — Message formatting + auth redaction
+  - `BridgeHealthCheck` — Ping/pong health checker (10s interval)
+  - `BridgeEventTap` — tokio::broadcast event tap for debugging
+  - `BridgeUiPermissionDialog` — UI stub for permission flows
+  - `BridgeUiConfigDialog` — UI stub for bridge configuration
+  - `BridgeUiNotification` — UI stub for bridge notifications
 
 **Transport support (via rmcp):**
 - Stdio (child process JSON-RPC)
@@ -771,6 +813,15 @@ flush_interval_secs = 60
 - config.rs — McpTransportType enum (Stdio, Http), TOML parsing
 - types.rs — Type bridges between rmcp and oxicode-tools models
 - doctor.rs — Health checks for MCP connections
+- **bridge_debug_logger.rs** (Ring buffer, optional feature)
+- **bridge_status_tracker.rs** (Connection state machine)
+- **bridge_diagnostics.rs** (Latency metrics per message type)
+- **bridge_message_inspector.rs** (Message formatting + redaction)
+- **bridge_health_check.rs** (Ping/pong + keepalive)
+- **bridge_event_tap.rs** (tokio::broadcast event logging)
+- **bridge_ui_permission_dialog.rs** (UI stub)
+- **bridge_ui_config_dialog.rs** (UI stub)
+- **bridge_ui_notification.rs** (UI stub)
 
 **Features (Phase 2):**
 - Prompts API: query external server prompts + parameters
@@ -782,11 +833,18 @@ flush_interval_secs = 60
 - Dynamic tool dispatch via ToolRegistry
 - Demo read_file tool handler
 
-**Used by:** ToolRegistry (external tool bridging), oxicode-core (MCP queries), CLI (mcp-servers, mcp-connect commands)
+**Gap Closure Features:**
+- Per-message latency tracking (histogram + percentile)
+- Real-time connection state visibility
+- Message logging with auth token redaction
+- Health check with exponential backoff on failure
+- Event broadcasting for debugging
+
+**Used by:** ToolRegistry (external tool bridging), oxicode-core (MCP queries), CLI (mcp-servers, mcp-connect commands), Bridge diagnostics
 
 **Dependency:** rmcp v1.3+ (Rust MCP SDK)
 
-**Quality:** Zero unsafe code, comprehensive tests (8 new), zero clippy warnings
+**Quality:** Zero unsafe code, comprehensive tests (17 total), bridge debug feature-gated, zero clippy warnings
 
 ---
 
@@ -835,14 +893,14 @@ flush_interval_secs = 60
 
 ---
 
-#### oxicode-cli (~400 LOC)
-**Purpose:** Slash commands (/help, /model, /agent, /skills, /tasks, etc)
+#### oxicode-cli (~650 LOC, Gap Closure +250 LOC)
+**Purpose:** Slash commands, REPL, CLI parsing, gap-closure commands
 
 **Key exports:**
 - `CommandRegistry` — HashMap of slash commands
 - `SlashCommand` trait (execute, completions)
 - `CommandOutput` enum (Message, Silent, Quit, Error)
-- **Built-in commands: 91 total (was 75 in Phase 5)**
+- **Built-in commands: 96 total (was 91 in Phase 6)**
   - Core: help, version, clear, status, quit, config, model, permissions
   - Session: save, load, export, undo, redo, rename, resume
   - Git: commit, pr, branch, log, stash, push, pull (7 Phase 5)
@@ -850,25 +908,15 @@ flush_interval_secs = 60
   - MCP: mcp-servers, mcp-tools, mcp-connect, mcp-disconnect
   - Team/Agents: team, agents, task, plugin, plan
   - View: theme, shortcuts, about, tools, history, vim, review (+ many workflow stubs)
-  - **Phase 5:** All 27 stubs replaced + 6 new commands (vim, rename, usage, context, resume, review)
-  - **Phase 6 NEW:** 16 new slash commands (color, keybindings, statusline, terminal-setup, tag, btw, thinkback, release-notes, advisor, insights, stickers, passes, rate-limit-options, reload-plugins)
+  - **Gap Closure NEW (5 commands):** ultraplan, buddy, good_claude, settings_sync, vcr
   - **File management:** view_commands.rs split into 3 modules (each <200 lines)
 
-**Phase 6 new commands:**
-- `/color` — Theme + color palette editor
-- `/keybindings` — View/edit keybindings (Phase 8 enhancement)
-- `/statusline` — Customize status bar display
-- `/terminal-setup` — Terminal initialization & setup
-- `/tag` — Tag messages for organization
-- `/btw` — Quick note/aside insertion
-- `/thinkback` — Review thinking block history
-- `/release-notes` — Show changelog + release info
-- `/advisor` — Get AI advisor recommendations
-- `/insights` — Extract insights from conversation
-- `/stickers` — ASCII art sticker library
-- `/passes` — Token optimization passes
-- `/rate-limit-options` — Rate limiting configuration
-- `/reload-plugins` — Hot-reload plugins (Phase 5)
+**Gap Closure new commands:**
+- `/ultraplan` — Generate ultra-concise project plans
+- `/buddy` — AI buddy mode (casual conversation)
+- `/good_claude` — Self-assessment + quality improvements
+- `/settings_sync` — Sync settings with remote endpoint
+- `/vcr [record|play|list]` — Session recording/playback
 
 **Files:**
 - commands/mod.rs (registry)
@@ -879,11 +927,16 @@ flush_interval_secs = 60
 - commands/debug_commands.rs (Phase 5: usage, context enhancements)
 - commands/general.rs (vim)
 - commands/view_commands.rs, workflow_commands.rs, session_view_commands.rs (Phase 5 split)
+- **commands/ultraplan_command.rs** (Ultra-concise planning)
+- **commands/buddy_command.rs** (Casual chat mode)
+- **commands/good_claude_command.rs** (Quality assessment)
+- **commands/settings_sync_command.rs** (Remote sync)
+- **commands/vcr_command.rs** (Session recording)
 - repl.rs (REPL mode with readline)
 
-**Used by:** TUI (command parsing), CLI (REPL)
+**Used by:** TUI (command parsing), CLI (REPL), Server mode
 
-**Quality:** Good error messages, help text, command completions
+**Quality:** Good error messages, help text, command completions, feature-gated VCR
 
 ---
 
@@ -892,15 +945,15 @@ flush_interval_secs = 60
 | Metric | Value |
 |--------|-------|
 | Total Crates | 20 |
-| Total Files | 155 |
-| Total Tokens | 156,000 |
-| Total Chars | 580,000 |
-| LOC (non-test) | ~7,200 |
-| Test LOC | ~3,000 |
+| Total Files | 179 (was 155 in Phase 6, +24 gap-closure) |
+| Total Tokens | 170,000 (was 156,000) |
+| Total Chars | 620,000 (was 580,000) |
+| LOC (non-test) | ~9,100 (was ~7,200, +1,900) |
+| Test LOC | ~3,200 (was ~3,000) |
 | Unsafe Code | 0 (forbidden) |
 | Panics in Prod | 0 |
-| TUI Tests | 81 (was ~50 in Phase 5)
-| Total Tests | 756 workspace (was 700 in Phase 6)
+| TUI Tests | 81 (unchanged) |
+| Total Tests | 1,143 (was 756 in Phase 6, +387 gap-closure tests) |
 
 ### Top 5 Files by Size
 1. openai_compatible.rs — 3,681 tokens (3.6%)
@@ -909,31 +962,33 @@ flush_interval_secs = 60
 4. query_engine.rs — 2,331 tokens (2.3%)
 5. tasks/runner.rs — 2,140 tokens (2.1%)
 
-### Crate Breakdown (LOC estimate)
-| Crate | LOC | Primary Role |
-|-------|-----|--------------|
-| oxicode-common | 200 | Shared types |
-| oxicode-config | 150 | Config loading |
-| oxicode-api | 600 | Provider traits |
-| oxicode-core | 400 | Query execution |
-| oxicode-tools | 520 | Tool system (46 tools as of Phase 6) |
-| oxicode-permissions | 300 | Access control |
-| oxicode-state | 150 | State management |
-| oxicode-session | 180 | Persistence |
-| oxicode-hooks | 1,050 | Event hooks (3 execution modes) |
-| **oxicode-context** | **450** | **Context defense (P4)** |
-| **oxicode-agents** | **280** | **Multi-agent (P4)** |
-| **oxicode-skills** | **350** | **Skills system (P4)** |
-| **oxicode-tasks** | **380** | **Background tasks (P4)** |
-| **oxicode-plugins** | **2,100** | **Plugin marketplace + registry (P5)** |
-| **oxicode-voice** | **400** | **Voice input + Whisper (P7)** |
-| **oxicode-remote** | **420** | **WebSocket bridge + session pool (P7)** |
-| **oxicode-telemetry** | **380** | **OTLP event collection (P7)** |
-| **oxicode-github** | **380** | **GitHub App + workflows (P7)** |
-| oxicode-mcp | 250 | MCP SDK (rmcp) client & server |
-| oxicode-tui | 800 | Terminal UI (P6: +200 LOC for vim depth + dialogs) |
-| oxicode-cli | 400 | Commands/REPL (P6: +16 new commands) |
-| **Total** | **~10,410** | **20 crates + Phase 7 enhancements + rmcp migration** |
+### Crate Breakdown (LOC estimate) — Gap Closure Update
+| Crate | LOC | Phase | Primary Role |
+|-------|-----|-------|--------------|
+| oxicode-common | 200 | 1 | Shared types |
+| oxicode-config | 150 | 1 | Config loading |
+| **oxicode-api** | **900** | **GC** | **Provider traits + multipart + policy limits** |
+| **oxicode-core** | **1,200** | **GC** | **Query execution + AutoDream + VCR + PerfMetrics** |
+| oxicode-tools | 520 | 3 | Tool system (42 tools) |
+| oxicode-permissions | 300 | 1 | Access control |
+| oxicode-state | 150 | 1 | State management |
+| oxicode-session | 180 | 4 | Persistence |
+| **oxicode-hooks** | **1,200** | **GC** | **Event hooks + DNS pinning (TOCTOU protection)** |
+| oxicode-context | 450 | 4 | Context defense |
+| oxicode-agents | 280 | 4 | Multi-agent |
+| oxicode-skills | 350 | 4 | Skills system |
+| oxicode-tasks | 380 | 4 | Background tasks |
+| oxicode-plugins | 2,100 | 5 | Plugin marketplace |
+| oxicode-voice | 400 | 7 | Voice input + Whisper |
+| oxicode-remote | 420 | 7 | WebSocket bridge |
+| oxicode-telemetry | 380 | 7 | OTLP collection |
+| oxicode-github | 380 | 7 | GitHub App |
+| **oxicode-mcp** | **1,050** | **GC** | **MCP client/server + 9 bridge debug modules** |
+| **oxicode-tui** | **850** | **GC** | **Terminal UI + new stubs (TUI permission/config/notification)** |
+| **oxicode-cli** | **650** | **GC** | **Commands + 5 gap-closure commands** |
+| **Total** | **~12,000** | **GC** | **20 crates, 1,143 tests, 0 unsafe code** |
+
+**Gap Closure Summary:** +24 files, +1,900 LOC, +387 tests across 6 crates (core, api, hooks, mcp, cli, tui)
 
 ---
 

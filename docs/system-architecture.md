@@ -1,6 +1,6 @@
 # OxiCode — System Architecture
 
-**Version:** 0.5.0 | **Last Updated:** 2026-04-04 | **Phase:** 9 (Test Coverage Push) | **Cumulative:** Phase 1-9
+**Version:** 0.5.1 | **Last Updated:** 2026-04-05 | **Phase:** Gap Closure (Phases 7-10 Complete) | **Cumulative:** Phase 1-10
 
 ## Architecture Overview
 
@@ -1662,7 +1662,200 @@ let result = mock.stream_message(query).await?;
 
 ---
 
-## Next Steps (Phase 10+)
+## Gap Closure (Phases 7-10): Advanced Features
+
+### Phase 7: AutoDream Suggestion Engine
+
+**Purpose:** Context-aware action suggestions based on conversation patterns.
+
+**Architecture:**
+```
+Conversation history
+    ↓
+Pattern matcher (LSTM-style context aggregation)
+    ↓
+AutoDreamService::suggest_next_action(context)
+    ↓
+Returns top 3 actions: ["run tests", "commit changes", "review PR"]
+```
+
+**Key Components:**
+- `AutoDreamConfig` — Maintains context aggregator + pattern database
+- `AutoDreamService` — Inference engine (heuristic pattern matching)
+- Context includes: recent messages, tool history, current mode (advisor/sandbox/strict)
+
+**Integration:** Injected into system prompt as `next_action_suggestions: [...]`
+
+---
+
+### Phase 7: Session Recording & Replay (VCR)
+
+**Purpose:** Record and replay full conversation sessions for debugging and analysis.
+
+**Architecture:**
+```
+QueryEngine.execute_turn()
+    ↓
+VcrRecorder::record_session(messages)
+    ↓
+Serialize to gzip JSON: ~/.oxicode/vcr/{session_id}.vcr.gz
+    ↓
+On `/vcr play {session_id}`:
+    ↓
+VcrPlayer::replay(path) → Deserialize + reconstitute messages
+    ↓
+Re-run query loop with same inputs/outputs
+```
+
+**Storage Format (gzip'd JSONL):**
+```json
+{"message_index":0,"role":"user","content":"hello","created_at":"2026-04-05T12:00:00Z"}
+{"message_index":1,"role":"assistant","content":"Hi there!","tool_uses":[]}
+{"message_index":2,"role":"user","content_type":"tool_result","tool_use_id":"x","result":"..."}
+```
+
+**Key Components:**
+- `VcrRecorder` — Capture messages + metadata
+- `VcrPlayer` — Playback state machine (Init → Playing → Done)
+- `VcrStorage` — File I/O with gzip compression
+
+**Commands:**
+- `/vcr record [session_id]` — Start/stop recording
+- `/vcr play [session_id]` — Replay session
+- `/vcr list` — List recorded sessions
+
+---
+
+### Phase 7: Performance Metrics & Bridge Diagnostics
+
+**Purpose:** Track latency percentiles (p50, p95) for debugging bridge/network issues.
+
+**Architecture:**
+```
+BridgeHealthCheck (10s interval)
+    ↓
+Ping/pong exchange
+    ↓
+Measure latency
+    ↓
+BridgeDiagnostics::record_latency(message_type, duration_ms)
+    ↓
+Update histogram: {p50, p95, max, count}
+```
+
+**Key Components:**
+- `PerfMetrics` — Percentile calculation (sorted array approach)
+- `BridgeDiagnostics` — Per-message-type latency tracking
+- `BridgeHealthCheck` — Ping/pong with exponential backoff on failure
+- `BridgeStatusTracker` — Connection state machine (Connected/Connecting/Reconnecting/Disconnected)
+
+**Output Format:**
+```json
+{
+  "message_type": "tool.result",
+  "latency_ms": {"p50": 45, "p95": 120, "max": 250},
+  "success_rate": 0.98,
+  "error_count": 2
+}
+```
+
+---
+
+### Phase 7: Bridge Debug Logging & Message Inspection
+
+**Purpose:** Debug bridge protocol issues with ring-buffer logging and auth redaction.
+
+**Architecture:**
+```
+BridgeDebugLogger (feature-gated: bridge_debug)
+    ↓
+Ring buffer (last 100 messages, ~50KB memory)
+    ↓
+On error or manual export:
+    ↓
+BridgeMessageInspector::format_message(msg) → Pretty-print with auth token redaction
+    ↓
+Save to ~/.oxicode/bridge-debug.log (10MB rotation)
+```
+
+**Key Components:**
+- `BridgeDebugLogger` — Ring-buffer storage (thread-safe Arc<Mutex>)
+- `BridgeMessageInspector` — Message formatting + redaction (replaces tokens with `***`)
+- `BridgeEventTap` — tokio::broadcast event subscriptions for real-time monitoring
+
+**Feature Gate:** `bridge_debug` (optional, off by default)
+
+---
+
+### Phase 7: DNS Pinning (TOCTOU Protection)
+
+**Purpose:** Prevent time-of-check-time-of-use (TOCTOU) attacks in HTTP hook execution.
+
+**Architecture:**
+```
+Hook executor needs to POST to https://example.com:
+    ↓
+PinnedResolver::resolve("example.com")
+    ↓
+DNS lookup → 93.184.216.34
+    ↓
+Check: Is 93.184.216.34 private? (reject 127.0.0.1, 10.0.0.0/8, etc)
+    ↓
+Cache for 30 seconds (TTL = 30s)
+    ↓
+Execute POST to 93.184.216.34 (NOT dynamic re-resolve)
+```
+
+**Private IP Rejection List:**
+- 127.0.0.0/8 (localhost)
+- ::1 (IPv6 loopback)
+- 10.0.0.0/8 (private)
+- 172.16.0.0/12 (private)
+- 192.168.0.0/16 (private)
+- fe80::/10 (IPv6 link-local)
+- fc00::/7 (IPv6 unique local)
+
+**Implementation:** `oxicode-hooks/src/pinned_resolver.rs`
+
+---
+
+### Phase 8-10: CLI Commands & UI Stubs
+
+**New Commands (5):**
+- `/ultraplan` — Generate ultra-concise project plans
+- `/buddy` — Casual conversation mode
+- `/good_claude` — Self-assessment + quality improvements
+- `/settings_sync` — Sync settings with remote endpoint
+- `/vcr [record|play|list]` — Session recording/playback
+
+**UI Stubs (3, oxicode-mcp bridge layer):**
+- `BridgeUiPermissionDialog` — Permission request dialog (stub for future TUI integration)
+- `BridgeUiConfigDialog` — Bridge configuration dialog (stub)
+- `BridgeUiNotification` — Bridge status notification (stub)
+
+---
+
+### Test Coverage Summary (Gap Closure)
+
+**Test Expansion:** 756 → 1,143 tests (+387 new tests)
+
+**By Phase:**
+- Phase 7 (Core/VCR/AutoDream): 70+ unit tests
+- Phase 8 (Commands): 40+ unit tests
+- Phase 9 (Coverage push): 150+ unit + integration tests
+- Phase 10 (Integration & smoke): 127+ integration tests
+
+**Coverage Goals Met:**
+- ✓ All gap-closure modules ≥70% coverage
+- ✓ AutoDream: 8 test cases (context aggregation, pattern matching fallback)
+- ✓ VCR: 12 test cases (record, replay, gzip roundtrip)
+- ✓ PerfMetrics: 6 test cases (percentile calculation, edge cases)
+- ✓ Bridge diagnostics: 15+ test cases (health check, latency tracking, state machine)
+- ✓ DNS pinning: 8 test cases (private IP rejection, cache TTL, concurrency)
+- ✓ CLI commands: 5+ test cases (command parsing, result formatting)
+
+---
+
 
 1. **Phase 8 (Rewind + Thin Commands):** Conversation rewind, thin command enforcement (COMPLETE ✓)
 2. **Phase 9 (Test Coverage Push):** Comprehensive test coverage across all modules

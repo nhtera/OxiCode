@@ -7,6 +7,11 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+## Enable verbose bridge debug tooling (logger, diagnostics, event tap, etc.)
+bridge_debug = []
+
 [dependencies]
 oxicode-common = { workspace = true }
 serde = { workspace = true }

@@ -2,6 +2,12 @@
 //!
 //! Commands are invoked with `/name [args]` in the TUI input.
 
+pub mod ultraplan_command;
+pub mod buddy_command;
+pub mod good_claude_command;
+pub mod settings_sync_command;
+pub mod vcr_command;
+
 pub mod agent_commands;
 pub mod clipboard_commands;
 pub mod debug_commands;
@@ -355,6 +361,13 @@ pub fn default_registry() -> CommandRegistry {
 
     // Phase 7 (gap-closure): Teleport command
     reg.register(Box::new(teleport_command::TeleportCommand));
+
+    // Phase 8-10 (gap-closure): New commands
+    reg.register(Box::new(ultraplan_command::UltraplanCommand));
+    reg.register(Box::new(buddy_command::BuddyCommand));
+    reg.register(Box::new(good_claude_command::GoodClaudeCommand));
+    reg.register(Box::new(settings_sync_command::SettingsSyncCommand));
+    reg.register(Box::new(vcr_command::VcrCommand));
 
     reg
 }

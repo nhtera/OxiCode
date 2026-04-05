@@ -106,8 +106,13 @@ pub async fn execute_agent_hook(
 
 /// Build prompt and call LLM provider.
 ///
-/// Currently a stub that returns Pass — real implementation will integrate with
-/// `oxicode-api` provider trait once the agent hook pipeline is wired end-to-end.
+/// Currently a stub that returns Pass — real implementation requires passing
+/// an `LlmProvider` trait object from `oxicode-api`. The wiring path:
+///   1. Add `oxicode-api` dep to `oxicode-hooks/Cargo.toml`
+///   2. Accept `provider: &dyn LlmProvider` in `execute_agent_hook()`
+///   3. Build `MessageRequest` from `system_prompt` + `user_message`
+///   4. Stream response, collect text, parse via `parse_agent_response()`
+///   5. Timeout via `tokio::time::timeout` (already in caller)
 #[allow(clippy::unused_async)] // Will use async when wired to LLM provider.
 async fn call_agent(
     payload: &HookPayload,

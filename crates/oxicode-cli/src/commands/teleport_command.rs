@@ -19,6 +19,9 @@ const MAX_PACKAGE_SIZE: u64 = 50 * 1024 * 1024;
 /// Maximum number of files allowed in a teleport archive.
 const MAX_FILE_COUNT: usize = 1_000;
 
+/// Maximum decompressed size per entry: 100 MB.
+const MAX_ENTRY_SIZE: u64 = 100 * 1024 * 1024;
+
 /// /teleport — export/import sessions across machines.
 pub struct TeleportCommand;
 
@@ -302,11 +305,34 @@ fn extract_archive(archive_path: &Path) -> Result<ImportStats, String> {
             ));
         }
 
-        // Read entry content.
+        // Security: reject oversized entries (decompression bomb protection).
+        let entry_size = entry.header().size().unwrap_or(0);
+        if entry_size > MAX_ENTRY_SIZE {
+            tracing::warn!(
+                "Skipping oversized entry '{}': {} bytes (max: {} bytes)",
+                path_str,
+                entry_size,
+                MAX_ENTRY_SIZE
+            );
+            continue;
+        }
+
+        // Read entry content (with runtime size guard).
         let mut content = Vec::new();
         entry
             .read_to_end(&mut content)
             .map_err(|e| format!("Failed to read entry {path_str}: {e}"))?;
+
+        // Double-check actual decompressed size in case header lied.
+        if content.len() as u64 > MAX_ENTRY_SIZE {
+            tracing::warn!(
+                "Skipping entry '{}': actual size {} exceeds max {}",
+                path_str,
+                content.len(),
+                MAX_ENTRY_SIZE
+            );
+            continue;
+        }
 
         if path_str == "session.json" {
             // Validate JSON is parseable and count messages.

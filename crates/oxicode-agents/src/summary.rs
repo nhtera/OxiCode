@@ -90,6 +90,32 @@ fn format_duration(d: std::time::Duration) -> String {
     }
 }
 
+/// Compress long agent output using LLM (stub — returns truncated text for now).
+///
+/// When `output` already fits within `max_tokens` (estimated as chars / 4),
+/// it is returned unchanged. Otherwise a smart truncation strategy is applied:
+/// the first and last paragraphs are preserved, with an ellipsis in between.
+///
+/// **Future:** wire to an actual LLM provider for semantic compression.
+pub fn compress_output(output: &str, max_tokens: usize) -> String {
+    // Rough token estimate: 1 token ≈ 4 characters.
+    if output.len() / 4 <= max_tokens {
+        return output.to_string();
+    }
+
+    let paragraphs: Vec<&str> = output.split("\n\n").collect();
+    if paragraphs.len() <= 2 {
+        // Not enough paragraph structure — fall back to hard truncation.
+        return truncate_summary(output);
+    }
+
+    format!(
+        "{}\n\n...\n\n{}",
+        paragraphs[0],
+        paragraphs[paragraphs.len() - 1]
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +199,37 @@ mod tests {
         let long = "A".repeat(500);
         let summary = truncate_summary(&long);
         assert_eq!(summary.chars().count(), 201); // 200 + '…'
+    }
+
+    #[test]
+    fn compress_output_short_passthrough() {
+        let short = "Hello, world!";
+        // 13 chars / 4 ≈ 3 tokens — well under any reasonable max_tokens.
+        assert_eq!(compress_output(short, 100), short);
+    }
+
+    #[test]
+    fn compress_output_keeps_first_and_last_paragraphs() {
+        let para_a = "First paragraph with some content.";
+        let para_b = "Middle paragraph that should be dropped.";
+        let para_c = "Last paragraph that is also preserved.";
+        let input = format!("{para_a}\n\n{para_b}\n\n{para_c}");
+
+        // Force compression: max_tokens so small that even short text exceeds it.
+        let result = compress_output(&input, 1);
+
+        assert!(result.contains(para_a), "first paragraph missing");
+        assert!(result.contains(para_c), "last paragraph missing");
+        assert!(result.contains("..."), "ellipsis missing");
+        assert!(!result.contains(para_b), "middle paragraph should be dropped");
+    }
+
+    #[test]
+    fn compress_output_single_paragraph_truncates() {
+        // Single paragraph, no "\n\n" — should fall back to truncation.
+        let long_single = "word ".repeat(500); // ~2500 chars
+        let result = compress_output(&long_single, 1); // max 1 token → triggers compression
+        // truncate_summary caps at 200 chars + ellipsis
+        assert!(result.len() <= 202); // 200 chars + '…' (3-byte UTF-8)
     }
 }

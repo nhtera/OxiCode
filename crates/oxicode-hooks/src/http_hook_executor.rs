@@ -7,11 +7,13 @@
 //! - Fail-open: any error → `HookResponse::Pass`
 
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::events::{HookPayload, HookResponse};
+use crate::pinned_resolver::{is_private_ip, PinnedResolver};
 
 /// Configuration specific to HTTP-type hooks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,14 +52,16 @@ impl Default for HttpHookConfig {
 
 /// Execute an HTTP hook by POSTing the payload to the configured URL.
 ///
+/// Uses `PinnedResolver` to cache DNS resolution and prevent rebinding attacks.
 /// On any failure (SSRF, network, parse, timeout), returns `HookResponse::Pass`.
 pub async fn execute_http_hook(
     payload: &HookPayload,
     config: &HttpHookConfig,
+    resolver: Option<&Arc<PinnedResolver>>,
 ) -> HookResponse {
     let timeout = Duration::from_secs(config.timeout_secs);
 
-    let result = tokio::time::timeout(timeout, post_hook(payload, config)).await;
+    let result = tokio::time::timeout(timeout, post_hook(payload, config, resolver)).await;
 
     match result {
         Ok(Ok(response)) => response,
@@ -73,12 +77,26 @@ pub async fn execute_http_hook(
 }
 
 /// Build and send the HTTP POST request.
+///
+/// When a `PinnedResolver` is provided, it pre-resolves the hostname and validates
+/// IPs before connecting — closing the DNS rebinding TOCTOU window.
 async fn post_hook(
     payload: &HookPayload,
     config: &HttpHookConfig,
+    resolver: Option<&Arc<PinnedResolver>>,
 ) -> Result<HookResponse, String> {
     // SSRF guard: validate URL before sending.
     validate_url_ssrf(&config.url)?;
+
+    // If resolver provided, also pin DNS resolution.
+    if let Some(resolver) = resolver {
+        let parsed = url::Url::parse(&config.url)
+            .map_err(|e| format!("Invalid URL: {e}"))?;
+        if let Some(host) = parsed.host_str() {
+            let port = parsed.port_or_known_default().unwrap_or(443);
+            resolver.resolve(host, port)?;
+        }
+    }
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(config.timeout_secs))
@@ -184,34 +202,6 @@ fn validate_url_ssrf(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Check if an IP address is private, loopback, or link-local.
-fn is_private_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()          // 127.0.0.0/8
-                || v4.is_private()     // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-                || v4.is_link_local()  // 169.254.0.0/16
-                || v4.is_unspecified() // 0.0.0.0
-                || v4.is_broadcast()   // 255.255.255.255
-        }
-        IpAddr::V6(v6) => {
-            v6.is_loopback()           // ::1
-                || v6.is_unspecified()  // ::
-                // fe80::/10 (link-local) — check first 10 bits.
-                || (v6.segments()[0] & 0xffc0) == 0xfe80
-                // fc00::/7 (unique local) — check first 7 bits.
-                || (v6.segments()[0] & 0xfe00) == 0xfc00
-                // IPv4-mapped IPv6 (::ffff:x.x.x.x) — check the embedded IPv4.
-                || v6.to_ipv4_mapped().is_some_and(|v4| {
-                    v4.is_loopback()
-                        || v4.is_private()
-                        || v4.is_link_local()
-                        || v4.is_unspecified()
-                        || v4.is_broadcast()
-                })
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -378,7 +368,7 @@ mod tests {
             ..Default::default()
         };
         // SSRF should block this → Pass.
-        let response = execute_http_hook(&payload, &config).await;
+        let response = execute_http_hook(&payload, &config, None).await;
         assert!(matches!(response, HookResponse::Pass));
     }
 
@@ -389,7 +379,7 @@ mod tests {
             url: "ftp://example.com/hook".to_string(),
             ..Default::default()
         };
-        let response = execute_http_hook(&payload, &config).await;
+        let response = execute_http_hook(&payload, &config, None).await;
         assert!(matches!(response, HookResponse::Pass));
     }
 }

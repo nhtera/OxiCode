@@ -1,8 +1,10 @@
 pub mod anthropic;
 pub mod bedrock;
 pub mod files_api;
+pub mod files_multipart;
 pub mod openai_compatible;
 pub mod policy_limits;
+pub mod policy_limits_poller;
 pub mod prompt_cache_detection;
 pub mod provider;
 pub mod provider_router;
