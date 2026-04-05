@@ -28,3 +28,4 @@ team_memory_sync = ["sha2", "reqwest"]
 [dev-dependencies]
 tempfile = "3"
 tokio = { workspace = true, features = ["macros", "rt"] }
+oxicode-state = { workspace = true }

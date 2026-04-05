@@ -31,4 +31,7 @@ dirs = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 oxicode-session = { workspace = true }
+oxicode-tasks = { workspace = true }
+oxicode-mcp = { workspace = true }
+oxicode-agents = { workspace = true }
 tempfile = "3"

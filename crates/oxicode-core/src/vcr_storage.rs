@@ -262,9 +262,9 @@ mod tests {
 
     #[test]
     fn format_unix_secs_known_date() {
-        // 2026-04-05 00:00:00 UTC  == 1775692800
+        // 2026-04-09 00:00:00 UTC  == 1775692800
         let s = format_unix_secs(1_775_692_800);
-        assert_eq!(s, "2026-04-05 00:00:00 UTC");
+        assert_eq!(s, "2026-04-09 00:00:00 UTC");
     }
 
     /// Helper: write entries directly to an arbitrary path.

@@ -34,6 +34,21 @@ pub const CLAUDE_MD_FILES: &[&str] = &["OXICODE.md", "CLAUDE.md"];
 /// Environment variable for API key.
 pub const ENV_API_KEY: &str = "ANTHROPIC_API_KEY";
 
+/// Environment variable for auth token (fallback when API key not set).
+pub const ENV_AUTH_TOKEN: &str = "ANTHROPIC_AUTH_TOKEN";
+
+/// Environment variable for custom Anthropic API base URL.
+pub const ENV_BASE_URL: &str = "ANTHROPIC_BASE_URL";
+
+/// Environment variable for default Haiku model name.
+pub const ENV_DEFAULT_HAIKU_MODEL: &str = "ANTHROPIC_DEFAULT_HAIKU_MODEL";
+
+/// Environment variable for default Sonnet model name.
+pub const ENV_DEFAULT_SONNET_MODEL: &str = "ANTHROPIC_DEFAULT_SONNET_MODEL";
+
+/// Environment variable for default Opus model name.
+pub const ENV_DEFAULT_OPUS_MODEL: &str = "ANTHROPIC_DEFAULT_OPUS_MODEL";
+
 /// Environment variable for model override.
 pub const ENV_MODEL: &str = "OXICODE_MODEL";
 

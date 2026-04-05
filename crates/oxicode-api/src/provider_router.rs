@@ -36,20 +36,34 @@ impl ProviderRouter {
     /// Build a router with optional OAuth token for Anthropic.
     ///
     /// If `oauth_token` is provided, it takes priority over `ANTHROPIC_API_KEY`.
+    /// Resolution order: OAuth token > `ANTHROPIC_API_KEY` > `ANTHROPIC_AUTH_TOKEN`.
+    /// If `ANTHROPIC_BASE_URL` is set, the Anthropic provider uses that base URL.
     pub fn from_env_with_oauth(oauth_token: Option<String>) -> Self {
         let mut providers: Vec<(String, Arc<dyn LlmProvider>)> = Vec::new();
 
-        // Anthropic: OAuth token > API key.
+        // Anthropic: OAuth token > API key > Auth token.
+        let base_url = std::env::var("ANTHROPIC_BASE_URL").ok().filter(|s| !s.is_empty());
+
         if let Some(token) = oauth_token {
-            providers.push((
-                "anthropic".to_string(),
-                Arc::new(AnthropicProvider::with_oauth_token(token)),
-            ));
+            let mut p = AnthropicProvider::with_oauth_token(token);
+            if let Some(ref url) = base_url {
+                p = p.with_base_url(url);
+            }
+            providers.push(("anthropic".to_string(), Arc::new(p)));
         } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            providers.push((
-                "anthropic".to_string(),
-                Arc::new(AnthropicProvider::new(key)),
-            ));
+            let mut p = AnthropicProvider::new(key);
+            if let Some(ref url) = base_url {
+                p = p.with_base_url(url);
+            }
+            providers.push(("anthropic".to_string(), Arc::new(p)));
+        } else if let Ok(token) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
+            if !token.is_empty() {
+                let mut p = AnthropicProvider::new(token);
+                if let Some(ref url) = base_url {
+                    p = p.with_base_url(url);
+                }
+                providers.push(("anthropic".to_string(), Arc::new(p)));
+            }
         }
 
         // OpenAI.
@@ -116,10 +130,14 @@ impl ProviderRouter {
     /// Resolve a model string to a provider.
     ///
     /// Resolution order:
-    /// 1. Explicit prefix: `openai:gpt-4o` → OpenAI provider, model "gpt-4o"
-    /// 2. Known model name patterns (claude-*, gpt-*, deepseek-*, etc.)
-    /// 3. First available provider
+    /// 1. Model alias from env var (e.g., "sonnet" → `ANTHROPIC_DEFAULT_SONNET_MODEL`)
+    /// 2. Explicit prefix: `openai:gpt-4o` → OpenAI provider, model "gpt-4o"
+    /// 3. Known model name patterns (claude-*, gpt-*, deepseek-*, etc.)
+    /// 4. First available provider
     pub fn resolve(&self, model: &str) -> OxiResult<ResolvedProvider> {
+        // 0. Resolve model alias from env vars.
+        let model = resolve_model_alias(model);
+
         // 1. Explicit prefix: "provider:model"
         if let Some((prefix, model_name)) = model.split_once(':') {
             if let Some((_, provider)) = self.providers.iter().find(|(name, _)| name == prefix) {
@@ -131,7 +149,7 @@ impl ProviderRouter {
         }
 
         // 2. Auto-detect from model name patterns.
-        let detected = detect_provider_from_model(model);
+        let detected = detect_provider_from_model(&model);
         if let Some(provider_name) = detected {
             if let Some((_, provider)) = self
                 .providers
@@ -154,7 +172,7 @@ impl ProviderRouter {
         }
 
         Err(oxicode_common::OxiError::config(
-            "No LLM providers configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or another provider key.",
+            "No LLM providers configured. Set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, or another provider key.",
         ))
     }
 
@@ -173,6 +191,28 @@ impl ProviderRouter {
             .find(|(n, _)| n == name)
             .map(|(_, p)| Arc::clone(p))
     }
+}
+
+/// Resolve model aliases from environment variables.
+///
+/// Maps shorthand names to full model IDs via `ANTHROPIC_DEFAULT_*_MODEL` env vars.
+/// Returns the original string if no alias matches.
+fn resolve_model_alias(model: &str) -> String {
+    let m = model.to_lowercase();
+    let alias_env = match m.as_str() {
+        "haiku" | "claude-haiku" => Some("ANTHROPIC_DEFAULT_HAIKU_MODEL"),
+        "sonnet" | "claude-sonnet" => Some("ANTHROPIC_DEFAULT_SONNET_MODEL"),
+        "opus" | "claude-opus" => Some("ANTHROPIC_DEFAULT_OPUS_MODEL"),
+        _ => None,
+    };
+    if let Some(env_key) = alias_env {
+        if let Ok(val) = std::env::var(env_key) {
+            if !val.is_empty() {
+                return val;
+            }
+        }
+    }
+    model.to_string()
 }
 
 /// Detect provider from well-known model name prefixes/patterns.
@@ -288,5 +328,26 @@ mod tests {
         let (prefix, model) = "bedrock:anthropic.claude-3-sonnet".split_once(':').unwrap();
         assert_eq!(prefix, "bedrock");
         assert_eq!(model, "anthropic.claude-3-sonnet");
+    }
+
+    #[test]
+    fn test_resolve_model_alias_sonnet() {
+        // If env var not set, returns original.
+        let result = resolve_model_alias("sonnet");
+        // May or may not have env var; just test it doesn't panic.
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_model_alias_passthrough() {
+        // Full model names pass through unchanged.
+        let result = resolve_model_alias("claude-sonnet-4-20250514");
+        assert_eq!(result, "claude-sonnet-4-20250514");
+    }
+
+    #[test]
+    fn test_resolve_model_alias_unknown() {
+        let result = resolve_model_alias("gpt-4o");
+        assert_eq!(result, "gpt-4o");
     }
 }

@@ -25,6 +25,12 @@ pub struct Settings {
     pub editor_mode: String,
     /// Output rendering style: "plain", "markdown", "minimal", "verbose".
     pub output_style: String,
+    /// Default Haiku model name (from `ANTHROPIC_DEFAULT_HAIKU_MODEL` env var).
+    pub default_haiku_model: Option<String>,
+    /// Default Sonnet model name (from `ANTHROPIC_DEFAULT_SONNET_MODEL` env var).
+    pub default_sonnet_model: Option<String>,
+    /// Default Opus model name (from `ANTHROPIC_DEFAULT_OPUS_MODEL` env var).
+    pub default_opus_model: Option<String>,
 }
 
 impl Default for Settings {
@@ -40,6 +46,9 @@ impl Default for Settings {
             features: FeatureFlags::default(),
             editor_mode: "normal".to_string(),
             output_style: "markdown".to_string(),
+            default_haiku_model: None,
+            default_sonnet_model: None,
+            default_opus_model: None,
         }
     }
 }
