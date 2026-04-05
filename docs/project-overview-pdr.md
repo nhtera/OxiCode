@@ -1,6 +1,6 @@
 # OxiCode — Project Overview & PDR
 
-**Version:** 0.5.1 | **Last Updated:** 2026-04-05 | **Status:** Gap Closure Complete (10 phases, 1,143 tests, 7.8MB binary)
+**Version:** 0.5.1 | **Last Updated:** 2026-04-05 | **Status:** Gap Closure Complete (10 phases, 1,562 tests, 7.8MB binary)
 
 ## Project Vision
 
@@ -128,7 +128,7 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **Total Crates** — 20 (was 17 in Phase 6)
 
 ### Gap Closure: P0+P1 Feature Parity (Complete ✓)
-**Added:** 10 sequential phases closing 40% feature gap vs openclaude (TypeScript), 1,143 tests pass
+**Added:** 10 sequential phases closing 40% feature gap vs openclaude (TypeScript), 1,562 tests pass
 - **Phase 1:** BashTool hardening (command analysis, sandboxing, background execution)
 - **Phase 2:** Rate limiting full stack (state machine, org policies, header/messaging)
 - **Phase 3:** Cost tracking service (multi-model, cache tokens, persistence)
@@ -139,9 +139,10 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **Phase 8:** Rewind + thin commands (conversation rewind, command enforcement)
 - **Phase 9:** Test coverage push (70+ unit tests, MockLlmProvider, 776→1,132 tests)
 - **Phase 10:** Integration & smoke testing (11 integration tests, cross-phase validation, 1,132→1,143 tests)
+- **Phase 11:** Missing test cases closure (36 tests for loop detection, event tracing, structured output, messaging, scheduling, tool execution, hooks, 1,143→1,562 tests)
 - **Deliverables:** 8 new modules, ~8K LOC added, zero regressions, all tests pass
 - **Binary Size:** 7.8 MB release binary
-- **Test Count:** 1,143 tests (was ~700 pre-Gap-Closure)
+- **Test Count:** 1,562 tests (was ~700 pre-Gap-Closure)
 
 ### Phase 11+: Forthcoming
 - **OAuth/SSO:** GitHub and enterprise authentication

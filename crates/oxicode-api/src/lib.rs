@@ -16,9 +16,12 @@ pub mod schema_adapter;
 pub mod stream_event;
 pub mod vertex;
 
-/// Mock LLM provider for testing — only compiled in test builds.
-#[cfg(test)]
+/// Mock LLM provider for testing — available in test builds or with `test-support` feature.
+#[cfg(any(test, feature = "test-support"))]
 pub mod mock;
+
+#[cfg(any(test, feature = "test-support"))]
+pub use mock::MockLlmProvider;
 
 pub use anthropic::AnthropicProvider;
 pub use bedrock::BedrockProvider;

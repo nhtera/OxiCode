@@ -30,6 +30,7 @@ dirs = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+oxicode-api = { workspace = true, features = ["test-support"] }
 oxicode-session = { workspace = true }
 oxicode-tasks = { workspace = true }
 oxicode-mcp = { workspace = true }

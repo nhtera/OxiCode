@@ -46,11 +46,21 @@
 - SSRF protection as defense-in-depth
 - File: `pinned_resolver.rs` in oxicode-hooks
 
-#### Multipart File Upload Support
-- Multipart/form-data handler for file uploads
-- MIME type detection and validation
-- Integrates with tool system for file tools
-- File: `files_multipart.rs` in oxicode-api
+#### Test Suite Coverage Expansion
+- Added 36 new integration & unit tests across 7 critical test files
+- Gap closure from open-multi-agent test suite reference:
+  - Loop detection in QueryEngine: 6 tests
+  - TurnEvent emission & tracing: 5 tests
+  - Structured output validation: 5 tests
+  - Broadcast messaging & shared memory: 6 tests
+  - Task scheduling & dependency resolution: 6 tests
+  - Concurrent tool execution: 4 tests
+  - Agent hook prompt modification: 4 tests
+- Total test suite: 1,562 tests, 0 failures
+- New dev-dependencies: `tokio::sync::mpsc` for event channel testing
+- Infrastructure: Added `test-support` feature to oxicode-api for mock provider access
+- All tests target existing code — no production changes required
+- Files: 7 new test files in `crates/oxicode-*/tests/`
 
 #### Policy Limits Poller
 - ETag-based caching for policy limits queries (5min TTL)
