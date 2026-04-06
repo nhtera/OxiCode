@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::events::{CoreEvent, UiEvent};
 use crate::keybindings::{Action, KeybindingRegistry};
+use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
@@ -57,6 +58,10 @@ pub struct App {
     /// Last computed max scroll offset for the current viewport/content.
     max_scroll_offset: u16,
     streaming_text: String,
+    /// Newline-gated markdown stream collector (Codex-rs pattern).
+    streaming_collector: MarkdownStreamCollector,
+    /// Pre-rendered committed lines from streaming collector.
+    streaming_committed_lines: Vec<ratatui::text::Line<'static>>,
     should_quit: bool,
     /// Manages left/right split layout and ratio.
     split_pane: SplitPane,
@@ -100,6 +105,8 @@ impl App {
             auto_scroll: true,
             max_scroll_offset: 0,
             streaming_text: String::new(),
+            streaming_collector: MarkdownStreamCollector::new(),
+            streaming_committed_lines: Vec::new(),
             should_quit: false,
             split_pane: SplitPane::new(),
             notifications: Vec::new(),
@@ -235,11 +242,20 @@ impl App {
             let (left_area, right_area) = self.split_pane.split(content_area);
 
             // Message view (left pane, or full area when right pane is hidden)
-            let streaming = if state.is_streaming && !self.streaming_text.is_empty() {
-                Some(self.streaming_text.as_str())
+            let streaming_lines = if state.is_streaming && !self.streaming_committed_lines.is_empty()
+            {
+                Some(self.streaming_committed_lines.as_slice())
             } else {
                 None
             };
+            let streaming_tail_owned: Option<String> = if state.is_streaming {
+                self.streaming_collector
+                    .trailing_fragment()
+                    .map(|s| s.to_string())
+            } else {
+                None
+            };
+            let streaming_tail = streaming_tail_owned.as_deref();
             // Build active tools snapshot for streaming display.
             let active_tool_info: Vec<ActiveToolInfo<'_>> = self
                 .active_tools
@@ -250,7 +266,15 @@ impl App {
                     result: t.result.as_ref().map(|(c, e)| (c.as_str(), *e)),
                 })
                 .collect();
-            let preview_view = MessageView::new(&state.messages, streaming, &active_tool_info, 0);
+
+            // Compute scroll offset from a preview (no actual render).
+            let preview_view = MessageView::new(
+                &state.messages,
+                streaming_lines,
+                streaming_tail,
+                &active_tool_info,
+                0,
+            );
             self.max_scroll_offset = preview_view.max_scroll_offset(left_area);
             if self.auto_scroll {
                 self.scroll_offset = self.max_scroll_offset;
@@ -260,7 +284,8 @@ impl App {
 
             let message_view = MessageView::new(
                 &state.messages,
-                streaming,
+                streaming_lines,
+                streaming_tail,
                 &active_tool_info,
                 self.scroll_offset,
             );
@@ -976,13 +1001,23 @@ impl App {
         match event {
             CoreEvent::TextDelta(text) => {
                 self.streaming_text.push_str(&text);
+                self.streaming_collector.push_delta(&text);
+                let new_lines = self.streaming_collector.commit_complete_lines();
+                self.streaming_committed_lines.extend(new_lines);
                 self.auto_scroll = true;
             }
             CoreEvent::StreamStart => {
                 self.streaming_text.clear();
+                self.streaming_collector.clear();
+                self.streaming_committed_lines.clear();
             }
             CoreEvent::StreamEnd | CoreEvent::MessageComplete => {
+                // Finalize: render any remaining buffer content without trailing newline.
+                let final_lines = self.streaming_collector.finalize();
+                self.streaming_committed_lines.extend(final_lines);
                 self.streaming_text.clear();
+                self.streaming_collector.clear();
+                self.streaming_committed_lines.clear();
                 self.active_tools.clear();
                 self.auto_scroll = true;
             }
@@ -994,6 +1029,8 @@ impl App {
                 ));
                 // Clear streaming state on error (engine may not send StreamEnd).
                 self.streaming_text.clear();
+                self.streaming_collector.clear();
+                self.streaming_committed_lines.clear();
                 self.active_tools.clear();
             }
             CoreEvent::ToolUseStart { id, name, input } => {

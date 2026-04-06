@@ -2,6 +2,7 @@ pub mod app;
 pub mod events;
 pub mod keybindings;
 pub mod prompt_suggestions;
+pub mod streaming_markdown;
 pub mod themes;
 pub mod tips_service;
 pub mod vim_mode;
