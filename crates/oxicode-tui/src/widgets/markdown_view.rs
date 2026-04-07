@@ -1,9 +1,11 @@
-use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Widget;
+
+use super::highlight;
 
 /// Renders markdown text as styled Ratatui lines.
 pub struct MarkdownView<'a> {
@@ -22,6 +24,7 @@ impl<'a> MarkdownView<'a> {
         let mut current_spans: Vec<Span> = Vec::new();
         let mut style_stack: Vec<Style> = vec![Style::default()];
         let mut in_code_block = false;
+        let mut code_block_lang = String::new();
         let mut code_block_lines: Vec<String> = Vec::new();
 
         for event in parser {
@@ -39,8 +42,12 @@ impl<'a> MarkdownView<'a> {
                         let base = *style_stack.last().unwrap_or(&Style::default());
                         style_stack.push(base.add_modifier(Modifier::ITALIC));
                     }
-                    Tag::CodeBlock(_) => {
+                    Tag::CodeBlock(kind) => {
                         in_code_block = true;
+                        code_block_lang = match kind {
+                            CodeBlockKind::Fenced(lang) => lang.to_string(),
+                            CodeBlockKind::Indented => String::new(),
+                        };
                         code_block_lines.clear();
                     }
                     Tag::Link { .. } => {
@@ -66,13 +73,21 @@ impl<'a> MarkdownView<'a> {
                     }
                     TagEnd::CodeBlock => {
                         in_code_block = false;
-                        let code_style =
-                            Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
-                        for code_line in &code_block_lines {
-                            lines.push(Line::from(Span::styled(
-                                format!("  {code_line}"),
-                                code_style,
-                            )));
+                        let code = code_block_lines.join("\n");
+                        if let Some(highlighted) =
+                            highlight::highlight_code_inline(&code, &code_block_lang)
+                        {
+                            lines.extend(highlighted);
+                        } else {
+                            // Fallback: plain white on dark bg.
+                            let code_style =
+                                Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
+                            for code_line in &code_block_lines {
+                                lines.push(Line::from(Span::styled(
+                                    format!("  {code_line}"),
+                                    code_style,
+                                )));
+                            }
                         }
                         lines.push(Line::from(""));
                         code_block_lines.clear();
@@ -159,6 +174,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
     let mut current_spans: Vec<Span<'static>> = Vec::new();
     let mut style_stack: Vec<Style> = vec![Style::default()];
     let mut in_code_block = false;
+    let mut code_block_lang = String::new();
     let mut code_block_lines: Vec<String> = Vec::new();
 
     for event in parser {
@@ -175,8 +191,12 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                     let base = *style_stack.last().unwrap_or(&Style::default());
                     style_stack.push(base.add_modifier(Modifier::ITALIC));
                 }
-                Tag::CodeBlock(_) => {
+                Tag::CodeBlock(kind) => {
                     in_code_block = true;
+                    code_block_lang = match kind {
+                        CodeBlockKind::Fenced(lang) => lang.to_string(),
+                        CodeBlockKind::Indented => String::new(),
+                    };
                     code_block_lines.clear();
                 }
                 Tag::Link { .. } => {
@@ -202,13 +222,20 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                 }
                 TagEnd::CodeBlock => {
                     in_code_block = false;
-                    let code_style =
-                        Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
-                    for code_line in &code_block_lines {
-                        lines.push(Line::from(Span::styled(
-                            format!("  {code_line}"),
-                            code_style,
-                        )));
+                    let code = code_block_lines.join("\n");
+                    if let Some(highlighted) =
+                        highlight::highlight_code_inline(&code, &code_block_lang)
+                    {
+                        lines.extend(highlighted);
+                    } else {
+                        let code_style =
+                            Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
+                        for code_line in &code_block_lines {
+                            lines.push(Line::from(Span::styled(
+                                format!("  {code_line}"),
+                                code_style,
+                            )));
+                        }
                     }
                     lines.push(Line::from(""));
                     code_block_lines.clear();
@@ -258,6 +285,84 @@ fn flush_owned_spans(spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'stati
     if !spans.is_empty() {
         lines.push(Line::from(std::mem::take(spans)));
     }
+}
+
+/// Persistent state for incremental streaming markdown parsing.
+///
+/// Tracks whether we are inside a fenced code block so that partial code
+/// blocks spanning multiple delta batches render correctly.
+#[derive(Default)]
+pub struct StreamParserState {
+    /// True when a code fence has been opened but not yet closed.
+    pub in_code_block: bool,
+    /// Language tag from the opening fence.
+    pub code_lang: String,
+    /// Accumulated code lines inside the open fence.
+    pub code_lines: Vec<String>,
+}
+
+/// Parse a slice of markdown incrementally, carrying `state` across calls.
+///
+/// This handles the cross-line code fence construct — all other markdown
+/// elements (bold, italic, headings, lists) are line-local in LLM output and
+/// parse correctly per-slice.
+pub fn parse_incremental(
+    source: &str,
+    state: &mut StreamParserState,
+) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    for raw_line in source.lines() {
+        let trimmed = raw_line.trim();
+
+        // Check for code fence toggle (``` with optional language).
+        if trimmed.starts_with("```") {
+            if state.in_code_block {
+                // Closing fence — render accumulated code.
+                let code = state.code_lines.join("\n");
+                if let Some(highlighted) =
+                    highlight::highlight_code_inline(&code, &state.code_lang)
+                {
+                    lines.extend(highlighted);
+                } else {
+                    let code_style =
+                        Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
+                    for cl in &state.code_lines {
+                        lines.push(Line::from(Span::styled(
+                            format!("  {cl}"),
+                            code_style,
+                        )));
+                    }
+                }
+                lines.push(Line::from(""));
+                state.in_code_block = false;
+                state.code_lang.clear();
+                state.code_lines.clear();
+            } else {
+                // Opening fence — extract language tag.
+                state.in_code_block = true;
+                state.code_lang = trimmed.trim_start_matches('`').to_string();
+                state.code_lines.clear();
+            }
+            continue;
+        }
+
+        if state.in_code_block {
+            state.code_lines.push(raw_line.to_string());
+            continue;
+        }
+
+        // Non-code content: parse as single-line markdown for styling.
+        let parsed = parse_to_owned_lines(raw_line);
+        if parsed.is_empty() && !raw_line.is_empty() {
+            // If pulldown_cmark produced nothing, emit as plain text.
+            lines.push(Line::from(Span::raw(raw_line.to_string())));
+        } else {
+            lines.extend(parsed);
+        }
+    }
+
+    lines
 }
 
 impl Widget for MarkdownView<'_> {

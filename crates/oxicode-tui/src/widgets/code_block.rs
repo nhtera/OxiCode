@@ -4,10 +4,12 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
-/// Displays a code block with line numbers and syntax-highlighted style.
+use super::highlight;
+
+/// Displays a code block with line numbers and syntax highlighting via `syntect`.
 ///
-/// Uses a simple color scheme rather than full syntect highlighting
-/// to keep rendering fast during streaming.
+/// Falls back to plain white-on-dark when the language is unknown or the input
+/// exceeds safety limits (> 512 KB or > 10 000 lines).
 pub struct CodeBlockWidget<'a> {
     code: &'a str,
     language: &'a str,
@@ -18,25 +20,30 @@ impl<'a> CodeBlockWidget<'a> {
         Self { code, language }
     }
 
-    fn to_lines(&self) -> Vec<Line<'a>> {
-        let mut lines = Vec::new();
+    fn to_lines(&self) -> Vec<Line<'static>> {
+        highlight::highlight_code(self.code, self.language)
+            .unwrap_or_else(|| self.plain_lines())
+    }
+
+    /// Plain fallback: white text on dark background with line numbers.
+    fn plain_lines(&self) -> Vec<Line<'static>> {
         let bg = Style::default().bg(Color::Rgb(30, 30, 30));
-
-        for (i, line) in self.code.lines().enumerate() {
-            let line_num = format!("{:>4} ", i + 1);
-            let spans = vec![
-                Span::styled(
-                    line_num,
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .bg(Color::Rgb(30, 30, 30)),
-                ),
-                Span::styled(line.to_string(), bg.fg(Color::White)),
-            ];
-            lines.push(Line::from(spans));
-        }
-
-        lines
+        self.code
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let line_num = format!("{:>4} ", i + 1);
+                Line::from(vec![
+                    Span::styled(
+                        line_num,
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .bg(Color::Rgb(30, 30, 30)),
+                    ),
+                    Span::styled(line.to_string(), bg.fg(Color::White)),
+                ])
+            })
+            .collect()
     }
 }
 
