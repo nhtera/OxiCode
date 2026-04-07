@@ -18,3 +18,4 @@ pub use prompt_suggestions::{suggest_prompts, PromptSuggestion};
 pub use themes::{get_theme, ThemePalette};
 pub use tips_service::TipsService;
 pub use vim_mode::VimState;
+pub use widgets::command_autocomplete::SlashCommandMeta;

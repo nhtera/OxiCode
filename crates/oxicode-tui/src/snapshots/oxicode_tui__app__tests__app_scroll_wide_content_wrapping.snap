@@ -1,0 +1,24 @@
+---
+source: crates/oxicode-tui/src/app.rs
+expression: rendered.as_str()
+---
+" ○ Ready  claude-sonnet-4-20250514  ↑0 ↓"
+"┌ Conversation ────────────────────────│"
+"│                                      │"
+"│ ─────────────────────────────────────│"
+"│───────────────────────               │"
+"│                                      │"
+"│▶ You                                 █"
+"│  Final question                      █"
+"│                                      █"
+"│ ─────────────────────────────────────█"
+"│───────────────────────               █"
+"│                                      █"
+"│◀ OxiCode                             │"
+"│  Final answer here                   │"
+"│                                      │"
+"│                                      │"
+"└──────────────────────────────────────│"
+"┌ Input (Enter to send, Alt+Enter for n┐"
+"│Type your message...                  │"
+"└──────────────────────────────────────┘"

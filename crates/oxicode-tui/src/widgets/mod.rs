@@ -1,6 +1,7 @@
 pub mod agent_panel;
 pub mod auto_mode_dialog;
 pub mod code_block;
+pub mod command_autocomplete;
 pub mod context_visualization;
 pub mod highlight;
 pub mod cost_dialog;
@@ -24,6 +25,7 @@ pub mod tool_display;
 
 pub use agent_panel::{AgentInfo, AgentPanel};
 pub use auto_mode_dialog::AutoModeDialog;
+pub use command_autocomplete::{AutocompleteState, CommandAutocomplete, SlashCommandMeta};
 pub use code_block::CodeBlockWidget;
 pub use context_visualization::{ContextVisualization, DefenseLayer};
 pub use cost_dialog::CostDialog;

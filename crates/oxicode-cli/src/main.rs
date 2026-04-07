@@ -542,7 +542,18 @@ async fn run_tui(
         state_store.push_message(msg.clone());
     }
 
-    let mut app = App::new(&state_store, ui_tx, core_rx);
+    // Build command registry early to extract metadata for TUI autocomplete.
+    let command_registry = commands::default_registry();
+    let slash_command_meta: Vec<oxicode_tui::SlashCommandMeta> = command_registry
+        .all_commands()
+        .into_iter()
+        .map(|(name, desc)| oxicode_tui::SlashCommandMeta {
+            name: name.to_string(),
+            description: desc.to_string(),
+        })
+        .collect();
+
+    let mut app = App::new(&state_store, ui_tx, core_rx, slash_command_meta);
 
     // Wire editor mode from settings.
     if settings.editor_mode == "vim" || settings.features.vim_mode {
@@ -570,8 +581,7 @@ async fn run_tui(
             conversation.push(msg.clone());
         }
 
-        // Build slash command registry inside the spawned block (not Send-required outside).
-        let command_registry = commands::default_registry();
+        // command_registry was created above and moved here.
 
         while let Some(event) = ui_rx.recv().await {
             match event {

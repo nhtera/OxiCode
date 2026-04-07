@@ -36,7 +36,7 @@ fn make_test_app() -> (App, Arc<StateStore>, mpsc::Sender<UiEvent>, mpsc::Sender
     let (ui_tx, _ui_rx) = mpsc::channel::<UiEvent>(32);
     let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(256);
 
-    let app = App::new(&state_store, ui_tx.clone(), core_rx);
+    let app = App::new(&state_store, ui_tx.clone(), core_rx, Vec::new());
     (app, state_store, ui_tx, core_tx)
 }
 
@@ -137,7 +137,7 @@ fn test_status_bar_shows_model_info() {
 
     let (ui_tx, _) = mpsc::channel::<UiEvent>(32);
     let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(256);
-    let mut app = App::new(&state_store, ui_tx, core_rx);
+    let mut app = App::new(&state_store, ui_tx, core_rx, Vec::new());
 
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();

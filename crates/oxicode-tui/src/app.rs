@@ -24,10 +24,10 @@ use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
-    ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageRenderCache, MessageView, Notification,
-    NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel,
-    ShortcutsState, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
-    PASTE_PREVIEW_THRESHOLD,
+    ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState, CommandAutocomplete, InputBox,
+    MessageRenderCache, MessageView, Notification, NotificationWidget, PastePreview,
+    PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel, ShortcutsState, SlashCommandMeta,
+    SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel, PASTE_PREVIEW_THRESHOLD,
 };
 
 /// A tool call in progress (between ToolUseStart and ToolResult events).
@@ -106,6 +106,10 @@ pub struct App {
     suggestions: Vec<PromptSuggestion>,
     /// Timestamp when the current turn started (for thinking indicator).
     turn_started_at: Option<Instant>,
+    /// Slash command metadata for autocomplete dropdown.
+    slash_commands: Vec<SlashCommandMeta>,
+    /// Autocomplete dropdown state (active when typing `/...`).
+    autocomplete: AutocompleteState,
 }
 
 impl App {
@@ -113,6 +117,7 @@ impl App {
         state_store: &Arc<StateStore>,
         ui_tx: mpsc::Sender<UiEvent>,
         core_rx: mpsc::Receiver<CoreEvent>,
+        slash_commands: Vec<SlashCommandMeta>,
     ) -> Self {
         let keybindings = KeybindingRegistry::with_defaults();
 
@@ -147,6 +152,8 @@ impl App {
             pending_paste: None,
             suggestions: Vec::new(),
             turn_started_at: None,
+            slash_commands,
+            autocomplete: AutocompleteState::new(),
         }
     }
 
@@ -326,6 +333,8 @@ impl App {
         // Show suggestions only when idle, input empty, and suggestions exist.
         let show_suggestions =
             !is_streaming && self.input_text.is_empty() && !self.suggestions.is_empty();
+        let autocomplete_active = self.autocomplete.active;
+        let autocomplete_height = self.autocomplete.visible_height();
 
         terminal.draw(|frame| {
             let base_input_height = InputBox::required_height(&self.input_text);
@@ -340,6 +349,7 @@ impl App {
                 .constraints([
                     Constraint::Length(1),                        // Status bar
                     Constraint::Min(5),                           // Message view
+                    Constraint::Length(autocomplete_height),      // Command autocomplete (0 when inactive)
                     Constraint::Length(suggestion_height),        // Suggestion chips (0 or 1)
                     Constraint::Length(input_height),             // Input box (+ search bar)
                 ])
@@ -468,7 +478,15 @@ impl App {
 
             // Suggestion chips (shown when idle + empty input).
             if show_suggestions {
-                frame.render_widget(SuggestionChips::new(&self.suggestions), chunks[2]);
+                frame.render_widget(SuggestionChips::new(&self.suggestions), chunks[3]);
+            }
+
+            // Command autocomplete dropdown (shown when typing `/...`).
+            if autocomplete_active {
+                frame.render_widget(
+                    CommandAutocomplete::new(&self.slash_commands, &self.autocomplete),
+                    chunks[2],
+                );
             }
 
             // Input box area — may include search bar below.
@@ -479,7 +497,7 @@ impl App {
                         Constraint::Length(base_input_height),
                         Constraint::Length(2),
                     ])
-                    .split(chunks[3]);
+                    .split(chunks[4]);
 
                 let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
                 let mut input = InputBox::new(&self.input_text, byte_cursor, true);
@@ -505,7 +523,7 @@ impl App {
                 if let Some(g) = ghost_ref {
                     input = input.with_ghost_text(g);
                 }
-                frame.render_widget(input, chunks[3]);
+                frame.render_widget(input, chunks[4]);
             }
         })?;
 
@@ -534,6 +552,12 @@ impl App {
         // Shortcuts panel: any key hides it.
         if self.shortcuts.is_visible() {
             self.shortcuts.hide();
+            return;
+        }
+
+        // Command autocomplete dropdown captures keys when active.
+        if self.autocomplete.active {
+            self.handle_autocomplete_key(key);
             return;
         }
 
@@ -611,6 +635,10 @@ impl App {
                 self.input_cursor += 1;
                 self.update_ghost_text();
                 self.suggestions.clear(); // hide chips once user starts typing
+                // Activate autocomplete when typing '/' at start of input.
+                if c == '/' && self.input_text == "/" {
+                    self.activate_autocomplete();
+                }
             }
             (_, KeyCode::Backspace) => {
                 if self.input_cursor > 0 {
@@ -1232,7 +1260,10 @@ impl App {
 
     /// Recompute ghost text completion based on current input.
     fn update_ghost_text(&mut self) {
-        self.ghost_text = crate::ghost_completion::complete(&self.input_text);
+        self.ghost_text = crate::ghost_completion::complete(
+            &self.input_text,
+            &self.slash_commands,
+        );
     }
 
     /// Accept the current ghost text completion. Returns true if accepted.
@@ -1243,6 +1274,103 @@ impl App {
             true
         } else {
             false
+        }
+    }
+
+    /// Activate autocomplete dropdown with all commands (or filtered).
+    fn activate_autocomplete(&mut self) {
+        use crate::widgets::command_autocomplete::filter_commands;
+        let query = self.input_text.strip_prefix('/').unwrap_or("");
+        let filtered = filter_commands(&self.slash_commands, query);
+        if filtered.is_empty() {
+            self.autocomplete.deactivate();
+        } else {
+            self.autocomplete.activate(filtered);
+        }
+    }
+
+    /// Handle key events when the autocomplete dropdown is active.
+    fn handle_autocomplete_key(&mut self, key: KeyEvent) {
+        use crate::widgets::command_autocomplete::filter_commands;
+
+        match key.code {
+            KeyCode::Up => {
+                self.autocomplete.select_prev();
+            }
+            KeyCode::Down => {
+                self.autocomplete.select_next();
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                // Select the highlighted command — fill input, don't auto-submit.
+                if let Some(&cmd_idx) = self
+                    .autocomplete
+                    .filtered
+                    .get(self.autocomplete.selected)
+                {
+                    let cmd_name = &self.slash_commands[cmd_idx].name;
+                    self.input_text = format!("/{cmd_name}");
+                    self.input_cursor = self.input_text.chars().count();
+                    self.ghost_text = None;
+                }
+                self.autocomplete.deactivate();
+            }
+            KeyCode::Esc => {
+                self.autocomplete.deactivate();
+            }
+            KeyCode::Backspace => {
+                // Remove character from input.
+                if self.input_cursor > 0 {
+                    self.input_cursor -= 1;
+                    let start = char_to_byte_index(&self.input_text, self.input_cursor);
+                    let end = char_to_byte_index(&self.input_text, self.input_cursor + 1);
+                    self.input_text.replace_range(start..end, "");
+                }
+                // If input no longer starts with '/', deactivate.
+                if !self.input_text.starts_with('/') || self.input_text.is_empty() {
+                    self.autocomplete.deactivate();
+                } else {
+                    // Re-filter with updated query.
+                    let query = self.input_text.strip_prefix('/').unwrap_or("");
+                    let filtered = filter_commands(&self.slash_commands, query);
+                    if filtered.is_empty() {
+                        self.autocomplete.deactivate();
+                    } else {
+                        self.autocomplete.filtered = filtered;
+                        self.autocomplete.selected = self
+                            .autocomplete
+                            .selected
+                            .min(self.autocomplete.filtered.len().saturating_sub(1));
+                    }
+                }
+                self.update_ghost_text();
+            }
+            KeyCode::Char(' ') => {
+                // Space after command → deactivate dropdown, keep input.
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.insert(byte_idx, ' ');
+                self.input_cursor += 1;
+                self.autocomplete.deactivate();
+                self.ghost_text = None;
+            }
+            KeyCode::Char(c) => {
+                // Append character, re-filter.
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.insert(byte_idx, c);
+                self.input_cursor += 1;
+                let query = self.input_text.strip_prefix('/').unwrap_or("");
+                let filtered = filter_commands(&self.slash_commands, query);
+                if filtered.is_empty() {
+                    self.autocomplete.deactivate();
+                } else {
+                    self.autocomplete.filtered = filtered;
+                    self.autocomplete.selected = self
+                        .autocomplete
+                        .selected
+                        .min(self.autocomplete.filtered.len().saturating_sub(1));
+                }
+                self.update_ghost_text();
+            }
+            _ => {}
         }
     }
 
@@ -1497,7 +1625,7 @@ mod tests {
         let state_store = Arc::new(StateStore::default());
         let (ui_tx, ui_rx) = mpsc::channel::<UiEvent>(32);
         let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
-        let app = App::new(&state_store, ui_tx, core_rx);
+        let app = App::new(&state_store, ui_tx, core_rx, Vec::new());
         (app, ui_rx, core_tx)
     }
 
@@ -1752,7 +1880,7 @@ mod tests {
         let state_store = Arc::new(StateStore::default());
         let (ui_tx, ui_rx) = mpsc::channel::<UiEvent>(32);
         let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
-        let app = App::new(&state_store, ui_tx, core_rx);
+        let app = App::new(&state_store, ui_tx, core_rx, Vec::new());
         (app, state_store, ui_rx, core_tx)
     }
 
