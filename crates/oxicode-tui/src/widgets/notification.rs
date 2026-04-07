@@ -58,10 +58,10 @@ impl Notification {
 
     /// Returns true if the notification has not yet expired.
     pub fn is_active(&self) -> bool {
-        let ttl = if self.level == NotificationLevel::RateLimit {
-            Duration::from_secs(RATE_LIMIT_EXPIRE_SECS)
-        } else {
-            Duration::from_secs(EXPIRE_SECS)
+        let ttl = match self.level {
+            NotificationLevel::RateLimit => Duration::from_secs(RATE_LIMIT_EXPIRE_SECS),
+            NotificationLevel::Error => Duration::from_secs(8),
+            _ => Duration::from_secs(EXPIRE_SECS),
         };
         self.created_at.elapsed() < ttl
     }
@@ -112,8 +112,23 @@ impl Widget for NotificationWidget<'_> {
             if row < area.top() {
                 break;
             }
-            let text = format!("[{}] {}", notif.level.label(), notif.message);
-            let line = Line::from(Span::styled(text, Style::default().fg(notif.level.color())));
+            let fg = notif.level.color();
+            let bg = match notif.level {
+                NotificationLevel::Error => Color::Rgb(60, 10, 10),
+                NotificationLevel::Warning => Color::Rgb(50, 40, 10),
+                NotificationLevel::RateLimit => Color::Rgb(50, 30, 0),
+                NotificationLevel::Info => Color::Rgb(10, 20, 40),
+            };
+            let text = format!(" {} {} ", notif.level.label(), notif.message);
+            let style = Style::default().fg(fg).bg(bg);
+            // Fill entire row with background first, then overlay text.
+            for col in area.x..area.right() {
+                if let Some(cell) = buf.cell_mut((col, row)) {
+                    cell.set_style(style);
+                    cell.set_symbol(" ");
+                }
+            }
+            let line = Line::from(Span::styled(text, style));
             buf.set_line(area.x, row, &line, area.width);
         }
     }

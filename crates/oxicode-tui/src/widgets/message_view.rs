@@ -1,4 +1,5 @@
-use std::ops::Range;
+use std::cell::Cell;
+use std::rc::Rc;
 
 use oxicode_common::{ContentBlock, Message, Role};
 use ratatui::buffer::Buffer;
@@ -62,62 +63,10 @@ impl MessageRenderCache {
     pub fn total_lines(&self) -> usize {
         self.entries.iter().map(|e| e.len()).sum()
     }
-}
 
-/// Line-level index for viewport culling.
-///
-/// Maps each message to its cumulative line range in the full conversation.
-/// Supports O(log n) binary search to find which messages intersect a viewport.
-struct MessageLineIndex {
-    /// `(cumulative_start_line, line_count)` per message (including separators).
-    entries: Vec<(usize, usize)>,
-    /// Total lines across all messages.
-    total_lines: usize,
-}
-
-/// Lines used per separator between messages.
-const SEPARATOR_LINES: usize = 3;
-
-impl MessageLineIndex {
-    /// Build index from cached message entries.
-    fn build(cached: &[Vec<Line<'static>>]) -> Self {
-        let mut entries = Vec::with_capacity(cached.len());
-        let mut cumulative = 0;
-
-        for (i, entry) in cached.iter().enumerate() {
-            let line_count = entry.len();
-            let with_sep = if i > 0 {
-                line_count + SEPARATOR_LINES
-            } else {
-                line_count
-            };
-            entries.push((cumulative, with_sep));
-            cumulative += with_sep;
-        }
-
-        Self {
-            entries,
-            total_lines: cumulative,
-        }
-    }
-
-    /// Return range of message indices whose lines overlap `[start_line..end_line)`.
-    fn visible_range(&self, start_line: usize, end_line: usize) -> Range<usize> {
-        if self.entries.is_empty() {
-            return 0..0;
-        }
-
-        // Binary search for first message whose end > start_line.
-        let first = self
-            .entries
-            .partition_point(|(cum_start, count)| cum_start + count <= start_line);
-
-        // Binary search for last message whose start < end_line.
-        let last = self
-            .entries
-            .partition_point(|(cum_start, _)| *cum_start < end_line);
-
-        first..last
+    /// The terminal width this cache was built for (for external scroll estimation).
+    pub fn cached_width(&self) -> u16 {
+        self.cached_width
     }
 }
 
@@ -153,6 +102,11 @@ pub struct MessageView<'a> {
     scroll_offset: u16,
     /// Viewport height for message limiting (inner height, excluding borders).
     viewport_height: u16,
+    /// When the current turn started (for thinking indicator spinner).
+    turn_started_at: Option<std::time::Instant>,
+    /// Shared cell: render() writes the actual max scroll offset here so
+    /// the owning App can read it after draw() returns.
+    reported_max_scroll: Option<Rc<Cell<u16>>>,
 }
 
 impl<'a> MessageView<'a> {
@@ -174,6 +128,8 @@ impl<'a> MessageView<'a> {
             active_tools,
             scroll_offset,
             viewport_height: 50, // Default, overridden during render
+            turn_started_at: None,
+            reported_max_scroll: None,
         }
     }
 
@@ -183,54 +139,46 @@ impl<'a> MessageView<'a> {
         self
     }
 
+    /// Set the turn start time for the thinking indicator.
+    pub fn with_turn_started_at(mut self, started_at: Option<std::time::Instant>) -> Self {
+        self.turn_started_at = started_at;
+        self
+    }
+
+    /// Attach a shared cell to receive the actual max scroll offset after rendering.
+    pub fn with_scroll_report(mut self, cell: Rc<Cell<u16>>) -> Self {
+        self.reported_max_scroll = Some(cell);
+        self
+    }
+
     fn format_messages(&self) -> Text<'a> {
         let mut lines: Vec<Line<'a>> = Vec::new();
 
-        // Build line index for viewport culling.
-        let index = MessageLineIndex::build(self.cached_lines);
-        let viewport_h = self.viewport_height as usize;
-
-        // Determine visible line range from scroll offset.
-        let start_line = self.scroll_offset as usize;
-        let end_line = start_line + viewport_h;
-        let visible = index.visible_range(start_line, end_line);
-
-        if visible.start > 0 {
-            lines.push(Line::from(Span::styled(
-                format!("  ... ({} earlier messages hidden)", visible.start),
-                Style::default().fg(Color::DarkGray),
-            )));
-            render_separator(&mut lines);
-        }
-
-        // Append only visible messages (zero re-parse — just clone Line refs).
-        for (i, msg_idx) in visible.clone().enumerate() {
-            if let Some(entry) = self.cached_lines.get(msg_idx) {
-                if i > 0 || visible.start > 0 {
-                    render_separator(&mut lines);
-                }
-                for line in entry {
-                    lines.push(line.clone());
-                }
+        // Render all cached messages. Paragraph::scroll() handles viewport
+        // positioning — no manual viewport culling needed. This ensures the
+        // total line count is accurate for max_scroll_offset computation.
+        for (i, entry) in self.cached_lines.iter().enumerate() {
+            if i > 0 {
+                render_separator(&mut lines);
+            }
+            for line in entry {
+                lines.push(line.clone());
             }
         }
 
-        // Show "N more messages" if there are messages after the visible range.
-        let total_msgs = self.cached_lines.len();
-        if visible.end < total_msgs {
-            render_separator(&mut lines);
-            lines.push(Line::from(Span::styled(
-                format!("  ... ({} more messages below)", total_msgs - visible.end),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
-
         // Streaming section.
+        // has_streaming: true when there's actual streaming text to render.
+        // has_turn_active: true when streaming_lines is Some (even empty) AND
+        //   we have a turn_started_at — this enables the thinking indicator.
         let has_streaming = self
             .streaming_lines
             .map_or(false, |l| !l.is_empty())
             || self.streaming_tail.is_some();
-        if has_streaming {
+        let has_thinking = !has_streaming
+            && self.streaming_lines.is_some()
+            && self.turn_started_at.is_some();
+
+        if has_streaming || has_thinking {
             if self.message_count > 0 {
                 render_separator(&mut lines);
             }
@@ -252,6 +200,31 @@ impl<'a> MessageView<'a> {
     }
 
     fn render_streaming(&self, lines: &mut Vec<Line<'a>>) {
+        // Check if we have any content to show.
+        let has_committed = self.streaming_lines.map_or(false, |l| !l.is_empty());
+        let has_tail = self.streaming_tail.map_or(false, |t| !t.is_empty());
+
+        // No content yet — show thinking indicator with spinner.
+        if !has_committed && !has_tail {
+            if let Some(started) = self.turn_started_at {
+                let frame = tool_display::spinner_frame(started);
+                let elapsed = tool_display::format_elapsed(started);
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  {frame} "),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::styled(
+                        format!("Thinking... ({elapsed})"),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ]));
+            }
+            return;
+        }
+
         // Render pre-committed markdown lines.
         if let Some(committed) = self.streaming_lines {
             for line in committed {
@@ -267,11 +240,22 @@ impl<'a> MessageView<'a> {
                 lines.push(Line::from(format!("  {tail}")));
             }
         }
-        // Blinking cursor.
-        lines.push(Line::from(Span::styled(
-            "  \u{258d}",
-            Style::default().fg(Color::Cyan),
-        )));
+        // Blinking cursor with elapsed time.
+        if let Some(started) = self.turn_started_at {
+            let elapsed = tool_display::format_elapsed(started);
+            lines.push(Line::from(vec![
+                Span::styled("  \u{258d} ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    elapsed,
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(Span::styled(
+                "  \u{258d}",
+                Style::default().fg(Color::Cyan),
+            )));
+        }
     }
 
     fn render_active_tools(&self, lines: &mut Vec<Line<'a>>) {
@@ -298,28 +282,15 @@ impl<'a> MessageView<'a> {
             }
         }
     }
-
-    /// Maximum safe vertical scroll offset for this content in `area`.
-    pub fn max_scroll_offset(&self, area: Rect) -> u16 {
-        let index = MessageLineIndex::build(self.cached_lines);
-        let streaming_lines = self
-            .streaming_lines
-            .map_or(0, |l| l.len())
-            + self.active_tools.len() * 2
-            + 10; // separators, headers, cursor
-        let total = index.total_lines + streaming_lines;
-        let viewport_height = area.height.saturating_sub(2);
-        let content_height = u16::try_from(total).unwrap_or(u16::MAX);
-        content_height.saturating_sub(viewport_height)
-    }
 }
 
 /// Render a horizontal separator line between messages.
 fn render_separator(lines: &mut Vec<Line<'_>>) {
     lines.push(Line::from(""));
+    // Use dim thin line separator — 60 chars wide to look clean.
     lines.push(Line::from(Span::styled(
-        "\u{2500}".repeat(50),
-        Style::default().fg(Color::Rgb(60, 60, 60)),
+        " \u{2500}".to_string() + &"\u{2500}".repeat(59),
+        Style::default().fg(Color::Rgb(50, 50, 50)),
     )));
     lines.push(Line::from(""));
 }
@@ -457,18 +428,30 @@ impl Widget for MessageView<'_> {
         self.viewport_height = area.height.saturating_sub(2);
 
         let text = self.format_messages();
-        let line_count = text.lines.len();
-        let scroll_y = resolve_scroll_offset(self.scroll_offset, area, line_count);
 
+        // Use Ratatui's own Paragraph::line_count() to get the exact wrapped
+        // line count. This accounts for word-wrapping, unicode widths, and all
+        // the same logic that Paragraph::render() uses — eliminating any
+        // mismatch between our scroll estimation and the actual display.
         let paragraph = Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false })
-            .scroll((scroll_y, 0));
+            .block(block.clone())
+            .wrap(Wrap { trim: false });
 
+        let wrapped_line_count = paragraph.line_count(area.width);
+
+        let scroll_y = resolve_scroll_offset(self.scroll_offset, area, wrapped_line_count);
+
+        // Report the actual max scroll offset to the parent App.
+        let actual_max = max_content_scroll(area, wrapped_line_count);
+        if let Some(ref cell) = self.reported_max_scroll {
+            cell.set(actual_max);
+        }
+
+        let paragraph = paragraph.scroll((scroll_y, 0));
         paragraph.render(area, buf);
 
         // Scrollbar on right edge (only when content exceeds viewport).
-        if line_count > self.viewport_height as usize {
+        if wrapped_line_count > self.viewport_height as usize {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(None)
                 .end_symbol(None)
@@ -477,7 +460,7 @@ impl Widget for MessageView<'_> {
                 .track_style(Style::default().fg(Color::DarkGray))
                 .thumb_style(Style::default().fg(Color::Gray));
             let mut scrollbar_state =
-                ScrollbarState::new(line_count).position(scroll_y as usize);
+                ScrollbarState::new(wrapped_line_count).position(scroll_y as usize);
             scrollbar.render(area, buf, &mut scrollbar_state);
         }
     }
@@ -639,5 +622,111 @@ mod tests {
         cache.update(&messages, 120);
         assert_eq!(cache.entries.len(), 1);
         assert_eq!(cache.cached_width, 120);
+    }
+
+    #[test]
+    fn test_scroll_offset_reported_correctly_for_long_markdown() {
+        // Simulate realistic content similar to "what can you do?" response.
+        let long_md = r#"## What It Is
+
+A **Rust-powered CLI agent** — a full-parity port of Claude Code — for software engineering tasks.
+
+## Architecture: 17 Cargo Crates
+
+| Layer | Crates |
+|---|---|
+| Foundation | `oxicode-common` — shared types, errors |
+| Core Services | `oxicode-config`, `oxicode-api`, `oxicode-tools` (49 tools) |
+| Engine | `oxicode-core` (query engine), `oxicode-permissions`, `oxicode-state` |
+| Persistence | `oxicode-session`, `oxicode-hooks`, `oxicode-context` |
+| Agents | `oxicode-agents`, `oxicode-skills`, `oxicode-tasks` |
+| Plugins | `oxicode-plugins` (subprocess system, hot-reload) |
+| Integrations | `oxicode-mcp` (4 transports), `oxicode-tui` (Ratatui UI) |
+| Entry Point | `oxicode-cli` (binary, 105+ slash commands) |
+
+## Key Features
+
+• 49 built-in tools — file ops, bash, git, grep, glob, agents, MCP, and more
+• 6-layer permission pipeline
+• Ratatui TUI — split panes, markdown rendering, syntax highlighting, themes
+• MCP client — stdio, SSE, streamable HTTP, WebSocket transports
+• Multi-provider API — Anthropic, OpenAI, Google, Amazon Bedrock
+• Agent system — background tasks, subprocess agents
+• Session persistence — JSONL conversation logs
+• Hook system — 26 lifecycle events
+• Vim mode — optional vim keybindings"#;
+
+        let messages = vec![
+            Message::user("What can you do?"),
+            assistant_text_message(long_md),
+        ];
+        let mut cache = MessageRenderCache::new();
+        cache.update(&messages, 80);
+
+        let active_tools: &[ActiveToolInfo<'_>] = &[];
+        let scroll_report = Rc::new(Cell::new(0u16));
+
+        let widget = MessageView::new(
+            cache.lines(messages.len()),
+            messages.len(),
+            messages.last().map(|m| m.role),
+            None,
+            None,
+            active_tools,
+            u16::MAX, // auto-scroll
+        )
+        .with_scroll_report(Rc::clone(&scroll_report));
+
+        // Simulate a 80x24 terminal.
+        let area = Rect::new(0, 0, 80, 24);
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+
+        let max_scroll = scroll_report.get();
+        // With 80x24 viewport (inner height = 22), content should exceed it.
+        assert!(
+            max_scroll > 0,
+            "max_scroll should be > 0 for long markdown content, got {max_scroll}"
+        );
+    }
+
+    #[test]
+    fn test_scroll_offset_with_emoji_content() {
+        // Emoji have display width 2 but char count 1 — test that wrapping accounts for this.
+        let emoji_content = "🖥 Files & Filesystem — Read, write, edit files. Search codebases with grep/glob. Navigate project structures. This is a long line with emoji that should wrap.";
+
+        let messages = vec![
+            Message::user("list features"),
+            assistant_text_message(emoji_content),
+        ];
+        let mut cache = MessageRenderCache::new();
+        cache.update(&messages, 60); // narrow terminal to force wrapping
+
+        let active_tools: &[ActiveToolInfo<'_>] = &[];
+        let scroll_report = Rc::new(Cell::new(0u16));
+
+        let widget = MessageView::new(
+            cache.lines(messages.len()),
+            messages.len(),
+            messages.last().map(|m| m.role),
+            None,
+            None,
+            active_tools,
+            u16::MAX,
+        )
+        .with_scroll_report(Rc::clone(&scroll_report));
+
+        let area = Rect::new(0, 0, 60, 10); // Small viewport
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+
+        let max_scroll = scroll_report.get();
+        // Content should produce enough lines to scroll.
+        // The emoji line alone is ~160 chars which wraps to ~3 lines in 58-col inner.
+        // Plus headers, separators, etc.
+        assert!(
+            max_scroll > 0,
+            "max_scroll should be > 0 for emoji content, got {max_scroll}"
+        );
     }
 }

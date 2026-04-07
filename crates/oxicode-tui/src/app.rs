@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::io;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -102,6 +104,8 @@ pub struct App {
     pending_paste: Option<String>,
     /// Context-aware follow-up suggestions shown as chips.
     suggestions: Vec<PromptSuggestion>,
+    /// Timestamp when the current turn started (for thinking indicator).
+    turn_started_at: Option<Instant>,
 }
 
 impl App {
@@ -142,6 +146,7 @@ impl App {
             ghost_text: None,
             pending_paste: None,
             suggestions: Vec::new(),
+            turn_started_at: None,
         }
     }
 
@@ -250,8 +255,8 @@ impl App {
                     }
                     needs_redraw = true;
                 }
-                // Tick for spinner animation — only forces redraw while turn is active.
-                _ = tick_interval.tick(), if self.is_turn_active => {
+                // Tick for spinner animation and notification expiry.
+                _ = tick_interval.tick(), if self.is_turn_active || !self.notifications.is_empty() => {
                     needs_redraw = true;
                 }
             }
@@ -361,9 +366,14 @@ impl App {
             let (left_area, right_area) = self.split_pane.split(content_area);
 
             // Message view (left pane, or full area when right pane is hidden)
-            let streaming_lines = if self.is_turn_active && !self.streaming_committed_lines.is_empty()
+            // Show streaming lines when turn is active OR when committed lines
+            // exist (between StreamEnd and MessageComplete).
+            let streaming_lines = if !self.streaming_committed_lines.is_empty()
             {
                 Some(self.streaming_committed_lines.as_slice())
+            } else if self.is_turn_active {
+                // Turn active but no lines yet — pass empty slice so thinking indicator shows.
+                Some([].as_slice())
             } else {
                 None
             };
@@ -387,32 +397,18 @@ impl App {
                 })
                 .collect();
 
-            // Compute scroll from cached line count.
-            // Account for word-wrap: logical lines may wrap to multiple visual lines.
-            let inner_width = left_area.width.saturating_sub(2) as usize;
-            let wrapped_lines: usize = self.message_cache.lines(message_count).iter()
-                .flat_map(|msg_lines| msg_lines.iter())
-                .map(|line| {
-                    let line_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
-                    if inner_width > 0 && line_width > inner_width {
-                        (line_width + inner_width - 1) / inner_width
-                    } else {
-                        1
-                    }
-                })
-                .sum();
-            let estimated_lines = wrapped_lines
-                + self.streaming_committed_lines.len()
-                + self.active_tools.len() * 2
-                + 10; // separators
-            let inner_height = left_area.height.saturating_sub(2) as usize;
-            let max_scroll = estimated_lines.saturating_sub(inner_height) as u16;
-            self.max_scroll_offset = max_scroll;
-            if self.auto_scroll {
-                self.scroll_offset = self.max_scroll_offset;
+            // Compute scroll offset to pass to MessageView.
+            // For auto-scroll, use u16::MAX as sentinel ("scroll to bottom");
+            // MessageView::render() will resolve it to the actual max offset.
+            // For manual scroll, pass the stored offset (will be clamped inside).
+            let scroll_for_view = if self.auto_scroll {
+                u16::MAX
             } else {
-                self.scroll_offset = self.scroll_offset.min(self.max_scroll_offset);
-            }
+                self.scroll_offset.min(self.max_scroll_offset)
+            };
+
+            // Shared cell: MessageView writes the actual max scroll after rendering.
+            let scroll_report = Rc::new(Cell::new(0u16));
 
             let message_view = MessageView::new(
                 self.message_cache.lines(message_count),
@@ -421,9 +417,19 @@ impl App {
                 streaming_lines,
                 streaming_tail,
                 &active_tool_info,
-                self.scroll_offset,
-            );
+                scroll_for_view,
+            )
+            .with_turn_started_at(self.turn_started_at)
+            .with_scroll_report(Rc::clone(&scroll_report));
             frame.render_widget(message_view, left_area);
+
+            // Read back the actual max scroll offset computed during rendering.
+            self.max_scroll_offset = scroll_report.get();
+            if self.auto_scroll {
+                self.scroll_offset = self.max_scroll_offset;
+            } else {
+                self.scroll_offset = self.scroll_offset.min(self.max_scroll_offset);
+            }
 
             // Right pane: agent panel (top) + task panel (bottom)
             if let Some(right) = right_area {
@@ -584,8 +590,10 @@ impl App {
             (_, KeyCode::Enter) => {
                 self.submit_input().await;
             }
-            // Ctrl+1/2/3: select suggestion chip (when visible).
-            (KeyModifiers::CONTROL, KeyCode::Char(c @ '1'..='3'))
+            // Select suggestion chip with plain digit (1/2/3) when visible.
+            // Plain digits are safe here because input is empty — no text to lose.
+            // Also support Ctrl+digit as fallback for terminals that pass it.
+            (_, KeyCode::Char(c @ '1'..='3'))
                 if self.input_text.is_empty() && !self.suggestions.is_empty() =>
             {
                 let idx = (c as usize) - ('1' as usize);
@@ -649,10 +657,20 @@ impl App {
             (_, KeyCode::End) => {
                 self.input_cursor = self.input_text.chars().count();
             }
-            // Tab: accept ghost completion if available, otherwise toggle panel.
+            // Tab: accept ghost completion → select first suggestion → toggle panel.
             (_, KeyCode::Tab) => {
                 if !self.accept_ghost_text() {
-                    self.split_pane.toggle_right();
+                    if self.input_text.is_empty() && !self.suggestions.is_empty() {
+                        // Select the first suggestion chip.
+                        if let Some(suggestion) = self.suggestions.first() {
+                            self.input_text = suggestion.prompt.clone();
+                            self.input_cursor = self.input_text.chars().count();
+                            self.suggestions.clear();
+                            self.submit_input().await;
+                        }
+                    } else {
+                        self.split_pane.toggle_right();
+                    }
                 }
             }
             _ => {}
@@ -1307,35 +1325,47 @@ impl App {
             }
             CoreEvent::StreamStart => {
                 self.is_turn_active = true;
+                self.turn_started_at = Some(Instant::now());
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
                 self.active_tools.clear();
             }
             CoreEvent::StreamEnd => {
-                // Stream finished — finalize remaining buffer but keep committed lines
-                // visible. Tools may still be running in multi-turn loops.
+                // Stream finished — finalize remaining buffer but keep committed
+                // lines visible until MessageComplete (prevents blank frame flash).
+                // Tools may still be running in multi-turn loops.
                 let final_lines = self.streaming_collector.finalize();
                 self.streaming_committed_lines.extend(final_lines);
+                // Clear only the raw buffer and collector, NOT the committed lines.
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.auto_scroll = true;
             }
             CoreEvent::MessageComplete => {
                 // Full turn complete — message now persisted in state_store.messages.
-                // Clear all transient streaming state.
+                // Force message cache update BEFORE clearing streaming state to
+                // prevent a blank frame between "streaming visible" and "cached visible".
+                {
+                    let state = self.state_rx.borrow();
+                    // Use a reasonable width; draw() will recalculate with actual terminal width.
+                    self.message_cache.update(&state.messages, self.message_cache.cached_width());
+                }
+                // Now safe to clear all transient streaming state.
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
                 self.active_tools.clear();
                 self.is_turn_active = false;
+                self.turn_started_at = None;
                 self.auto_scroll = true;
                 // Compute context-aware suggestions from latest messages.
                 let state = self.state_rx.borrow();
                 self.suggestions = suggest_prompts(&state.messages);
             }
             CoreEvent::Error(msg) => {
-                tracing::error!("Core error: {}", msg);
+                // Show error as a toast notification (no tracing::error! to avoid
+                // corrupting the TUI — stderr leaks into the alternate screen).
                 self.notifications.push(Notification::new(
                     msg,
                     crate::widgets::notification::NotificationLevel::Error,
@@ -1383,7 +1413,7 @@ impl App {
                 });
             }
             CoreEvent::RateLimited {
-                message,
+                message: _,
                 attempt,
                 max_retries,
                 retry_in_secs,
@@ -1391,7 +1421,7 @@ impl App {
                 let notif_msg = format!(
                     "Rate limited. Retrying in {retry_in_secs:.0}s... ({attempt}/{max_retries})"
                 );
-                tracing::warn!("{}", message);
+                // No tracing::warn! — would corrupt TUI display via stderr.
                 self.notifications.push(Notification::new(
                     notif_msg,
                     crate::widgets::notification::NotificationLevel::RateLimit,
@@ -1435,7 +1465,7 @@ fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
 mod tests {
     use super::*;
     use insta::assert_snapshot;
-    use oxicode_common::PermissionResponse;
+    use oxicode_common::{Message, PermissionResponse};
     use ratatui::backend::TestBackend;
     use tokio::sync::oneshot;
 
@@ -1710,5 +1740,265 @@ mod tests {
 
         assert_eq!(app.scroll_offset, 80);
         assert!(!app.auto_scroll);
+    }
+
+    /// Helper that also returns the StateStore for pushing messages.
+    fn make_test_app_with_store() -> (
+        App,
+        Arc<StateStore>,
+        mpsc::Receiver<UiEvent>,
+        mpsc::Sender<CoreEvent>,
+    ) {
+        let state_store = Arc::new(StateStore::default());
+        let (ui_tx, ui_rx) = mpsc::channel::<UiEvent>(32);
+        let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
+        let app = App::new(&state_store, ui_tx, core_rx);
+        (app, state_store, ui_rx, core_tx)
+    }
+
+    #[test]
+    fn test_scroll_to_bottom_shows_last_line_with_many_messages() {
+        let (mut app, store, _ui_rx, _core_tx) = make_test_app_with_store();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        // Push enough messages to exceed the viewport (24 rows minus borders/status/input).
+        for i in 1..=30 {
+            store.push_message(Message::user(&format!("Message number {i}")));
+            let mut reply = Message::assistant();
+            reply.content.push(oxicode_common::ContentBlock::Text {
+                text: format!("Reply to message {i}"),
+            });
+            store.push_message(reply);
+        }
+
+        // auto_scroll is true by default — draw should show the very last content.
+        app.draw(&mut terminal).expect("draw succeeds");
+        let rendered = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_scroll_to_bottom_auto", rendered.as_str());
+
+        // The last message ("Reply to message 30") must be visible somewhere.
+        assert!(
+            rendered.contains("Reply to message 30"),
+            "Auto-scroll should show the last message. Rendered:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn test_manual_scroll_can_reach_bottom() {
+        let (mut app, store, _ui_rx, _core_tx) = make_test_app_with_store();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        // Push messages exceeding viewport.
+        for i in 1..=20 {
+            store.push_message(Message::user(&format!("Line {i}")));
+            let mut reply = Message::assistant();
+            reply.content.push(oxicode_common::ContentBlock::Text {
+                text: format!("Answer {i}"),
+            });
+            store.push_message(reply);
+        }
+
+        // First draw to compute max_scroll_offset via the Rc<Cell> feedback.
+        app.draw(&mut terminal).expect("initial draw");
+        let max_scroll = app.max_scroll_offset;
+        assert!(
+            max_scroll > 0,
+            "max_scroll_offset should be non-zero for overflow content"
+        );
+
+        // Disable auto_scroll and manually set to max.
+        app.auto_scroll = false;
+        app.scroll_offset = max_scroll;
+        app.draw(&mut terminal).expect("draw at manual max scroll");
+        let rendered = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_scroll_manual_at_bottom", rendered.as_str());
+
+        assert!(
+            rendered.contains("Answer 20"),
+            "Manual scroll to max should show last message. Rendered:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn test_scroll_top_shows_first_message() {
+        let (mut app, store, _ui_rx, _core_tx) = make_test_app_with_store();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        for i in 1..=20 {
+            store.push_message(Message::user(&format!("Msg {i}")));
+            let mut reply = Message::assistant();
+            reply.content.push(oxicode_common::ContentBlock::Text {
+                text: format!("Resp {i}"),
+            });
+            store.push_message(reply);
+        }
+
+        // First draw so max_scroll_offset is computed.
+        app.draw(&mut terminal).expect("initial draw");
+
+        // Scroll to top.
+        app.auto_scroll = false;
+        app.scroll_offset = 0;
+        app.draw(&mut terminal).expect("draw at scroll offset 0");
+        let rendered = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_scroll_at_top", rendered.as_str());
+
+        assert!(
+            rendered.contains("Msg 1"),
+            "Scroll offset 0 should show the first message. Rendered:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn test_scroll_with_wide_content_wrapping() {
+        let (mut app, store, _ui_rx, _core_tx) = make_test_app_with_store();
+        // Narrow terminal to force wrapping (40 cols).
+        let backend = TestBackend::new(40, 20);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        // Push a message with a long line that will wrap.
+        store.push_message(Message::user("Short question"));
+        let long_text = "A".repeat(200); // 200 chars will wrap in 40-col terminal
+        let mut reply = Message::assistant();
+        reply.content.push(oxicode_common::ContentBlock::Text {
+            text: long_text.clone(),
+        });
+        store.push_message(reply);
+
+        // Add a final short message after the wrapping one.
+        store.push_message(Message::user("Final question"));
+        let mut reply2 = Message::assistant();
+        reply2.content.push(oxicode_common::ContentBlock::Text {
+            text: "Final answer here".to_string(),
+        });
+        store.push_message(reply2);
+
+        // Auto-scroll should land at the very bottom showing the final answer.
+        app.draw(&mut terminal).expect("draw succeeds");
+        let rendered = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_scroll_wide_content_wrapping", rendered.as_str());
+
+        assert!(
+            rendered.contains("Final answer here"),
+            "Auto-scroll with wrapped content should show last message. Rendered:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn test_streaming_thinking_indicator_snapshot() {
+        let (mut app, _store, _ui_rx, _core_tx) = make_test_app_with_store();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        // Simulate StreamStart: turn active, no text yet.
+        app.handle_core_event(CoreEvent::StreamStart);
+        app.draw(&mut terminal).expect("draw with thinking");
+        let rendered = normalized_rendered_text(&terminal);
+        assert_snapshot!("app_streaming_thinking_indicator", rendered.as_str());
+
+        assert!(
+            rendered.contains("Thinking"),
+            "Should show thinking indicator when streaming starts. Rendered:\n{rendered}"
+        );
+    }
+
+    /// Full lifecycle: stream long content → MessageComplete → scroll up → scroll down.
+    #[test]
+    fn test_full_stream_complete_then_scroll_lifecycle() {
+        let (mut app, store, _ui_rx, _core_tx) = make_test_app_with_store();
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+
+        // Push a user message to state store (simulates the engine adding it).
+        store.push_message(Message::user("What can you do?"));
+
+        // Simulate streaming a long response.
+        app.handle_core_event(CoreEvent::StreamStart);
+        let chunks = vec![
+            "## Capabilities\n\n",
+            "Here are my main capabilities:\n\n",
+            "• **File Operations** — Read, write, edit files\n",
+            "• **Code Analysis** — Find definitions, references\n",
+            "• **Shell Commands** — Run bash/shell commands\n",
+            "• **Web Search** — Search the web for information\n",
+            "• **Project Management** — Create and track todos\n\n",
+            "## Architecture\n\n",
+            "| Layer | Description |\n",
+            "|---|---|\n",
+            "| Foundation | Shared types and errors |\n",
+            "| Core | Query engine and tools |\n",
+            "| TUI | Ratatui-based interface |\n",
+            "| CLI | Binary entry point |\n\n",
+            "## Additional Features\n\n",
+            "• Session persistence\n",
+            "• Hook system with 26 events\n",
+            "• Vim mode keybindings\n",
+            "• Multi-provider API support\n",
+            "• Agent system for background tasks\n",
+        ];
+
+        for chunk in &chunks {
+            app.handle_core_event(CoreEvent::TextDelta(chunk.to_string()));
+        }
+
+        // Draw during streaming — should show content auto-scrolled to bottom.
+        app.draw(&mut terminal).expect("draw during streaming");
+        let during_stream = normalized_rendered_text(&terminal);
+        assert!(
+            during_stream.contains("Agent system"),
+            "During streaming, auto-scroll should show latest content"
+        );
+
+        // StreamEnd + MessageComplete.
+        app.handle_core_event(CoreEvent::StreamEnd);
+
+        // Push the assistant message to state store (simulates engine persisting).
+        let full_text: String = chunks.iter().copied().collect();
+        let mut assistant_msg = Message::assistant();
+        assistant_msg.content.push(oxicode_common::ContentBlock::Text {
+            text: full_text,
+        });
+        store.push_message(assistant_msg);
+
+        app.handle_core_event(CoreEvent::MessageComplete);
+
+        // Draw after MessageComplete — should show cached message.
+        app.draw(&mut terminal).expect("draw after complete");
+        let after_complete = normalized_rendered_text(&terminal);
+        assert!(
+            after_complete.contains("Agent system") || after_complete.contains("background tasks"),
+            "After MessageComplete, last content should be visible. Got:\n{after_complete}"
+        );
+
+        // Verify max_scroll_offset is positive (content exceeds viewport).
+        assert!(
+            app.max_scroll_offset > 0,
+            "max_scroll_offset should be > 0 after long message, got {}",
+            app.max_scroll_offset
+        );
+
+        // Scroll up — should disable auto_scroll and show earlier content.
+        app.scroll_up_by(10);
+        assert!(!app.auto_scroll, "scroll_up should disable auto_scroll");
+        app.draw(&mut terminal).expect("draw after scroll up");
+        let after_scroll_up = normalized_rendered_text(&terminal);
+        // After scrolling up 10 lines, we should see earlier content.
+        assert!(
+            after_scroll_up.contains("Capabilities") || after_scroll_up.contains("File Operations"),
+            "After scroll up, earlier content should be visible. Got:\n{after_scroll_up}"
+        );
+
+        // Scroll back down to bottom.
+        app.scroll_down_by(100); // large number to reach bottom
+        assert!(app.auto_scroll, "scrolling to bottom should re-enable auto_scroll");
+        app.draw(&mut terminal).expect("draw after scroll down");
+        let after_scroll_down = normalized_rendered_text(&terminal);
+        assert!(
+            after_scroll_down.contains("background tasks") || after_scroll_down.contains("Agent system"),
+            "After scroll down to bottom, last content should be visible. Got:\n{after_scroll_down}"
+        );
     }
 }
