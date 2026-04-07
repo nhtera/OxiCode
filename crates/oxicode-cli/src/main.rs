@@ -558,6 +558,10 @@ async fn run_tui(
     let core_tx_clone = core_tx.clone();
     let state_store_clone = state_store.clone();
 
+    // Cancel flag shared between TUI (sets on InterruptTurn) and engine (checks in loop).
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancel_flag_engine = cancel_flag.clone();
+
     // Engine task: owns conversation, calls execute_turn(), forwards events to TUI.
     let engine_handle = tokio::spawn(async move {
         let mut conversation = Conversation::new();
@@ -592,7 +596,7 @@ async fn run_tui(
 
                     // Run execute_turn in this task (owns conversation).
                     let result = engine_clone
-                        .execute_turn(&mut conversation, Some(&turn_tx))
+                        .execute_turn_with_cancel(&mut conversation, Some(&turn_tx), Some(&cancel_flag_engine))
                         .await;
 
                     // Drop sender to close forwarder, then wait for it.
@@ -704,6 +708,9 @@ async fn run_tui(
                         }
                     }
                 }
+                UiEvent::InterruptTurn => {
+                    cancel_flag_engine.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
                 UiEvent::Quit => break,
                 _ => {}
             }
@@ -716,7 +723,14 @@ async fn run_tui(
     session.messages = state.messages;
     oxicode_session::save_session(session, None)?;
 
-    engine_handle.abort();
+    // Graceful shutdown: wait for engine task to finish (ui_tx dropped → ui_rx returns None).
+    // Fallback to abort after timeout.
+    match tokio::time::timeout(std::time::Duration::from_secs(5), engine_handle).await {
+        Ok(_) => {}
+        Err(_) => {
+            tracing::warn!("Engine task didn't stop in 5s, aborting");
+        }
+    }
 
     Ok(())
 }
