@@ -51,6 +51,12 @@ pub struct AppState {
     pub session_ingress_token: Option<String>,
     /// Per-model cost tracking with persistence.
     pub cost_tracker: cost_tracker::CostTracker,
+    /// Context window maximum tokens for the current model (0 = unknown).
+    pub context_window_max: u32,
+    /// Current permission mode label (e.g. "ask", "auto", "bypass").
+    pub permission_mode: String,
+    /// Current working directory (for status bar display).
+    pub cwd: String,
 }
 
 /// Snapshot of a rate limit event for display in /status.
@@ -80,6 +86,9 @@ impl Default for AppState {
             last_rate_limit: None,
             auth_label: String::new(),
             session_ingress_token: None,
+            context_window_max: 0,
+            permission_mode: "ask".to_string(),
+            cwd: String::new(),
         }
     }
 }

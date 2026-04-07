@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -91,6 +92,21 @@ impl QueryEngine {
         conversation: &mut Conversation,
         event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
     ) -> OxiResult<Message> {
+        self.execute_turn_with_cancel(conversation, event_tx, None)
+            .await
+    }
+
+    /// Execute a multi-turn conversation loop with optional cancel support.
+    ///
+    /// When `cancel_flag` is `Some`, the engine checks the flag between stream
+    /// events and before each tool execution. When set, the turn is aborted
+    /// and an `Interrupted` error is returned.
+    pub async fn execute_turn_with_cancel(
+        &self,
+        conversation: &mut Conversation,
+        event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
+        cancel_flag: Option<&Arc<AtomicBool>>,
+    ) -> OxiResult<Message> {
         let mut turn_count = 0;
 
         loop {
@@ -98,6 +114,15 @@ impl QueryEngine {
             if turn_count > MAX_TOOL_TURNS {
                 tracing::warn!("Max tool turns ({MAX_TOOL_TURNS}) reached, stopping");
                 break;
+            }
+
+            // Check cancel flag before each turn.
+            if let Some(flag) = cancel_flag {
+                if flag.load(Ordering::SeqCst) {
+                    flag.store(false, Ordering::SeqCst);
+                    self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into())).await;
+                    return Err(OxiError::Other("Interrupted by user".into()));
+                }
             }
 
             // Context defense: apply budget management before API call.
@@ -143,6 +168,14 @@ impl QueryEngine {
             // Execute each tool and build a user message with tool results.
             let mut tool_results = Vec::new();
             for (id, name, input) in &tool_uses {
+                // Check cancel flag before each tool execution.
+                if let Some(flag) = cancel_flag {
+                    if flag.load(Ordering::SeqCst) {
+                        flag.store(false, Ordering::SeqCst);
+                        self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into())).await;
+                        return Err(OxiError::Other("Interrupted by user".into()));
+                    }
+                }
                 let result = self.execute_tool(id, name, input, event_tx).await;
                 tool_results.push(result);
             }

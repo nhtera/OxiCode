@@ -27,6 +27,12 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         return default_suggestions();
     };
 
+    // If there are no user messages yet (welcome/onboarding), show defaults.
+    let has_user_message = messages.iter().any(|m| m.role == Role::User);
+    if !has_user_message {
+        return default_suggestions();
+    }
+
     let text = msg.text().to_lowercase();
     let has_tool_use = msg
         .content
@@ -37,8 +43,8 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         .iter()
         .any(|b| matches!(b, ContentBlock::ToolResult { is_error, .. } if *is_error));
 
-    // Error context → suggest debugging.
-    if has_error || text.contains("error") || text.contains("failed") {
+    // Error context → suggest debugging (only when actual tool error, not just the word "error").
+    if has_error {
         suggestions.push(PromptSuggestion {
             label: "Debug this".to_string(),
             prompt: "Can you debug and fix this error?".to_string(),
@@ -77,8 +83,10 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // Conversation context → suggest commit if git-related.
-    if text.contains("commit") || text.contains("git") || text.contains("push") {
+    // Conversation context → suggest commit only when file edits were made.
+    if has_file_edit(&msg.content)
+        && (text.contains("commit") || text.contains("push") || text.contains("changes"))
+    {
         suggestions.push(PromptSuggestion {
             label: "Commit changes".to_string(),
             prompt: "Commit the current changes with a descriptive message.".to_string(),
@@ -130,23 +138,54 @@ mod tests {
 
     #[test]
     fn test_error_context_suggestions() {
-        let msg = Message {
-            id: "1".to_string(),
-            role: Role::Assistant,
+        let user_msg = Message {
+            id: "0".to_string(),
+            role: Role::User,
             content: vec![ContentBlock::Text {
-                text: "Error: compilation failed".to_string(),
+                text: "fix the bug".to_string(),
             }],
             model: None,
             stop_reason: None,
             created_at: chrono::Utc::now(),
             usage: None,
         };
-        let suggestions = suggest_prompts(&[msg]);
+        let msg = Message {
+            id: "1".to_string(),
+            role: Role::Assistant,
+            content: vec![
+                ContentBlock::ToolUse {
+                    id: "t1".to_string(),
+                    name: "bash".to_string(),
+                    input: serde_json::json!({"command": "cargo build"}),
+                },
+                ContentBlock::ToolResult {
+                    tool_use_id: "t1".to_string(),
+                    content: "error: compilation failed".to_string(),
+                    is_error: true,
+                },
+            ],
+            model: None,
+            stop_reason: None,
+            created_at: chrono::Utc::now(),
+            usage: None,
+        };
+        let suggestions = suggest_prompts(&[user_msg, msg]);
         assert!(suggestions.iter().any(|s| s.label == "Debug this"));
     }
 
     #[test]
     fn test_file_edit_suggests_tests() {
+        let user_msg = Message {
+            id: "0".to_string(),
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: "edit the file".to_string(),
+            }],
+            model: None,
+            stop_reason: None,
+            created_at: chrono::Utc::now(),
+            usage: None,
+        };
         let msg = Message {
             id: "1".to_string(),
             role: Role::Assistant,
@@ -167,18 +206,29 @@ mod tests {
             created_at: chrono::Utc::now(),
             usage: None,
         };
-        let suggestions = suggest_prompts(&[msg]);
+        let suggestions = suggest_prompts(&[user_msg, msg]);
         assert!(suggestions.iter().any(|s| s.label == "Run tests"));
     }
 
     #[test]
     fn test_max_suggestions_limit() {
+        let user_msg = Message {
+            id: "0".to_string(),
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: "fix it".to_string(),
+            }],
+            model: None,
+            stop_reason: None,
+            created_at: chrono::Utc::now(),
+            usage: None,
+        };
         let msg = Message {
             id: "1".to_string(),
             role: Role::Assistant,
             content: vec![
                 ContentBlock::Text {
-                    text: "Error: failed to compile. Created fix. git commit needed.".to_string(),
+                    text: "Created fix. Changes are ready.".to_string(),
                 },
                 ContentBlock::ToolUse {
                     id: "t1".to_string(),
@@ -196,7 +246,7 @@ mod tests {
             created_at: chrono::Utc::now(),
             usage: None,
         };
-        let suggestions = suggest_prompts(&[msg]);
+        let suggestions = suggest_prompts(&[user_msg, msg]);
         assert!(suggestions.len() <= MAX_SUGGESTIONS);
     }
 }

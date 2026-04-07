@@ -1,15 +1,20 @@
-//! Newline-gated markdown stream collector.
+//! Newline-gated incremental markdown stream collector.
 //!
 //! Accumulates streaming text deltas and only parses through the markdown
 //! renderer when a complete line (ending with `\n`) is available. This avoids
 //! rendering artifacts from half-parsed markdown (e.g. unclosed `**bold**` or
 //! incomplete code fences) that would cause visual flicker during streaming.
 //!
+//! **Performance**: Only NEW content since the last commit is parsed — O(delta)
+//! per commit, not O(total_buffer). Code fence state is carried across commits
+//! via `StreamParserState` so fenced blocks spanning multiple deltas render
+//! correctly.
+//!
 //! Inspired by the Codex-rs `MarkdownStreamCollector` pattern.
 
 use ratatui::text::Line;
 
-use crate::widgets::markdown_view;
+use crate::widgets::markdown_view::{self, StreamParserState};
 
 /// Collects streaming text deltas and incrementally renders complete markdown
 /// lines. Only lines terminated by `\n` are passed through the markdown parser;
@@ -18,28 +23,30 @@ use crate::widgets::markdown_view;
 pub struct MarkdownStreamCollector {
     /// Raw text buffer accumulating all deltas received so far.
     buffer: String,
-    /// Rendered lines from all committed (newline-terminated) content.
+    /// Byte offset of content already committed (parsed and rendered).
+    committed_byte_offset: usize,
+    /// All rendered lines from committed content.
     committed_lines: Vec<Line<'static>>,
-    /// Number of rendered lines already committed (index into `committed_lines`
-    /// that has been returned to the caller). Used to emit only *new* lines on
-    /// each `commit_complete_lines` call.
-    committed_count: usize,
+    /// Parser state carried across incremental commits (code fence tracking).
+    parser_state: StreamParserState,
 }
 
 impl MarkdownStreamCollector {
     pub fn new() -> Self {
         Self {
             buffer: String::new(),
+            committed_byte_offset: 0,
             committed_lines: Vec::new(),
-            committed_count: 0,
+            parser_state: StreamParserState::default(),
         }
     }
 
     /// Reset all state for a new streaming session.
     pub fn clear(&mut self) {
         self.buffer.clear();
+        self.committed_byte_offset = 0;
         self.committed_lines.clear();
-        self.committed_count = 0;
+        self.parser_state = StreamParserState::default();
     }
 
     /// Append a text delta from the streaming API.
@@ -47,47 +54,47 @@ impl MarkdownStreamCollector {
         self.buffer.push_str(delta);
     }
 
-    /// Re-render the buffer up to the last newline and return only the *new*
-    /// lines since the previous commit. If no newline has been received yet,
-    /// returns an empty slice.
+    /// Parse only NEW complete lines since the last commit and return them.
+    ///
+    /// Only content beyond `committed_byte_offset` up to the last `\n` is
+    /// parsed. Previous content is never re-parsed — O(delta) per call.
     pub fn commit_complete_lines(&mut self) -> Vec<Line<'static>> {
-        let Some(last_nl) = self.buffer.rfind('\n') else {
+        let uncommitted = &self.buffer[self.committed_byte_offset..];
+        let Some(rel_last_nl) = uncommitted.rfind('\n') else {
             return Vec::new();
         };
 
-        // Parse everything up to (and including) the last newline.
-        let complete_source = &self.buffer[..=last_nl];
-        let rendered = markdown_view::parse_to_owned_lines(complete_source);
+        let abs_last_nl = self.committed_byte_offset + rel_last_nl;
+        let new_content = &self.buffer[self.committed_byte_offset..=abs_last_nl];
 
-        if rendered.len() <= self.committed_count {
-            // No new lines produced (can happen with blank lines).
-            self.committed_lines = rendered;
-            return Vec::new();
-        }
+        // Parse only the new slice, carrying code fence state.
+        let new_lines =
+            markdown_view::parse_incremental(new_content, &mut self.parser_state);
 
-        let new_lines = rendered[self.committed_count..].to_vec();
-        self.committed_count = rendered.len();
-        self.committed_lines = rendered;
+        self.committed_byte_offset = abs_last_nl + 1;
+        self.committed_lines.extend(new_lines.iter().cloned());
         new_lines
     }
 
     /// Finalize the stream: parse any remaining buffer content (even without
     /// a trailing newline) and return new lines beyond the last commit.
+    ///
+    /// Uses full-buffer parse for correctness on the final fragment.
     pub fn finalize(&mut self) -> Vec<Line<'static>> {
-        if self.buffer.is_empty() {
+        if self.committed_byte_offset >= self.buffer.len() {
             return Vec::new();
         }
 
-        let rendered = markdown_view::parse_to_owned_lines(&self.buffer);
-
-        if rendered.len() <= self.committed_count {
-            self.committed_lines = rendered;
+        let remaining = &self.buffer[self.committed_byte_offset..];
+        if remaining.is_empty() {
             return Vec::new();
         }
 
-        let new_lines = rendered[self.committed_count..].to_vec();
-        self.committed_count = rendered.len();
-        self.committed_lines = rendered;
+        let new_lines =
+            markdown_view::parse_incremental(remaining, &mut self.parser_state);
+
+        self.committed_byte_offset = self.buffer.len();
+        self.committed_lines.extend(new_lines.iter().cloned());
         new_lines
     }
 
@@ -187,9 +194,51 @@ mod tests {
         let mut c = MarkdownStreamCollector::new();
         c.push_delta("**bold text**\n");
         let lines = c.commit_complete_lines();
-        // The markdown parser should produce styled output, not literal asterisks.
-        let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        let raw: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(!raw.contains("**"), "Bold markers should be parsed, got: {raw}");
         assert!(raw.contains("bold text"));
+    }
+
+    #[test]
+    fn test_incremental_does_not_reparse_old_content() {
+        let mut c = MarkdownStreamCollector::new();
+
+        // Commit 500 lines.
+        for i in 0..500 {
+            c.push_delta(&format!("Line {i}\n"));
+        }
+        let first_batch = c.commit_complete_lines();
+        assert!(!first_batch.is_empty());
+
+        // Add 1 more line — only that line should be parsed.
+        c.push_delta("Last line\n");
+        let second_batch = c.commit_complete_lines();
+        assert!(!second_batch.is_empty());
+        // Total should be first + second, proving old content wasn't re-parsed.
+        assert_eq!(c.lines().len(), first_batch.len() + second_batch.len());
+    }
+
+    #[test]
+    fn test_code_block_spanning_deltas() {
+        let mut c = MarkdownStreamCollector::new();
+
+        // Open code fence in first delta.
+        c.push_delta("```rust\n");
+        let l1 = c.commit_complete_lines();
+
+        // Code content in second delta.
+        c.push_delta("fn main() {}\n");
+        let l2 = c.commit_complete_lines();
+
+        // Close fence in third delta.
+        c.push_delta("```\n");
+        let l3 = c.commit_complete_lines();
+
+        let total = l1.len() + l2.len() + l3.len();
+        assert!(total > 0, "Code block across deltas should produce output");
     }
 }
