@@ -104,3 +104,87 @@ impl Widget for DiffView<'_> {
         paragraph.render(area, buf);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn span_text(lines: &[Line]) -> String {
+        lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn diff_header_shows_file_path() {
+        let dv = DiffView::new("old", "new", "src/main.rs");
+        let lines = dv.diff_lines();
+        let raw = span_text(&lines);
+        assert!(raw.contains("--- a/src/main.rs"));
+        assert!(raw.contains("+++ b/src/main.rs"));
+    }
+
+    #[test]
+    fn identical_content_shows_context() {
+        let dv = DiffView::new("same\nline", "same\nline", "test.txt");
+        let lines = dv.diff_lines();
+        let raw = span_text(&lines);
+        // Context lines start with space.
+        assert!(raw.contains(" same"), "Identical lines shown as context");
+    }
+
+    #[test]
+    fn changed_line_shows_red_and_green() {
+        let dv = DiffView::new("hello OLD", "hello NEW", "test.txt");
+        let lines = dv.diff_lines();
+
+        let red_lines: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Red) && s.content.starts_with('-'))
+            .collect();
+        let green_lines: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Green) && s.content.starts_with('+'))
+            .collect();
+
+        assert!(!red_lines.is_empty(), "Should have red (removal) lines");
+        assert!(!green_lines.is_empty(), "Should have green (addition) lines");
+    }
+
+    #[test]
+    fn added_lines_are_green() {
+        let dv = DiffView::new("line1", "line1\nline2", "test.txt");
+        let lines = dv.diff_lines();
+        let green: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Green) && s.content.contains("line2"))
+            .collect();
+        assert!(!green.is_empty(), "Added line should be green");
+    }
+
+    #[test]
+    fn removed_lines_are_red() {
+        let dv = DiffView::new("line1\nline2", "line1", "test.txt");
+        let lines = dv.diff_lines();
+        let red: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Red) && s.content.contains("line2"))
+            .collect();
+        assert!(!red.is_empty(), "Removed line should be red");
+    }
+
+    #[test]
+    fn empty_diff_only_has_header() {
+        let dv = DiffView::new("", "", "empty.txt");
+        let lines = dv.diff_lines();
+        // Should have exactly the 2 header lines.
+        assert_eq!(lines.len(), 2, "Empty diff should only have header");
+    }
+}

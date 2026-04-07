@@ -19,6 +19,12 @@ pub struct StatusBar<'a> {
     auth_label: &'a str,
     /// Voice mode indicator (e.g. "listening", "processing", or empty if off).
     voice_status: &'a str,
+    /// Context window usage percentage (0.0–100.0), None if unknown.
+    context_pct: Option<f32>,
+    /// Permission mode label (e.g. "ask", "auto", "bypass").
+    permission_mode: &'a str,
+    /// Current working directory (last 2 components shown).
+    cwd: &'a str,
 }
 
 impl<'a> StatusBar<'a> {
@@ -33,6 +39,9 @@ impl<'a> StatusBar<'a> {
             vim_badge: "",
             auth_label: "",
             voice_status: "",
+            context_pct: None,
+            permission_mode: "",
+            cwd: "",
         }
     }
 
@@ -69,6 +78,24 @@ impl<'a> StatusBar<'a> {
     /// Set voice mode status indicator (e.g. "listening", "processing").
     pub fn with_voice_status(mut self, status: &'a str) -> Self {
         self.voice_status = status;
+        self
+    }
+
+    /// Set context window usage percentage.
+    pub fn with_context_pct(mut self, pct: Option<f32>) -> Self {
+        self.context_pct = pct;
+        self
+    }
+
+    /// Set permission mode label.
+    pub fn with_permission_mode(mut self, mode: &'a str) -> Self {
+        self.permission_mode = mode;
+        self
+    }
+
+    /// Set current working directory.
+    pub fn with_cwd(mut self, cwd: &'a str) -> Self {
+        self.cwd = cwd;
         self
     }
 }
@@ -120,14 +147,33 @@ impl Widget for StatusBar<'_> {
             Style::default().fg(Color::White).bg(Color::DarkGray),
         );
 
-        // Token count.
+        // Token count (compact format: 1500 → "1.5K").
         let tokens = Span::styled(
             format!(
                 " \u{2191}{} \u{2193}{} ",
-                self.usage.input_tokens, self.usage.output_tokens
+                format_tokens(self.usage.input_tokens),
+                format_tokens(self.usage.output_tokens),
             ),
             Style::default().fg(Color::Yellow),
         );
+
+        // Cache token display (only when cache tokens are present).
+        let cache_read = self.usage.cache_read_input_tokens.unwrap_or(0);
+        let cache_write = self.usage.cache_creation_input_tokens.unwrap_or(0);
+        let cache_span = if cache_read > 0 || cache_write > 0 {
+            let mut parts = String::from(" \u{26a1}");
+            if cache_read > 0 {
+                parts.push_str(&format_tokens(cache_read));
+            }
+            if cache_write > 0 {
+                use std::fmt::Write;
+                let _ = write!(parts, " \u{2191}{}", format_tokens(cache_write));
+            }
+            parts.push(' ');
+            Span::styled(parts, Style::default().fg(Color::Cyan))
+        } else {
+            Span::raw("")
+        };
 
         // Cost estimate (rough, based on Claude Sonnet pricing).
         let cost = f64::from(self.usage.input_tokens) * 3.0 / 1_000_000.0
@@ -202,18 +248,117 @@ impl Widget for StatusBar<'_> {
             )
         };
 
+        // Context window usage (color-coded).
+        let ctx_span = match self.context_pct {
+            Some(pct) if pct > 0.0 => {
+                let color = if pct >= 80.0 {
+                    Color::Red
+                } else if pct >= 50.0 {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                };
+                Span::styled(format!(" ctx:{pct:.0}%"), Style::default().fg(color))
+            }
+            _ => Span::raw(""),
+        };
+
+        // Permission mode.
+        let perm_span = if self.permission_mode.is_empty() {
+            Span::raw("")
+        } else {
+            let perm_color = match self.permission_mode {
+                "auto" => Color::Green,
+                "bypass" => Color::Red,
+                _ => Color::Yellow, // "ask" and others
+            };
+            Span::styled(
+                format!(" [{}]", self.permission_mode),
+                Style::default().fg(perm_color),
+            )
+        };
+
+        // CWD (last 2 path components).
+        let cwd_span = if self.cwd.is_empty() {
+            Span::raw("")
+        } else {
+            let short = shorten_cwd(self.cwd);
+            Span::styled(format!(" {short}"), Style::default().fg(Color::DarkGray))
+        };
+
         let line = Line::from(vec![
             status,
             provider_span,
             model,
             tokens,
+            cache_span,
             cost_span,
+            ctx_span,
+            perm_span,
             mcp_span,
             auth_span,
             voice_span,
             vim_span,
+            cwd_span,
             session_span,
         ]);
         buf.set_line(area.x, area.y, &line, area.width);
+    }
+}
+
+/// Shorten a path to at most the last 2 components.
+fn shorten_cwd(path: &str) -> String {
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    match parts.len() {
+        0 => "/".to_string(),
+        1 => format!("/{}", parts[0]),
+        _ => {
+            let last_two = &parts[parts.len() - 2..];
+            format!("…/{}/{}", last_two[0], last_two[1])
+        }
+    }
+}
+
+/// Format a token count in compact human-readable form.
+///
+/// - `0` → `"0"`
+/// - `999` → `"999"`
+/// - `1500` → `"1.5K"`
+/// - `1500000` → `"1.5M"`
+fn format_tokens(n: u32) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_tokens_zero() {
+        assert_eq!(format_tokens(0), "0");
+    }
+
+    #[test]
+    fn format_tokens_small() {
+        assert_eq!(format_tokens(999), "999");
+    }
+
+    #[test]
+    fn format_tokens_thousands() {
+        assert_eq!(format_tokens(1_500), "1.5K");
+        assert_eq!(format_tokens(10_000), "10.0K");
+        assert_eq!(format_tokens(999_999), "1000.0K");
+    }
+
+    #[test]
+    fn format_tokens_millions() {
+        assert_eq!(format_tokens(1_500_000), "1.5M");
+        assert_eq!(format_tokens(2_000_000), "2.0M");
     }
 }

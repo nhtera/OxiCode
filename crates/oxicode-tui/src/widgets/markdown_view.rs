@@ -269,3 +269,162 @@ impl Widget for MarkdownView<'_> {
         paragraph.render(area, buf);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text_of(lines: &[Line]) -> String {
+        lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn span_texts(lines: &[Line]) -> Vec<String> {
+        lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn plain_text_renders() {
+        let v = MarkdownView::new("Hello, world!");
+        let lines = v.to_lines();
+        assert!(!lines.is_empty());
+        assert!(text_of(&lines).contains("Hello, world!"));
+    }
+
+    #[test]
+    fn bold_text_uses_bold_modifier() {
+        let v = MarkdownView::new("**bold text**");
+        let lines = v.to_lines();
+        let raw = text_of(&lines);
+        assert!(!raw.contains("**"), "Bold markers should be removed");
+        assert!(raw.contains("bold text"));
+
+        // Check BOLD modifier is applied.
+        let bold_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.add_modifier.contains(Modifier::BOLD))
+            .collect();
+        assert!(!bold_spans.is_empty(), "Should have bold-styled spans");
+    }
+
+    #[test]
+    fn italic_text_uses_italic_modifier() {
+        let v = MarkdownView::new("*italic text*");
+        let lines = v.to_lines();
+        let italic_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.add_modifier.contains(Modifier::ITALIC))
+            .collect();
+        assert!(!italic_spans.is_empty(), "Should have italic-styled spans");
+    }
+
+    #[test]
+    fn heading_renders_with_color() {
+        let v = MarkdownView::new("# Heading 1");
+        let lines = v.to_lines();
+        let raw = text_of(&lines);
+        assert!(raw.contains("Heading 1"), "Should contain heading text");
+
+        // H1 should use Magenta color.
+        let colored: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Magenta))
+            .collect();
+        assert!(!colored.is_empty(), "H1 should use Magenta color");
+    }
+
+    #[test]
+    fn h2_renders_with_cyan() {
+        let v = MarkdownView::new("## Sub Heading");
+        let lines = v.to_lines();
+        let colored: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Cyan))
+            .collect();
+        assert!(!colored.is_empty(), "H2 should use Cyan color");
+    }
+
+    #[test]
+    fn code_block_renders_with_background() {
+        let source = "```\nfn main() {}\n```";
+        let v = MarkdownView::new(source);
+        let lines = v.to_lines();
+        let raw = text_of(&lines);
+        assert!(raw.contains("fn main()"), "Code block content should render");
+
+        // Code should have dark background.
+        let bg_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| matches!(s.style.bg, Some(Color::Rgb(40, 40, 40))))
+            .collect();
+        assert!(!bg_spans.is_empty(), "Code block should have background color");
+    }
+
+    #[test]
+    fn inline_code_renders_with_backticks() {
+        let v = MarkdownView::new("Use `cargo test` to run.");
+        let lines = v.to_lines();
+        let raw = text_of(&lines);
+        assert!(raw.contains("`cargo test`"), "Inline code should render");
+
+        // Inline code should have yellow foreground.
+        let code_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.fg == Some(Color::Yellow))
+            .collect();
+        assert!(!code_spans.is_empty(), "Inline code should be yellow");
+    }
+
+    #[test]
+    fn list_items_have_bullet() {
+        let v = MarkdownView::new("- Item one\n- Item two");
+        let lines = v.to_lines();
+        let raw = text_of(&lines);
+        assert!(raw.contains("•"), "List items should have bullet char");
+        assert!(raw.contains("Item one"));
+        assert!(raw.contains("Item two"));
+    }
+
+    #[test]
+    fn link_renders_with_underline() {
+        let v = MarkdownView::new("[click here](https://example.com)");
+        let lines = v.to_lines();
+        let underline_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.add_modifier.contains(Modifier::UNDERLINED))
+            .collect();
+        assert!(!underline_spans.is_empty(), "Links should be underlined");
+    }
+
+    #[test]
+    fn parse_to_owned_lines_works() {
+        let lines = parse_to_owned_lines("**hello** world\n");
+        assert!(!lines.is_empty());
+        let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        assert!(raw.contains("hello"));
+        assert!(raw.contains("world"));
+    }
+
+    #[test]
+    fn indented_lines_have_prefix() {
+        let v = MarkdownView::new("test");
+        let lines = v.to_lines_indented(4);
+        let first_span = &lines[0].spans[0];
+        assert_eq!(first_span.content.as_ref(), "    ");
+    }
+}

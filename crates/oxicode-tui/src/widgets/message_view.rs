@@ -1,19 +1,132 @@
+use std::ops::Range;
+
 use oxicode_common::{ContentBlock, Message, Role};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget, Wrap};
 
 use super::markdown_view;
+use super::tool_display;
 
 /// Maximum lines of tool result output shown inline.
 const MAX_RESULT_LINES: usize = 5;
+
+/// Per-message render cache — avoids re-parsing markdown for unchanged messages.
+///
+/// Each entry stores the pre-rendered `Vec<Line<'static>>` for one message (header +
+/// content blocks). The cache is indexed by message position. When message count
+/// grows, only the new messages are rendered. The cache is invalidated (cleared)
+/// on terminal resize or when message count shrinks (e.g. `/compact`).
+pub struct MessageRenderCache {
+    /// Cached rendered lines per message index.
+    entries: Vec<Vec<Line<'static>>>,
+    /// Terminal width when cache was built (invalidate on resize).
+    cached_width: u16,
+}
+
+impl MessageRenderCache {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            cached_width: 0,
+        }
+    }
+
+    /// Ensure cache is valid for the current state. Returns true if cache was usable.
+    /// If messages shrunk (e.g. `/compact`) or terminal resized, clears and rebuilds.
+    pub fn update(&mut self, messages: &[Message], terminal_width: u16) {
+        // Invalidate on resize or message shrink.
+        if terminal_width != self.cached_width || messages.len() < self.entries.len() {
+            self.entries.clear();
+            self.cached_width = terminal_width;
+        }
+
+        // Render only new messages (append to cache).
+        let start = self.entries.len();
+        for msg in &messages[start..] {
+            let mut lines = Vec::new();
+            render_message_header_static(msg, &mut lines);
+            render_content_blocks_static(&msg.content, &mut lines);
+            self.entries.push(lines);
+        }
+    }
+
+    /// Get cached lines for all messages up to `count`.
+    pub fn lines(&self, count: usize) -> &[Vec<Line<'static>>] {
+        &self.entries[..count.min(self.entries.len())]
+    }
+
+    /// Total cached line count.
+    pub fn total_lines(&self) -> usize {
+        self.entries.iter().map(|e| e.len()).sum()
+    }
+}
+
+/// Line-level index for viewport culling.
+///
+/// Maps each message to its cumulative line range in the full conversation.
+/// Supports O(log n) binary search to find which messages intersect a viewport.
+struct MessageLineIndex {
+    /// `(cumulative_start_line, line_count)` per message (including separators).
+    entries: Vec<(usize, usize)>,
+    /// Total lines across all messages.
+    total_lines: usize,
+}
+
+/// Lines used per separator between messages.
+const SEPARATOR_LINES: usize = 3;
+
+impl MessageLineIndex {
+    /// Build index from cached message entries.
+    fn build(cached: &[Vec<Line<'static>>]) -> Self {
+        let mut entries = Vec::with_capacity(cached.len());
+        let mut cumulative = 0;
+
+        for (i, entry) in cached.iter().enumerate() {
+            let line_count = entry.len();
+            let with_sep = if i > 0 {
+                line_count + SEPARATOR_LINES
+            } else {
+                line_count
+            };
+            entries.push((cumulative, with_sep));
+            cumulative += with_sep;
+        }
+
+        Self {
+            entries,
+            total_lines: cumulative,
+        }
+    }
+
+    /// Return range of message indices whose lines overlap `[start_line..end_line)`.
+    fn visible_range(&self, start_line: usize, end_line: usize) -> Range<usize> {
+        if self.entries.is_empty() {
+            return 0..0;
+        }
+
+        // Binary search for first message whose end > start_line.
+        let first = self
+            .entries
+            .partition_point(|(cum_start, count)| cum_start + count <= start_line);
+
+        // Binary search for last message whose start < end_line.
+        let last = self
+            .entries
+            .partition_point(|(cum_start, _)| *cum_start < end_line);
+
+        first..last
+    }
+}
 
 /// Snapshot of an active tool call for rendering.
 pub struct ActiveToolInfo<'a> {
     pub name: &'a str,
     pub input_summary: &'a str,
+    /// When this tool call started (for elapsed time + spinner).
+    pub started_at: std::time::Instant,
     /// `Some((content, is_error))` when the tool completed.
     pub result: Option<(&'a str, bool)>,
 }
@@ -22,8 +135,15 @@ pub struct ActiveToolInfo<'a> {
 ///
 /// Supports pre-rendered markdown streaming lines from `MarkdownStreamCollector`
 /// and renders completed messages with full markdown formatting.
+///
+/// Uses `MessageRenderCache` for O(1) rendering of unchanged messages.
 pub struct MessageView<'a> {
-    messages: &'a [Message],
+    /// Cached rendered lines for finalized messages (borrowed from App).
+    cached_lines: &'a [Vec<Line<'static>>],
+    /// Total message count (for separator logic).
+    message_count: usize,
+    /// Role of the last message (for streaming header logic).
+    last_message_role: Option<Role>,
     /// Pre-rendered streaming lines from `MarkdownStreamCollector`.
     streaming_lines: Option<&'a [Line<'static>]>,
     /// Trailing incomplete line fragment (text after last `\n` in stream).
@@ -31,34 +151,78 @@ pub struct MessageView<'a> {
     /// Active tool calls during streaming.
     active_tools: &'a [ActiveToolInfo<'a>],
     scroll_offset: u16,
+    /// Viewport height for message limiting (inner height, excluding borders).
+    viewport_height: u16,
 }
 
 impl<'a> MessageView<'a> {
     pub fn new(
-        messages: &'a [Message],
+        cached_lines: &'a [Vec<Line<'static>>],
+        message_count: usize,
+        last_message_role: Option<Role>,
         streaming_lines: Option<&'a [Line<'static>]>,
         streaming_tail: Option<&'a str>,
         active_tools: &'a [ActiveToolInfo<'a>],
         scroll_offset: u16,
     ) -> Self {
         Self {
-            messages,
+            cached_lines,
+            message_count,
+            last_message_role,
             streaming_lines,
             streaming_tail,
             active_tools,
             scroll_offset,
+            viewport_height: 50, // Default, overridden during render
         }
     }
 
-    fn format_messages(&self) -> Text<'a> {
-        let mut lines = Vec::new();
+    /// Set the viewport height for message limiting.
+    pub fn with_viewport_height(mut self, height: u16) -> Self {
+        self.viewport_height = height;
+        self
+    }
 
-        for (i, msg) in self.messages.iter().enumerate() {
-            if i > 0 {
-                render_separator(&mut lines);
+    fn format_messages(&self) -> Text<'a> {
+        let mut lines: Vec<Line<'a>> = Vec::new();
+
+        // Build line index for viewport culling.
+        let index = MessageLineIndex::build(self.cached_lines);
+        let viewport_h = self.viewport_height as usize;
+
+        // Determine visible line range from scroll offset.
+        let start_line = self.scroll_offset as usize;
+        let end_line = start_line + viewport_h;
+        let visible = index.visible_range(start_line, end_line);
+
+        if visible.start > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... ({} earlier messages hidden)", visible.start),
+                Style::default().fg(Color::DarkGray),
+            )));
+            render_separator(&mut lines);
+        }
+
+        // Append only visible messages (zero re-parse — just clone Line refs).
+        for (i, msg_idx) in visible.clone().enumerate() {
+            if let Some(entry) = self.cached_lines.get(msg_idx) {
+                if i > 0 || visible.start > 0 {
+                    render_separator(&mut lines);
+                }
+                for line in entry {
+                    lines.push(line.clone());
+                }
             }
-            Self::render_message_header(msg, &mut lines);
-            render_content_blocks(&msg.content, &mut lines);
+        }
+
+        // Show "N more messages" if there are messages after the visible range.
+        let total_msgs = self.cached_lines.len();
+        if visible.end < total_msgs {
+            render_separator(&mut lines);
+            lines.push(Line::from(Span::styled(
+                format!("  ... ({} more messages below)", total_msgs - visible.end),
+                Style::default().fg(Color::DarkGray),
+            )));
         }
 
         // Streaming section.
@@ -67,15 +231,11 @@ impl<'a> MessageView<'a> {
             .map_or(false, |l| !l.is_empty())
             || self.streaming_tail.is_some();
         if has_streaming {
-            if !self.messages.is_empty() {
+            if self.message_count > 0 {
                 render_separator(&mut lines);
             }
             // Show assistant header if last message isn't already assistant.
-            if self
-                .messages
-                .last()
-                .map_or(true, |m| m.role != Role::Assistant)
-            {
+            if self.last_message_role.map_or(true, |r| r != Role::Assistant) {
                 lines.push(Line::from(Span::styled(
                     "\u{25c0} OxiCode",
                     Style::default()
@@ -89,25 +249,6 @@ impl<'a> MessageView<'a> {
         self.render_active_tools(&mut lines);
 
         Text::from(lines)
-    }
-
-    fn render_message_header(msg: &Message, lines: &mut Vec<Line<'a>>) {
-        let (prefix, style) = match msg.role {
-            Role::User => (
-                "\u{25b6} You",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Role::Assistant => (
-                "\u{25c0} OxiCode",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Role::System => ("\u{2699} System", Style::default().fg(Color::Yellow)),
-        };
-        lines.push(Line::from(Span::styled(prefix, style)));
     }
 
     fn render_streaming(&self, lines: &mut Vec<Line<'a>>) {
@@ -137,55 +278,22 @@ impl<'a> MessageView<'a> {
         for tool in self.active_tools {
             match tool.result {
                 None => {
-                    // Running: spinner icon + tool name + input summary.
-                    lines.push(Line::from(vec![
-                        Span::styled("  \u{27f3} ", Style::default().fg(Color::Yellow)),
-                        Span::styled(
-                            tool.name.to_string(),
-                            Style::default()
-                                .fg(Color::Yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            format!(" \u{2500} {}", tool.input_summary),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ]));
+                    lines.push(tool_display::running_tool_line(
+                        tool.name,
+                        tool.input_summary,
+                        tool.started_at,
+                    ));
                 }
                 Some((content, is_error)) => {
-                    let (icon, color) = if is_error {
-                        ("\u{2717}", Color::Red)
-                    } else {
-                        ("\u{2713}", Color::Green)
-                    };
-                    // Status icon + tool name.
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("  {icon} "), Style::default().fg(color)),
-                        Span::styled(
-                            tool.name.to_string(),
-                            Style::default().fg(color).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            format!(" \u{2500} {}", tool.input_summary),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ]));
-                    // Show first MAX_RESULT_LINES of output.
-                    let result_style = Style::default().fg(Color::DarkGray);
-                    let total_lines = content.lines().count();
-                    for (i, line) in content.lines().enumerate() {
-                        if i >= MAX_RESULT_LINES {
-                            lines.push(Line::from(Span::styled(
-                                format!("    ... ({} more lines)", total_lines - i),
-                                result_style,
-                            )));
-                            break;
-                        }
-                        lines.push(Line::from(Span::styled(
-                            format!("    {line}"),
-                            result_style,
-                        )));
-                    }
+                    let completed_lines = tool_display::completed_tool_lines(
+                        tool.name,
+                        tool.input_summary,
+                        content,
+                        is_error,
+                        Some(tool.started_at),
+                        MAX_RESULT_LINES,
+                    );
+                    lines.extend(completed_lines);
                 }
             }
         }
@@ -193,8 +301,16 @@ impl<'a> MessageView<'a> {
 
     /// Maximum safe vertical scroll offset for this content in `area`.
     pub fn max_scroll_offset(&self, area: Rect) -> u16 {
-        let text = self.format_messages();
-        max_content_scroll(area, text.lines.len())
+        let index = MessageLineIndex::build(self.cached_lines);
+        let streaming_lines = self
+            .streaming_lines
+            .map_or(0, |l| l.len())
+            + self.active_tools.len() * 2
+            + 10; // separators, headers, cursor
+        let total = index.total_lines + streaming_lines;
+        let viewport_height = area.height.saturating_sub(2);
+        let content_height = u16::try_from(total).unwrap_or(u16::MAX);
+        content_height.saturating_sub(viewport_height)
     }
 }
 
@@ -208,8 +324,28 @@ fn render_separator(lines: &mut Vec<Line<'_>>) {
     lines.push(Line::from(""));
 }
 
-/// Render content blocks (text, tool use, tool result, thinking) into lines.
-fn render_content_blocks(blocks: &[ContentBlock], lines: &mut Vec<Line<'_>>) {
+/// Render a message header into owned lines (for caching).
+fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
+    let (prefix, style) = match msg.role {
+        Role::User => (
+            "\u{25b6} You",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Role::Assistant => (
+            "\u{25c0} OxiCode",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Role::System => ("\u{2699} System", Style::default().fg(Color::Yellow)),
+    };
+    lines.push(Line::from(Span::styled(prefix.to_string(), style)));
+}
+
+/// Render content blocks into owned lines (for caching). All strings are owned.
+fn render_content_blocks_static(blocks: &[ContentBlock], lines: &mut Vec<Line<'static>>) {
     for block in blocks {
         match block {
             ContentBlock::Text { text } => {
@@ -267,31 +403,20 @@ fn render_content_blocks(blocks: &[ContentBlock], lines: &mut Vec<Line<'_>>) {
                 }
             }
             ContentBlock::Thinking { thinking } => {
-                // Show first 2 lines of thinking block.
-                lines.push(Line::from(Span::styled(
-                    "  \u{1f4ad} thinking...",
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                )));
-                for (i, line) in thinking.lines().enumerate() {
-                    if i >= 2 {
-                        let remaining = thinking.lines().count() - 2;
-                        if remaining > 0 {
-                            lines.push(Line::from(Span::styled(
-                                format!("    ... ({remaining} more lines)"),
-                                Style::default().fg(Color::DarkGray),
-                            )));
-                        }
-                        break;
-                    }
-                    lines.push(Line::from(Span::styled(
-                        format!("    {line}"),
+                let line_count = thinking.lines().count();
+                // Collapsed header with line count.
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        "  💭 Thinking ".to_string(),
                         Style::default()
                             .fg(Color::DarkGray)
                             .add_modifier(Modifier::ITALIC),
-                    )));
-                }
+                    ),
+                    Span::styled(
+                        format!("({line_count} lines) ▶"),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]));
             }
         }
     }
@@ -322,14 +447,18 @@ fn truncate_str(s: &str, max: usize) -> String {
 }
 
 impl Widget for MessageView<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+    fn render(mut self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray))
             .title(" Conversation ");
 
+        // Set viewport height for message limiting optimization.
+        self.viewport_height = area.height.saturating_sub(2);
+
         let text = self.format_messages();
-        let scroll_y = resolve_scroll_offset(self.scroll_offset, area, text.lines.len());
+        let line_count = text.lines.len();
+        let scroll_y = resolve_scroll_offset(self.scroll_offset, area, line_count);
 
         let paragraph = Paragraph::new(text)
             .block(block)
@@ -337,6 +466,20 @@ impl Widget for MessageView<'_> {
             .scroll((scroll_y, 0));
 
         paragraph.render(area, buf);
+
+        // Scrollbar on right edge (only when content exceeds viewport).
+        if line_count > self.viewport_height as usize {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(Some("│"))
+                .thumb_symbol("█")
+                .track_style(Style::default().fg(Color::DarkGray))
+                .thumb_style(Style::default().fg(Color::Gray));
+            let mut scrollbar_state =
+                ScrollbarState::new(line_count).position(scroll_y as usize);
+            scrollbar.render(area, buf, &mut scrollbar_state);
+        }
     }
 }
 
@@ -388,10 +531,14 @@ mod tests {
     #[test]
     fn test_render_with_max_scroll_offset_does_not_panic() {
         let messages = vec![Message::user("hi"), assistant_text_message("hello")];
+        let mut cache = MessageRenderCache::new();
+        cache.update(&messages, 80);
         let active_tools: &[ActiveToolInfo<'_>] = &[];
         let streaming_lines: Vec<Line<'static>> = vec![Line::from("streaming...")];
         let widget = MessageView::new(
-            &messages,
+            cache.lines(messages.len()),
+            messages.len(),
+            messages.last().map(|m| m.role),
             Some(&streaming_lines),
             None,
             active_tools,
@@ -413,8 +560,18 @@ mod tests {
             Message::user("hello"),
             assistant_text_message("world"),
         ];
+        let mut cache = MessageRenderCache::new();
+        cache.update(&messages, 80);
         let active_tools: &[ActiveToolInfo<'_>] = &[];
-        let view = MessageView::new(&messages, None, None, active_tools, 0);
+        let view = MessageView::new(
+            cache.lines(messages.len()),
+            messages.len(),
+            messages.last().map(|m| m.role),
+            None,
+            None,
+            active_tools,
+            0,
+        );
         let text = view.format_messages();
         // Should contain separator character.
         let has_separator = text.lines.iter().any(|line| {
@@ -428,8 +585,18 @@ mod tests {
     #[test]
     fn test_markdown_rendered_in_content_blocks() {
         let messages = vec![assistant_text_message("**bold text** and `code`")];
+        let mut cache = MessageRenderCache::new();
+        cache.update(&messages, 80);
         let active_tools: &[ActiveToolInfo<'_>] = &[];
-        let view = MessageView::new(&messages, None, None, active_tools, 0);
+        let view = MessageView::new(
+            cache.lines(messages.len()),
+            messages.len(),
+            messages.last().map(|m| m.role),
+            None,
+            None,
+            active_tools,
+            0,
+        );
         let text = view.format_messages();
         // Bold markers should not appear in rendered output.
         let raw: String = text
@@ -443,5 +610,34 @@ mod tests {
             "Bold markers should be parsed, got: {raw}"
         );
         assert!(raw.contains("bold text"));
+    }
+
+    #[test]
+    fn test_render_cache_incremental() {
+        let msg1 = Message::user("hello");
+        let msg2 = assistant_text_message("world");
+        let mut cache = MessageRenderCache::new();
+
+        // First update: 1 message
+        cache.update(&[msg1.clone()], 80);
+        assert_eq!(cache.entries.len(), 1);
+
+        // Second update: 2 messages — only renders the new one
+        let messages = vec![msg1, msg2];
+        cache.update(&messages, 80);
+        assert_eq!(cache.entries.len(), 2);
+    }
+
+    #[test]
+    fn test_render_cache_invalidates_on_resize() {
+        let messages = vec![Message::user("hello")];
+        let mut cache = MessageRenderCache::new();
+        cache.update(&messages, 80);
+        assert_eq!(cache.entries.len(), 1);
+
+        // Resize → cache cleared and rebuilt
+        cache.update(&messages, 120);
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.cached_width, 120);
     }
 }

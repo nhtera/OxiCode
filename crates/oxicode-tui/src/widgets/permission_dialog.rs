@@ -28,13 +28,18 @@ impl<'a> PermissionDialog<'a> {
     }
 }
 
-const OPTIONS: [&str; 2] = ["Allow", "Deny"];
+const OPTIONS: [&str; 4] = [
+    "Allow once (y)",
+    "Always allow (a)",
+    "Deny (n)",
+    "Always deny (N)",
+];
 
 impl Widget for PermissionDialog<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Center the dialog — 60 wide, 14 tall.
+        // Center the dialog — 60 wide, 16 tall.
         let dialog_width = 60u16.min(area.width.saturating_sub(4));
-        let dialog_height = 14u16.min(area.height.saturating_sub(2));
+        let dialog_height = 16u16.min(area.height.saturating_sub(2));
         let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
         let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
         let dialog_area = Rect::new(x, y, dialog_width, dialog_height);

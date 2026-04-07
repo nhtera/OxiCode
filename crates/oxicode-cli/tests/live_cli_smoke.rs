@@ -193,3 +193,143 @@ fn test_cli_no_api_key_exits_cleanly() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Additional binary integration tests
+// ═══════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+#[ignore]
+async fn test_cli_single_prompt_math() {
+    let bin = binary_path();
+    let output = Command::new(&bin)
+        .args([
+            "-p",
+            "What is 2+2? Reply with just the number.",
+            "--no-onboard",
+        ])
+        .envs(std::env::vars().filter(|(k, _)| {
+            k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"
+        }))
+        .output()
+        .expect("Failed to run math prompt");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Math prompt should exit 0.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains('4'),
+        "Should contain 4, got: {stdout}"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_cli_json_has_session_events() {
+    let bin = binary_path();
+    let output = Command::new(&bin)
+        .args([
+            "-p",
+            "Say OK",
+            "--output",
+            "json",
+            "--no-onboard",
+        ])
+        .envs(std::env::vars().filter(|(k, _)| {
+            k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"
+        }))
+        .output()
+        .expect("Failed to run JSON events prompt");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Should exit 0.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+
+    // Parse NDJSON and verify event types.
+    let events: Vec<serde_json::Value> = stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+
+    assert!(!events.is_empty(), "Should have NDJSON events");
+
+    // Should have session_start event.
+    let has_start = events.iter().any(|e| {
+        e.get("type")
+            .and_then(|t| t.as_str())
+            .map_or(false, |t| t == "session_start")
+    });
+    assert!(has_start, "Should have session_start event");
+
+    // Should have session_end event.
+    let has_end = events.iter().any(|e| {
+        e.get("type")
+            .and_then(|t| t.as_str())
+            .map_or(false, |t| t == "session_end")
+    });
+    assert!(has_end, "Should have session_end event");
+}
+
+#[test]
+fn test_cli_completions_zsh() {
+    let bin = binary_path();
+    let output = Command::new(&bin)
+        .args(["--completions", "zsh"])
+        .output()
+        .expect("Failed to run --completions zsh");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.is_empty(), "Zsh completions should produce output");
+}
+
+#[test]
+fn test_cli_completions_fish() {
+    let bin = binary_path();
+    let output = Command::new(&bin)
+        .args(["--completions", "fish"])
+        .output()
+        .expect("Failed to run --completions fish");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.is_empty(), "Fish completions should produce output");
+}
+
+#[test]
+fn test_cli_man_page_generation() {
+    let bin = binary_path();
+    let output = Command::new(&bin)
+        .arg("--man-page")
+        .output()
+        .expect("Failed to run --man-page");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.is_empty(), "Man page should produce output");
+    assert!(
+        stdout.contains("oxicode") || stdout.contains("OXICODE"),
+        "Man page should reference oxicode"
+    );
+}
+
+#[test]
+fn test_cli_invalid_flag_exits_nonzero() {
+    let bin = binary_path();
+    let output = Command::new(&bin)
+        .arg("--invalid-flag-xyz")
+        .output()
+        .expect("Failed to run invalid flag");
+
+    assert!(
+        !output.status.success(),
+        "Invalid flag should exit non-zero"
+    );
+}

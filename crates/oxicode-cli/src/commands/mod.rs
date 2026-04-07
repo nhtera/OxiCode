@@ -45,6 +45,7 @@ use std::sync::Arc;
 use oxicode_state::StateStore;
 
 /// Result of executing a slash command.
+#[derive(Debug)]
 pub enum CommandOutput {
     /// Display text to the user.
     Message(String),
@@ -370,4 +371,205 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(vcr_command::VcrCommand));
 
     reg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxicode_common::Message;
+    use oxicode_state::{AppState, StateStore};
+
+    fn make_ctx(state_store: Arc<StateStore>) -> CommandContext {
+        CommandContext {
+            state_store,
+            model: "claude-sonnet-4-20250514".to_string(),
+            provider_name: "anthropic".to_string(),
+            session_id: "test-session-123".to_string(),
+        }
+    }
+
+    fn store() -> Arc<StateStore> {
+        Arc::new(StateStore::new(AppState::default()))
+    }
+
+    fn exec(input: &str) -> Option<CommandOutput> {
+        let ctx = make_ctx(store());
+        default_registry().execute(input, &ctx)
+    }
+
+    fn exec_with(input: &str, ss: Arc<StateStore>) -> Option<CommandOutput> {
+        let ctx = make_ctx(ss);
+        default_registry().execute(input, &ctx)
+    }
+
+    fn expect_msg(output: Option<CommandOutput>) -> String {
+        match output {
+            Some(CommandOutput::Message(m)) => m,
+            Some(CommandOutput::Error(e)) => panic!("Expected message, got error: {e}"),
+            Some(CommandOutput::Quit) => panic!("Expected message, got quit"),
+            Some(CommandOutput::Silent) => panic!("Expected message, got silent"),
+            None => panic!("Expected message, got None"),
+        }
+    }
+
+    // ── /help ──────────────────────────────────────────────────
+
+    #[test]
+    fn help_lists_commands() {
+        let msg = expect_msg(exec("/help"));
+        assert!(msg.contains("Available commands:"));
+        assert!(msg.contains("/help"));
+        assert!(msg.contains("/model"));
+        assert!(msg.contains("/cost"));
+        assert!(msg.contains("/status"));
+        assert!(msg.contains("/clear"));
+    }
+
+    #[test]
+    fn help_lists_many_commands() {
+        let msg = expect_msg(exec("/help"));
+        let count = msg.lines().filter(|l| l.trim().starts_with('/')).count();
+        assert!(count > 20, "Should list 20+ commands, got {count}");
+    }
+
+    // ── /version ───────────────────────────────────────────────
+
+    #[test]
+    fn version_shows_name() {
+        let msg = expect_msg(exec("/version"));
+        assert!(msg.contains("OxiCode") || msg.contains("oxicode"));
+    }
+
+    // ── /model ─────────────────────────────────────────────────
+
+    #[test]
+    fn model_shows_current() {
+        let msg = expect_msg(exec("/model"));
+        assert!(msg.contains("claude-sonnet-4-20250514"), "got: {msg}");
+    }
+
+    // ── /cost ──────────────────────────────────────────────────
+
+    #[test]
+    fn cost_zero_initially() {
+        let msg = expect_msg(exec("/cost"));
+        assert!(msg.contains('0'), "Cost should show zero, got: {msg}");
+    }
+
+    #[test]
+    fn cost_reflects_usage() {
+        let ss = store();
+        ss.add_usage(
+            &oxicode_common::Usage {
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_creation_input_tokens: None,
+                cache_read_input_tokens: None,
+            },
+            "claude-sonnet-4-20250514",
+        );
+        let msg = expect_msg(exec_with("/cost", ss));
+        assert!(msg.contains("1000") || msg.contains("1,000"), "got: {msg}");
+    }
+
+    // ── /status ────────────────────────────────────────────────
+
+    #[test]
+    fn status_shows_info() {
+        let msg = expect_msg(exec("/status"));
+        assert!(msg.contains("Model:"));
+        assert!(msg.contains("Messages:"));
+        assert!(msg.contains("Tokens:"));
+    }
+
+    #[test]
+    fn status_tracks_messages() {
+        let ss = store();
+        ss.push_message(Message::user("hello"));
+        ss.push_message(Message::assistant());
+        let msg = expect_msg(exec_with("/status", ss));
+        assert!(msg.contains("Messages: 2"), "got: {msg}");
+    }
+
+    // ── /clear ─────────────────────────────────────────────────
+
+    #[test]
+    fn clear_empties_messages() {
+        let ss = store();
+        ss.push_message(Message::user("hello"));
+        ss.push_message(Message::assistant());
+        assert_eq!(ss.current().messages.len(), 2);
+
+        let msg = expect_msg(exec_with("/clear", ss.clone()));
+        assert!(msg.to_lowercase().contains("clear"));
+        assert_eq!(ss.current().messages.len(), 0);
+    }
+
+    // ── /quit ──────────────────────────────────────────────────
+
+    #[test]
+    fn quit_returns_quit_variant() {
+        assert!(matches!(exec("/quit"), Some(CommandOutput::Quit)));
+    }
+
+    // ── /session ───────────────────────────────────────────────
+
+    #[test]
+    fn session_shows_id() {
+        let msg = expect_msg(exec("/session"));
+        assert!(
+            msg.contains("test-session-123") || msg.contains("Session"),
+            "got: {msg}"
+        );
+    }
+
+    // ── unknown / non-slash ────────────────────────────────────
+
+    #[test]
+    fn unknown_command_errors() {
+        match exec("/nonexistent") {
+            Some(CommandOutput::Error(e)) => {
+                assert!(e.contains("Unknown command"));
+                assert!(e.contains("/help"));
+            }
+            other => panic!("Expected Error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_slash_returns_none() {
+        assert!(exec("hello world").is_none());
+    }
+
+    // ── registry properties ────────────────────────────────────
+
+    #[test]
+    fn registry_has_50_plus_commands() {
+        let reg = default_registry();
+        let cmds = reg.all_commands();
+        assert!(cmds.len() > 50, "got {}", cmds.len());
+    }
+
+    #[test]
+    fn all_commands_have_descriptions() {
+        for (name, desc) in default_registry().all_commands() {
+            assert!(!name.is_empty());
+            assert!(!desc.is_empty(), "/{name} needs description");
+        }
+    }
+
+    #[test]
+    fn command_names_are_lowercase() {
+        for (name, _) in default_registry().all_commands() {
+            assert_eq!(name, name.to_lowercase(), "/{name} should be lowercase");
+        }
+    }
+
+    // ── /config ────────────────────────────────────────────────
+
+    #[test]
+    fn config_shows_configuration() {
+        let msg = expect_msg(exec("/config"));
+        assert!(!msg.is_empty());
+    }
 }

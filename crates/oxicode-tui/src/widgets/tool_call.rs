@@ -102,3 +102,101 @@ impl Widget for ToolCallWidget<'_> {
         paragraph.render(area, buf);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn render_to_string(widget: ToolCallWidget, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_widget(widget, f.area());
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut s = String::new();
+        for y in 0..height {
+            for x in 0..width {
+                s.push(buf.cell((x, y)).unwrap().symbol().chars().next().unwrap_or(' '));
+            }
+            s.push('\n');
+        }
+        s
+    }
+
+    #[test]
+    fn running_tool_shows_spinner_icon() {
+        let w = ToolCallWidget::new("bash", "echo hello", None, ToolCallStatus::Running, false);
+        let rendered = render_to_string(w, 50, 5);
+        assert!(rendered.contains("bash"), "Should show tool name");
+        assert!(rendered.contains("⟳"), "Running should show ⟳");
+    }
+
+    #[test]
+    fn success_tool_shows_check_icon() {
+        let w = ToolCallWidget::new(
+            "file_read",
+            "/tmp/test.txt",
+            Some("file content here"),
+            ToolCallStatus::Success,
+            false,
+        );
+        let rendered = render_to_string(w, 60, 8);
+        assert!(rendered.contains("✓"), "Success should show ✓");
+        assert!(rendered.contains("file_read"), "Should show tool name");
+    }
+
+    #[test]
+    fn error_tool_shows_cross_icon() {
+        let w = ToolCallWidget::new(
+            "bash",
+            "rm -rf /",
+            Some("Permission denied"),
+            ToolCallStatus::Error,
+            false,
+        );
+        let rendered = render_to_string(w, 60, 8);
+        assert!(rendered.contains("✗"), "Error should show ✗");
+    }
+
+    #[test]
+    fn collapsed_hides_output() {
+        let w = ToolCallWidget::new(
+            "bash",
+            "ls",
+            Some("file1.txt\nfile2.txt"),
+            ToolCallStatus::Success,
+            true,
+        );
+        let rendered = render_to_string(w, 60, 4);
+        assert!(rendered.contains("▶"), "Collapsed should show ▶");
+        // Output should be hidden when collapsed.
+        assert!(!rendered.contains("file1.txt"), "Output hidden when collapsed");
+    }
+
+    #[test]
+    fn expanded_shows_output() {
+        let w = ToolCallWidget::new(
+            "bash",
+            "ls",
+            Some("file1.txt\nfile2.txt"),
+            ToolCallStatus::Success,
+            false,
+        );
+        let rendered = render_to_string(w, 60, 8);
+        assert!(rendered.contains("▼"), "Expanded should show ▼");
+        assert!(rendered.contains("file1.txt"), "Output shown when expanded");
+    }
+
+    #[test]
+    fn long_input_truncated() {
+        let long_input = "a".repeat(100);
+        let w = ToolCallWidget::new("bash", &long_input, None, ToolCallStatus::Running, false);
+        let rendered = render_to_string(w, 90, 4);
+        assert!(rendered.contains("..."), "Long input should be truncated with ...");
+    }
+}

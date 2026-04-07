@@ -7,6 +7,8 @@ pub enum UiEvent {
     SlashCommand { name: String, args: String },
     /// User requested quit.
     Quit,
+    /// User requested interrupt of the current turn (Ctrl+C during streaming).
+    InterruptTurn,
     /// Terminal resized.
     Resize(u16, u16),
     /// Scroll up in message view.
@@ -55,4 +57,6 @@ pub enum CoreEvent {
         max_retries: u32,
         retry_in_secs: f64,
     },
+    /// Thinking text delta from extended thinking / chain-of-thought.
+    ThinkingDelta(String),
 }

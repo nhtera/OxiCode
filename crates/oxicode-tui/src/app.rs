@@ -1,10 +1,11 @@
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
-    MouseEvent, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
 };
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
@@ -16,13 +17,15 @@ use tokio::sync::{mpsc, watch};
 
 use crate::events::{CoreEvent, UiEvent};
 use crate::keybindings::{Action, KeybindingRegistry};
+use crate::prompt_suggestions::{suggest_prompts, PromptSuggestion};
 use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
-    ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageView, Notification, NotificationWidget,
-    PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel, ShortcutsState, SplitPane,
-    StatusBar, TaskInfo, TaskPanel,
+    ActiveToolInfo, AgentInfo, AgentPanel, InputBox, MessageRenderCache, MessageView, Notification,
+    NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel,
+    ShortcutsState, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
+    PASTE_PREVIEW_THRESHOLD,
 };
 
 /// A tool call in progress (between ToolUseStart and ToolResult events).
@@ -30,6 +33,8 @@ struct ActiveToolCall {
     id: String,
     name: String,
     input_summary: String,
+    /// When this tool call started (for elapsed time display).
+    started_at: std::time::Instant,
     /// `Some((content, is_error))` when the tool has completed.
     result: Option<(String, bool)>,
 }
@@ -63,6 +68,8 @@ pub struct App {
     /// Pre-rendered committed lines from streaming collector.
     streaming_committed_lines: Vec<ratatui::text::Line<'static>>,
     should_quit: bool,
+    /// True from StreamStart until MessageComplete — tracks whether a turn is active.
+    is_turn_active: bool,
     /// Manages left/right split layout and ratio.
     split_pane: SplitPane,
     /// Toast notifications rendered as an overlay.
@@ -85,6 +92,16 @@ pub struct App {
     history_index: Option<usize>,
     /// Saved input before history navigation started.
     history_saved_input: String,
+    /// Timestamp of last interrupt (for double Ctrl+C force quit).
+    last_interrupt: Option<Instant>,
+    /// Per-message render cache — avoids re-parsing markdown for unchanged messages.
+    message_cache: MessageRenderCache,
+    /// Ghost text completion suffix (shown dimmed after cursor).
+    ghost_text: Option<String>,
+    /// Large paste text awaiting confirmation (shown in preview modal).
+    pending_paste: Option<String>,
+    /// Context-aware follow-up suggestions shown as chips.
+    suggestions: Vec<PromptSuggestion>,
 }
 
 impl App {
@@ -108,6 +125,7 @@ impl App {
             streaming_collector: MarkdownStreamCollector::new(),
             streaming_committed_lines: Vec::new(),
             should_quit: false,
+            is_turn_active: false,
             split_pane: SplitPane::new(),
             notifications: Vec::new(),
             active_tools: Vec::new(),
@@ -119,6 +137,11 @@ impl App {
             history: Vec::new(),
             history_index: None,
             history_saved_input: String::new(),
+            last_interrupt: None,
+            message_cache: MessageRenderCache::new(),
+            ghost_text: None,
+            pending_paste: None,
+            suggestions: Vec::new(),
         }
     }
 
@@ -134,38 +157,59 @@ impl App {
 
     /// Run the TUI event loop.
     pub async fn run(&mut self) -> io::Result<()> {
+        // Install panic hook to restore terminal on panic.
+        let original_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = terminal::disable_raw_mode();
+            let _ = io::stdout().execute(DisableMouseCapture);
+            let _ = io::stdout().execute(LeaveAlternateScreen);
+            original_hook(info);
+        }));
+
         // Setup terminal
         terminal::enable_raw_mode()?;
         io::stdout().execute(EnterAlternateScreen)?;
         io::stdout().execute(EnableMouseCapture)?;
+        io::stdout().execute(EnableBracketedPaste)?;
         let backend = CrosstermBackend::new(io::stdout());
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
 
-        let mut term_rx = Self::spawn_terminal_event_listener();
+        let (mut term_rx, term_stop) = Self::spawn_terminal_event_listener();
         let result = self.event_loop(&mut terminal, &mut term_rx).await;
+
+        // Signal polling thread to stop, then restore terminal.
+        term_stop.store(true, Ordering::Relaxed);
 
         // Restore terminal (always, even on error)
         let _ = terminal::disable_raw_mode();
         let _ = io::stdout().execute(DisableMouseCapture);
+        let _ = io::stdout().execute(DisableBracketedPaste);
         let _ = io::stdout().execute(LeaveAlternateScreen);
+
+        // Restore original panic hook.
+        let _ = std::panic::take_hook();
 
         result
     }
 
-    /// Spawn a dedicated crossterm event thread and return its receiver.
-    fn spawn_terminal_event_listener() -> mpsc::Receiver<Event> {
+    /// Spawn a dedicated crossterm event thread and return its receiver + stop flag.
+    fn spawn_terminal_event_listener() -> (mpsc::Receiver<Event>, Arc<AtomicBool>) {
         let (term_tx, term_rx) = mpsc::channel::<Event>(32);
-        tokio::task::spawn_blocking(move || loop {
-            if event::poll(Duration::from_millis(50)).unwrap_or(false) {
-                if let Ok(ev) = event::read() {
-                    if term_tx.blocking_send(ev).is_err() {
-                        break;
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop = stop_flag.clone();
+        tokio::task::spawn_blocking(move || {
+            while !stop.load(Ordering::Relaxed) {
+                if event::poll(Duration::from_millis(50)).unwrap_or(false) {
+                    if let Ok(ev) = event::read() {
+                        if term_tx.blocking_send(ev).is_err() {
+                            break;
+                        }
                     }
                 }
             }
         });
-        term_rx
+        (term_rx, stop_flag)
     }
 
     async fn event_loop(
@@ -173,8 +217,15 @@ impl App {
         terminal: &mut Terminal<impl Backend>,
         term_rx: &mut mpsc::Receiver<Event>,
     ) -> io::Result<()> {
+        let mut tick_interval = tokio::time::interval(Duration::from_millis(100));
+        tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut needs_redraw = true;
+
         loop {
-            self.draw(terminal)?;
+            if needs_redraw {
+                self.draw(terminal)?;
+                needs_redraw = false;
+            }
 
             if self.should_quit {
                 break;
@@ -185,13 +236,23 @@ impl App {
                     match ev {
                         Event::Key(key) => self.handle_key(key).await,
                         Event::Mouse(mouse) => self.handle_mouse(mouse),
-                        // Resize triggers immediate redraw on next loop iteration.
+                        Event::Paste(text) => self.handle_paste(&text),
                         Event::Resize(_, _) => {}
                         _ => {}
                     }
+                    needs_redraw = true;
                 }
                 Some(core_event) = self.core_rx.recv() => {
                     self.handle_core_event(core_event);
+                    // Drain all pending core events before redrawing (batch updates).
+                    while let Ok(ev) = self.core_rx.try_recv() {
+                        self.handle_core_event(ev);
+                    }
+                    needs_redraw = true;
+                }
+                // Tick for spinner animation — only forces redraw while turn is active.
+                _ = tick_interval.tick(), if self.is_turn_active => {
+                    needs_redraw = true;
                 }
             }
         }
@@ -200,11 +261,49 @@ impl App {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> io::Result<()> {
+    pub fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> io::Result<()> {
         // Prune expired notifications to prevent unbounded growth.
         self.notifications.retain(Notification::is_active);
 
-        let state = self.state_rx.borrow().clone();
+        // ── Read only what we need from state (NO deep clone) ──
+        // Borrow the watch receiver briefly, extract lightweight fields only.
+        let (current_model, total_usage, is_streaming, auth_label, message_count, last_role,
+             agent_infos, task_infos, context_window_max, permission_mode, cwd) = {
+            let state = self.state_rx.borrow();
+            // Update render cache with new messages (incremental — only renders new ones).
+            let term_width = terminal.size().map(|s| s.width).unwrap_or(80);
+            self.message_cache.update(&state.messages, term_width);
+            let msg_count = state.messages.len();
+            let last_role = state.messages.last().map(|m| m.role);
+            let agents: Vec<AgentInfo> = state.active_agents.iter().map(|a| AgentInfo {
+                name: a.name.clone(),
+                status: a.status.clone(),
+                started_at: a.started_at.clone(),
+                duration: String::new(),
+                model: String::new(),
+                restricted_tools: Vec::new(),
+            }).collect();
+            let tasks: Vec<TaskInfo> = state.background_tasks.iter().map(|t| TaskInfo {
+                id: t.id.clone(),
+                task_type: t.task_type.clone(),
+                status: t.status.clone(),
+                command_preview: t.command_preview.clone(),
+            }).collect();
+            (
+                state.current_model.clone(),
+                state.total_usage.clone(),
+                state.is_streaming,
+                state.auth_label.clone(),
+                msg_count,
+                last_role,
+                agents,
+                tasks,
+                state.context_window_max,
+                state.permission_mode.clone(),
+                state.cwd.clone(),
+            )
+        }; // state borrow dropped here — no deep clone of messages
+
         let vim_enabled = self.vim.enabled;
         let vim_badge = if vim_enabled {
             self.vim.mode.badge()
@@ -218,23 +317,43 @@ impl App {
         } else {
             None
         };
+        let ghost_ref = self.ghost_text.as_deref();
+        // Show suggestions only when idle, input empty, and suggestions exist.
+        let show_suggestions =
+            !is_streaming && self.input_text.is_empty() && !self.suggestions.is_empty();
 
         terminal.draw(|frame| {
-            let input_height = if search_active { 5u16 } else { 3u16 };
+            let base_input_height = InputBox::required_height(&self.input_text);
+            let input_height = if search_active {
+                base_input_height + 2 // +2 for search bar
+            } else {
+                base_input_height
+            };
+            let suggestion_height: u16 = if show_suggestions { 1 } else { 0 };
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1),            // Status bar
-                    Constraint::Min(5),               // Message view
-                    Constraint::Length(input_height), // Input box (+ search bar)
+                    Constraint::Length(1),                        // Status bar
+                    Constraint::Min(5),                           // Message view
+                    Constraint::Length(suggestion_height),        // Suggestion chips (0 or 1)
+                    Constraint::Length(input_height),             // Input box (+ search bar)
                 ])
                 .split(frame.area());
 
             // Status bar with vim badge and auth status.
+            let context_pct = if context_window_max > 0 {
+                let used = total_usage.input_tokens + total_usage.output_tokens;
+                Some(used as f32 / context_window_max as f32 * 100.0)
+            } else {
+                None
+            };
             let status_bar =
-                StatusBar::new(&state.current_model, &state.total_usage, state.is_streaming)
+                StatusBar::new(&current_model, &total_usage, is_streaming)
                     .with_vim_badge(vim_badge)
-                    .with_auth_label(&state.auth_label);
+                    .with_auth_label(&auth_label)
+                    .with_context_pct(context_pct)
+                    .with_permission_mode(&permission_mode)
+                    .with_cwd(&cwd);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
@@ -242,13 +361,13 @@ impl App {
             let (left_area, right_area) = self.split_pane.split(content_area);
 
             // Message view (left pane, or full area when right pane is hidden)
-            let streaming_lines = if state.is_streaming && !self.streaming_committed_lines.is_empty()
+            let streaming_lines = if self.is_turn_active && !self.streaming_committed_lines.is_empty()
             {
                 Some(self.streaming_committed_lines.as_slice())
             } else {
                 None
             };
-            let streaming_tail_owned: Option<String> = if state.is_streaming {
+            let streaming_tail_owned: Option<String> = if self.is_turn_active {
                 self.streaming_collector
                     .trailing_fragment()
                     .map(|s| s.to_string())
@@ -263,19 +382,32 @@ impl App {
                 .map(|t| ActiveToolInfo {
                     name: &t.name,
                     input_summary: &t.input_summary,
+                    started_at: t.started_at,
                     result: t.result.as_ref().map(|(c, e)| (c.as_str(), *e)),
                 })
                 .collect();
 
-            // Compute scroll offset from a preview (no actual render).
-            let preview_view = MessageView::new(
-                &state.messages,
-                streaming_lines,
-                streaming_tail,
-                &active_tool_info,
-                0,
-            );
-            self.max_scroll_offset = preview_view.max_scroll_offset(left_area);
+            // Compute scroll from cached line count.
+            // Account for word-wrap: logical lines may wrap to multiple visual lines.
+            let inner_width = left_area.width.saturating_sub(2) as usize;
+            let wrapped_lines: usize = self.message_cache.lines(message_count).iter()
+                .flat_map(|msg_lines| msg_lines.iter())
+                .map(|line| {
+                    let line_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+                    if inner_width > 0 && line_width > inner_width {
+                        (line_width + inner_width - 1) / inner_width
+                    } else {
+                        1
+                    }
+                })
+                .sum();
+            let estimated_lines = wrapped_lines
+                + self.streaming_committed_lines.len()
+                + self.active_tools.len() * 2
+                + 10; // separators
+            let inner_height = left_area.height.saturating_sub(2) as usize;
+            let max_scroll = estimated_lines.saturating_sub(inner_height) as u16;
+            self.max_scroll_offset = max_scroll;
             if self.auto_scroll {
                 self.scroll_offset = self.max_scroll_offset;
             } else {
@@ -283,7 +415,9 @@ impl App {
             }
 
             let message_view = MessageView::new(
-                &state.messages,
+                self.message_cache.lines(message_count),
+                message_count,
+                last_role,
                 streaming_lines,
                 streaming_tail,
                 &active_tool_info,
@@ -293,30 +427,6 @@ impl App {
 
             // Right pane: agent panel (top) + task panel (bottom)
             if let Some(right) = right_area {
-                let agent_infos: Vec<AgentInfo> = state
-                    .active_agents
-                    .iter()
-                    .map(|a| AgentInfo {
-                        name: a.name.clone(),
-                        status: a.status.clone(),
-                        started_at: a.started_at.clone(),
-                        duration: String::new(),
-                        model: String::new(),
-                        restricted_tools: Vec::new(),
-                    })
-                    .collect();
-
-                let task_infos: Vec<TaskInfo> = state
-                    .background_tasks
-                    .iter()
-                    .map(|t| TaskInfo {
-                        id: t.id.clone(),
-                        task_type: t.task_type.clone(),
-                        status: t.status.clone(),
-                        command_preview: t.command_preview.clone(),
-                    })
-                    .collect();
-
                 let right_chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -345,17 +455,33 @@ impl App {
                 frame.render_widget(dialog, content_area);
             }
 
+            // Paste preview overlay.
+            if let Some(ref paste) = self.pending_paste {
+                frame.render_widget(PastePreview::new(paste), content_area);
+            }
+
+            // Suggestion chips (shown when idle + empty input).
+            if show_suggestions {
+                frame.render_widget(SuggestionChips::new(&self.suggestions), chunks[2]);
+            }
+
             // Input box area — may include search bar below.
             if search_active {
                 let input_chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(3), Constraint::Length(2)])
-                    .split(chunks[2]);
+                    .constraints([
+                        Constraint::Length(base_input_height),
+                        Constraint::Length(2),
+                    ])
+                    .split(chunks[3]);
 
                 let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
                 let mut input = InputBox::new(&self.input_text, byte_cursor, true);
                 if vim_enabled {
                     input = input.with_vim_badge(vim_badge);
+                }
+                if let Some(g) = ghost_ref {
+                    input = input.with_ghost_text(g);
                 }
                 frame.render_widget(input, input_chunks[0]);
 
@@ -370,7 +496,10 @@ impl App {
                 if let Some(ref cmd) = command_buf {
                     input = input.with_command_line(cmd);
                 }
-                frame.render_widget(input, chunks[2]);
+                if let Some(g) = ghost_ref {
+                    input = input.with_ghost_text(g);
+                }
+                frame.render_widget(input, chunks[3]);
             }
         })?;
 
@@ -378,6 +507,12 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) {
+        // Paste preview modal takes highest priority.
+        if self.pending_paste.is_some() {
+            self.handle_paste_preview_key(key);
+            return;
+        }
+
         // Permission dialog takes priority over all other input.
         if self.pending_permission.is_some() {
             self.handle_permission_key(key).await;
@@ -411,17 +546,63 @@ impl App {
         // Default key handling (non-vim mode).
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-                let _ = self.ui_tx.send(UiEvent::Quit).await;
-                self.should_quit = true;
+                if self.is_turn_active {
+                    // Double Ctrl+C within 1s → force quit.
+                    if self
+                        .last_interrupt
+                        .is_some_and(|t| t.elapsed() < Duration::from_secs(1))
+                    {
+                        let _ = self.ui_tx.send(UiEvent::Quit).await;
+                        self.should_quit = true;
+                    } else {
+                        self.last_interrupt = Some(Instant::now());
+                        let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                        self.notifications.push(Notification::new(
+                            "Interrupting... (Ctrl+C again to quit)".to_string(),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                    }
+                } else {
+                    let _ = self.ui_tx.send(UiEvent::Quit).await;
+                    self.should_quit = true;
+                }
+            }
+            (_, KeyCode::Esc) if self.is_turn_active => {
+                let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                self.last_interrupt = Some(Instant::now());
+                self.notifications.push(Notification::new(
+                    "Interrupting...".to_string(),
+                    crate::widgets::notification::NotificationLevel::Info,
+                ));
+            }
+            (_, KeyCode::Enter) if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Alt+Enter: insert newline for multiline input.
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                self.input_text.insert(byte_idx, '\n');
+                self.input_cursor += 1;
             }
             (_, KeyCode::Enter) => {
                 self.submit_input().await;
+            }
+            // Ctrl+1/2/3: select suggestion chip (when visible).
+            (KeyModifiers::CONTROL, KeyCode::Char(c @ '1'..='3'))
+                if self.input_text.is_empty() && !self.suggestions.is_empty() =>
+            {
+                let idx = (c as usize) - ('1' as usize);
+                if let Some(suggestion) = self.suggestions.get(idx) {
+                    self.input_text = suggestion.prompt.clone();
+                    self.input_cursor = self.input_text.chars().count();
+                    self.suggestions.clear();
+                    self.submit_input().await;
+                }
             }
             // H3 FIX: cursor operates on char count, insert at byte offset
             (_, KeyCode::Char(c)) => {
                 let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
                 self.input_text.insert(byte_idx, c);
                 self.input_cursor += 1;
+                self.update_ghost_text();
+                self.suggestions.clear(); // hide chips once user starts typing
             }
             (_, KeyCode::Backspace) => {
                 if self.input_cursor > 0 {
@@ -430,6 +611,7 @@ impl App {
                     let end = char_to_byte_index(&self.input_text, self.input_cursor + 1);
                     self.input_text.replace_range(start..end, "");
                 }
+                self.update_ghost_text();
             }
             // Ctrl+Left / Ctrl+Right adjust the split ratio by ±5 %.
             (KeyModifiers::CONTROL, KeyCode::Left) => {
@@ -445,6 +627,8 @@ impl App {
                 let char_count = self.input_text.chars().count();
                 if self.input_cursor < char_count {
                     self.input_cursor += 1;
+                } else {
+                    self.accept_ghost_text();
                 }
             }
             (_, KeyCode::Up) => {
@@ -465,9 +649,11 @@ impl App {
             (_, KeyCode::End) => {
                 self.input_cursor = self.input_text.chars().count();
             }
-            // Tab toggles the right split pane (agents + tasks panel).
+            // Tab: accept ghost completion if available, otherwise toggle panel.
             (_, KeyCode::Tab) => {
-                self.split_pane.toggle_right();
+                if !self.accept_ghost_text() {
+                    self.split_pane.toggle_right();
+                }
             }
             _ => {}
         }
@@ -481,10 +667,27 @@ impl App {
 
         match action {
             VimAction::Passthrough(k) => {
-                // Let Ctrl+C through for quit.
+                // Let Ctrl+C through for quit/interrupt.
                 if k.modifiers == KeyModifiers::CONTROL && k.code == KeyCode::Char('c') {
-                    let _ = self.ui_tx.send(UiEvent::Quit).await;
-                    self.should_quit = true;
+                    if self.is_turn_active {
+                        if self
+                            .last_interrupt
+                            .is_some_and(|t| t.elapsed() < Duration::from_secs(1))
+                        {
+                            let _ = self.ui_tx.send(UiEvent::Quit).await;
+                            self.should_quit = true;
+                        } else {
+                            self.last_interrupt = Some(Instant::now());
+                            let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                            self.notifications.push(Notification::new(
+                                "Interrupting... (Ctrl+C again to quit)".to_string(),
+                                crate::widgets::notification::NotificationLevel::Info,
+                            ));
+                        }
+                    } else {
+                        let _ = self.ui_tx.send(UiEvent::Quit).await;
+                        self.should_quit = true;
+                    }
                 }
             }
             VimAction::Noop => {
@@ -782,6 +985,46 @@ impl App {
         }
     }
 
+    /// Handle bracketed paste — insert text at cursor in bulk,
+    /// or show preview modal for large pastes.
+    fn handle_paste(&mut self, text: &str) {
+        // Skip paste if a permission dialog, search overlay, or paste preview is active.
+        if self.pending_permission.is_some()
+            || self.search.is_active()
+            || self.pending_paste.is_some()
+        {
+            return;
+        }
+        if text.lines().count() > PASTE_PREVIEW_THRESHOLD {
+            self.pending_paste = Some(text.to_string());
+        } else {
+            let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+            self.input_text.insert_str(byte_idx, text);
+            self.input_cursor += text.chars().count();
+            self.update_ghost_text();
+        }
+    }
+
+    /// Handle key events when the paste preview modal is active.
+    fn handle_paste_preview_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                // Confirm paste — insert at cursor.
+                if let Some(text) = self.pending_paste.take() {
+                    let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                    self.input_text.insert_str(byte_idx, &text);
+                    self.input_cursor += text.chars().count();
+                    self.update_ghost_text();
+                }
+            }
+            KeyCode::Esc => {
+                // Cancel paste.
+                self.pending_paste = None;
+            }
+            _ => {} // Ignore other keys while preview is active.
+        }
+    }
+
     fn scroll_up_by(&mut self, lines: u16) {
         if lines == 0 {
             return;
@@ -896,6 +1139,15 @@ impl App {
 
     /// Submit the current input text.
     async fn submit_input(&mut self) {
+        // Block input while a turn is active.
+        if self.is_turn_active {
+            self.notifications.push(Notification::new(
+                "Waiting for current response...".to_string(),
+                crate::widgets::notification::NotificationLevel::Info,
+            ));
+            return;
+        }
+
         if !self.input_text.is_empty() {
             let text = std::mem::take(&mut self.input_text);
             self.input_cursor = 0;
@@ -960,6 +1212,22 @@ impl App {
         }
     }
 
+    /// Recompute ghost text completion based on current input.
+    fn update_ghost_text(&mut self) {
+        self.ghost_text = crate::ghost_completion::complete(&self.input_text);
+    }
+
+    /// Accept the current ghost text completion. Returns true if accepted.
+    fn accept_ghost_text(&mut self) -> bool {
+        if let Some(ghost) = self.ghost_text.take() {
+            self.input_text.push_str(&ghost);
+            self.input_cursor = self.input_text.chars().count();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Handle key events when the permission dialog is active.
     async fn handle_permission_key(&mut self, key: KeyEvent) {
         let Some(ref mut perm) = self.pending_permission else {
@@ -970,15 +1238,38 @@ impl App {
                 perm.selected = perm.selected.saturating_sub(1);
             }
             (_, KeyCode::Down) => {
-                perm.selected = (perm.selected + 1).min(1);
+                perm.selected = (perm.selected + 1).min(3); // 4 options: 0-3
             }
             (_, KeyCode::Enter) => {
                 let response = match perm.selected {
                     0 => oxicode_common::PermissionResponse::AllowOnce,
-                    _ => oxicode_common::PermissionResponse::Deny,
+                    1 => oxicode_common::PermissionResponse::AlwaysAllow,
+                    2 => oxicode_common::PermissionResponse::Deny,
+                    _ => oxicode_common::PermissionResponse::AlwaysDeny,
                 };
                 if let Some(perm) = self.pending_permission.take() {
                     let _ = perm.reply_tx.send(response);
+                }
+            }
+            // Hotkeys: y = allow once, a = always allow, n = deny, N = always deny
+            (_, KeyCode::Char('y')) => {
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::AllowOnce);
+                }
+            }
+            (_, KeyCode::Char('a')) => {
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::AlwaysAllow);
+                }
+            }
+            (_, KeyCode::Char('n')) => {
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
+                }
+            }
+            (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::AlwaysDeny);
                 }
             }
             (_, KeyCode::Esc) => {
@@ -990,8 +1281,16 @@ impl App {
                 if let Some(perm) = self.pending_permission.take() {
                     let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
                 }
-                let _ = self.ui_tx.send(UiEvent::Quit).await;
-                self.should_quit = true;
+                if self.is_turn_active {
+                    let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                    self.notifications.push(Notification::new(
+                        "Permission denied, interrupting...".to_string(),
+                        crate::widgets::notification::NotificationLevel::Info,
+                    ));
+                } else {
+                    let _ = self.ui_tx.send(UiEvent::Quit).await;
+                    self.should_quit = true;
+                }
             }
             _ => {}
         }
@@ -1007,19 +1306,33 @@ impl App {
                 self.auto_scroll = true;
             }
             CoreEvent::StreamStart => {
-                self.streaming_text.clear();
-                self.streaming_collector.clear();
-                self.streaming_committed_lines.clear();
-            }
-            CoreEvent::StreamEnd | CoreEvent::MessageComplete => {
-                // Finalize: render any remaining buffer content without trailing newline.
-                let final_lines = self.streaming_collector.finalize();
-                self.streaming_committed_lines.extend(final_lines);
+                self.is_turn_active = true;
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
                 self.active_tools.clear();
+            }
+            CoreEvent::StreamEnd => {
+                // Stream finished — finalize remaining buffer but keep committed lines
+                // visible. Tools may still be running in multi-turn loops.
+                let final_lines = self.streaming_collector.finalize();
+                self.streaming_committed_lines.extend(final_lines);
+                self.streaming_text.clear();
+                self.streaming_collector.clear();
                 self.auto_scroll = true;
+            }
+            CoreEvent::MessageComplete => {
+                // Full turn complete — message now persisted in state_store.messages.
+                // Clear all transient streaming state.
+                self.streaming_text.clear();
+                self.streaming_collector.clear();
+                self.streaming_committed_lines.clear();
+                self.active_tools.clear();
+                self.is_turn_active = false;
+                self.auto_scroll = true;
+                // Compute context-aware suggestions from latest messages.
+                let state = self.state_rx.borrow();
+                self.suggestions = suggest_prompts(&state.messages);
             }
             CoreEvent::Error(msg) => {
                 tracing::error!("Core error: {}", msg);
@@ -1032,6 +1345,7 @@ impl App {
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
                 self.active_tools.clear();
+                self.is_turn_active = false;
             }
             CoreEvent::ToolUseStart { id, name, input } => {
                 let summary = summarize_input(&input);
@@ -1039,6 +1353,7 @@ impl App {
                     id,
                     name,
                     input_summary: summary,
+                    started_at: Instant::now(),
                     result: None,
                 });
                 self.auto_scroll = true;
@@ -1081,6 +1396,11 @@ impl App {
                     notif_msg,
                     crate::widgets::notification::NotificationLevel::RateLimit,
                 ));
+            }
+            CoreEvent::ThinkingDelta(_text) => {
+                // Thinking deltas are accumulated by the core engine and
+                // included in the final message as ContentBlock::Thinking.
+                // No streaming display needed for now.
             }
         }
     }
