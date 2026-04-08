@@ -1,6 +1,47 @@
 # OxiCode — Project Changelog
 
-**Last Updated:** 2026-04-05 | **Version:** 0.5.1
+**Last Updated:** 2026-04-09 | **Version:** 0.5.2
+
+---
+
+## [0.5.2] — Housekeeping & Dead Code Removal — 2026-04-09
+
+### Improvements
+
+#### Hot Model Switching
+- `/model <name>` now switches model at runtime (was previously a stub command)
+- QueryEngine respects model changes immediately, no restart required
+- Useful for comparing outputs across different models in conversation
+
+#### Tab Completion for Command Arguments
+- Ghost text now works for command arguments (e.g., `/model cl` → `claude-sonnet-4-20250514`)
+- Improves discoverability of available models
+- Reduces typing for power users
+
+#### Dead Widget Removal
+- Removed 4 unused widget files ported from Claude Code but never rendered in OxiCode (~400 LOC)
+- Files deleted: `auto_mode_dialog.rs`, `cost_dialog.rs`, `context_visualization.rs`, `oauth_dialog.rs`
+- Documentation cleaned up to remove stale references
+
+### Files Deleted (4 total)
+
+**oxicode-tui (4):**
+- `widgets/auto_mode_dialog.rs` (was ~120 LOC)
+- `widgets/cost_dialog.rs` (was ~110 LOC)
+- `widgets/context_visualization.rs` (was ~95 LOC)
+- `widgets/oauth_dialog.rs` (was ~75 LOC)
+
+### Metrics
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Total Files | 179 | 175 | -4 |
+| Total LOC | ~9,100 | ~8,700 | -400 |
+| Total Tests | 1,562 | 1,562 | — |
+
+### Breaking Changes
+
+None.
 
 ---
 
@@ -250,12 +291,10 @@ None.
 
 - **Vim Text Objects:** iw/aw, i"/a", i(/a(, i{/a{ with operator composition (diw, ci", ya{)
 - **VisualLine Mode:** V for line-wise selection with text object actions
-- **TUI Dialogs:** ContextVisualization, CostDialog, AutoModeDialog, OAuthDialog
 - **16 New Commands:** /color, /keybindings, /statusline, /tag, /btw, /thinkback, /release-notes, /advisor, /insights, /stickers, /passes, /rate-limit-options, /reload-plugins, +more
 
-### Files Added: 7
+### Files Added: 1
 - vim_text_objects.rs
-- context_visualization.rs, cost_dialog.rs, auto_mode_dialog.rs, oauth_dialog.rs (widgets)
 
 ### Testing
 - 81 TUI tests (was ~50)

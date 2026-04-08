@@ -969,34 +969,6 @@ ya{  → Yank around braces
 
 **Integration:** Works with operator composition, count prefixes (3diw)
 
-### Advanced TUI Dialogs (Phase 6 NEW)
-
-**4 new dialog widgets:**
-
-#### 1. ContextVisualization (`widgets/context_visualization.rs`)
-- Displays token budget as visual bar chart
-- Shows L1-L5 defense layer activations
-- Real-time budget status (Healthy/Warning/Danger/Critical)
-- Helps users understand context consumption
-
-#### 2. CostDialog (`widgets/cost_dialog.rs`)
-- Estimates model costs based on message history
-- Per-token pricing from model metadata
-- Input + output cost breakdown
-- Projected costs for long conversations
-
-#### 3. AutoModeDialog (`widgets/auto_mode_dialog.rs`)
-- Selector for auto-completion modes
-- Toggle between manual/auto tool approval
-- Batch operations selection
-- Mode-specific hint text
-
-#### 4. OAuthDialog (`widgets/oauth_dialog.rs`)
-- OAuth 2.0 flow UI for plugin/service auth
-- Displays authorization URL
-- Poll for completion status
-- Token refresh handling
-
 ---
 
 ## Phase 5: Plugin Marketplace & Enterprise Settings

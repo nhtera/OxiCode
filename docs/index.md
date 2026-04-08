@@ -46,7 +46,7 @@ docs/
 
 ## What's New in Phase 6
 
-**Added 4 new TUI widgets, vim text objects, 16 new slash commands:**
+**Added vim text objects, 16 new slash commands:**
 
 ### 1. Vim Text Objects
 Advanced text object support with operators:
@@ -57,16 +57,7 @@ Advanced text object support with operators:
 
 **See:** [System Architecture → Vim Text Objects](./system-architecture.md#vim-text-objects)
 
-### 2. Advanced TUI Dialogs
-4 new modal dialog widgets:
-- **ContextVisualization** — Visual token budget display, defense layer indicators
-- **CostDialog** — Model cost estimation (per-token pricing)
-- **AutoModeDialog** — Auto-completion mode selector
-- **OAuthDialog** — OAuth 2.0 flow UI for service auth
-
-**See:** [System Architecture → Advanced TUI Dialogs](./system-architecture.md#advanced-tui-dialogs-phase-6-new)
-
-### 3. Extended Commands
+### 2. Extended Commands
 16 new slash commands for power users:
 - **UI Control** — /color, /statusline, /keybindings, /terminal-setup
 - **Content Org** — /tag, /btw (notes), /thinkback (review thinking)
@@ -75,10 +66,9 @@ Advanced text object support with operators:
 
 **See:** [System Architecture → CLI Commands](./system-architecture.md#oxicode-cli-400-loc)
 
-### 4. Test Coverage Expansion
+### 3. Test Coverage Expansion
 - **TUI Tests:** 81 passing (was ~50 in Phase 5)
 - **Text Objects:** Full operator composition tests
-- **Dialogs:** Modal interaction tests
 - **Zero warnings:** Clippy approved
 
 **See:** [Code Standards → Testing Standards](./code-standards.md)
@@ -475,7 +465,6 @@ Located in `../plans/reports/`:
 - Total crates: 20 (was 17 in Phase 6)
 
 ### Phase 6 (2026-04-04) ✓ Complete
-- Added 4 new TUI widgets (dialogs)
 - Added vim text objects (iw/aw/i"/a"/i(/a(/i{/a{)
 - Added 16 new slash commands
 - Extended command total to 91 (from 75)

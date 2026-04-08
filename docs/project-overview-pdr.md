@@ -89,13 +89,12 @@ OxiCode is a multi-agent, Rust-powered CLI assistant for software engineering. I
 - **Dependencies Added** — flate2, tar, hmac, sha2, hex
 
 ### Phase 6: TUI Advanced Dialogs & Vim Depth (Complete ✓)
-**Added:** 4 new TUI widgets, vim text objects, 16 new slash commands
+**Added:** Vim text objects, 16 new slash commands
 - **Vim Text Objects** — iw/aw, i"/a", i(/a(, i{/a{ with operator composition (diw, ci", ya{)
 - **VisualLine Mode** — V for line-wise selection, text object actions
-- **TUI Dialogs:** ContextVisualization, CostDialog, AutoModeDialog, OAuthDialog
-- **Agent Panel Coordinator** — model, restricted_tools fields, extended coordinator view
 - **16 New Commands** — /color, /keybindings, /statusline, /terminal-setup, /tag, /btw, /thinkback, /release-notes, /advisor, /insights, /stickers, /passes, /rate-limit-options, /reload-plugins, +more
-- **Files Added** — 7 new files (4 widgets + vim text objects + command modules)
+- **Agent Panel Coordinator** — model, restricted_tools fields, extended coordinator view
+- **Files Added** — 1 new file (vim text objects + command modules)
 - **Test Coverage** — 81 TUI tests pass (was ~50), 0 warnings
 - **Total Tools** — 46 tools (was 42 in Phase 5)
 - **Total Commands** — 91 commands (was 75)

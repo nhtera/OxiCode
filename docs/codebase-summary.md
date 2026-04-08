@@ -849,14 +849,13 @@ flush_interval_secs = 60
 ---
 
 #### oxicode-tui (~800 LOC)
-**Purpose:** Terminal UI (ratatui), event loop, rendering, vim mode, advanced dialogs
+**Purpose:** Terminal UI (ratatui), event loop, rendering, vim mode
 
 **Key exports:**
 - `App` — main TUI struct (state, input, rendering)
 - `Renderer` — draw functions for each component
 - Event loop (keyboard → UiEvent → core → StateStore → redraw)
 - Widgets: MessageView, InputBox, StatusBar, AgentPanel, TaskPanel, NotificationPanel
-- **Phase 6 NEW:** ContextVisualization, CostDialog, AutoModeDialog, OAuthDialog widgets
 - **Phase 6 NEW:** VimTextObjects (iw/aw, i"/a", i(/a(, i{/a{, operators: diw, ci", ya{)
 
 **Top file:** tui/app.rs (2,456 tokens, 2.4% of codebase)
@@ -864,10 +863,6 @@ flush_interval_secs = 60
 **Phase 6 additions:**
 - `vim_mode.rs` — Vim text object support (iw, aw, i", a", i(, a(, i{, a{ with operators)
 - `vim_text_objects.rs` (NEW) — Text object parsing & execution
-- `widgets/context_visualization.rs` (NEW) — Token budget visualization
-- `widgets/cost_dialog.rs` (NEW) — Model cost estimation dialog
-- `widgets/auto_mode_dialog.rs` (NEW) — Auto-completion mode selector
-- `widgets/oauth_dialog.rs` (NEW) — OAuth flow UI
 
 **Layout:**
 ```
