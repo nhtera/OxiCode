@@ -265,6 +265,7 @@ impl QueryEngine {
         assistant_msg.model = Some(self.model.clone());
 
         let mut current_text = String::new();
+        let mut current_thinking = String::new();
         let mut current_tool_id = String::new();
         let mut current_tool_name = String::new();
         let mut current_tool_input_json = String::new();
@@ -284,8 +285,8 @@ impl QueryEngine {
                     emit(event_tx, TurnEvent::TextDelta(text)).await;
                 }
                 StreamEvent::ThinkingDelta { thinking } => {
-                    let preview: String = thinking.chars().take(50).collect();
-                    tracing::debug!("Thinking: {}", preview);
+                    current_thinking.push_str(&thinking);
+                    emit(event_tx, TurnEvent::ThinkingDelta(thinking)).await;
                 }
                 StreamEvent::ToolUseStart { id, name } => {
                     // Finalize any pending text block.
@@ -332,6 +333,12 @@ impl QueryEngine {
                     assistant_msg.usage = Some(usage);
                 }
                 StreamEvent::MessageStop { stop_reason } => {
+                    // Finalize pending thinking block (before text so it appears first).
+                    if !current_thinking.is_empty() {
+                        assistant_msg.content.push(ContentBlock::Thinking {
+                            thinking: std::mem::take(&mut current_thinking),
+                        });
+                    }
                     // Finalize pending text.
                     if !current_text.is_empty() {
                         assistant_msg.content.push(ContentBlock::Text {

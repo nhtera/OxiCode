@@ -842,6 +842,9 @@ async fn forward_turn_event(
                 ))
                 .await;
         }
+        TurnEvent::ThinkingDelta(_) => {
+            // Thinking deltas not forwarded to IDE clients for now.
+        }
     }
 }
 

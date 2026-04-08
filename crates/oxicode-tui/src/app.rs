@@ -1593,9 +1593,12 @@ impl App {
                 ));
             }
             CoreEvent::ThinkingDelta(_text) => {
-                // Thinking deltas are accumulated by the core engine and
-                // included in the final message as ContentBlock::Thinking.
-                // No streaming display needed for now.
+                // Thinking deltas are now properly accumulated by the core
+                // engine and included in the final message as ContentBlock::Thinking.
+                // During streaming, the thinking indicator in MessageView shows
+                // that thinking is in progress. The full thinking content is
+                // rendered as a collapsed block after MessageComplete.
+                self.auto_scroll = true;
             }
         }
     }

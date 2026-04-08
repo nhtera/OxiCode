@@ -10,6 +10,8 @@ use tokio::sync::oneshot;
 pub enum TurnEvent {
     /// Streaming text delta from the LLM.
     TextDelta(String),
+    /// Streaming thinking/reasoning delta from extended thinking models.
+    ThinkingDelta(String),
     /// A new LLM turn has started streaming.
     TurnStart,
     /// The current LLM turn finished streaming.

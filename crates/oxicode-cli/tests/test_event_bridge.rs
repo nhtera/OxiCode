@@ -17,6 +17,7 @@ use tokio::sync::{mpsc, oneshot};
 fn translate_turn_event(te: TurnEvent) -> CoreEvent {
     match te {
         TurnEvent::TextDelta(t) => CoreEvent::TextDelta(t),
+        TurnEvent::ThinkingDelta(t) => CoreEvent::ThinkingDelta(t),
         TurnEvent::TurnStart => CoreEvent::StreamStart,
         TurnEvent::TurnEnd => CoreEvent::StreamEnd,
         TurnEvent::ToolUseStart { id, name, input } => CoreEvent::ToolUseStart { id, name, input },
