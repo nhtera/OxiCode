@@ -78,16 +78,16 @@ fn safe_split(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
         return s;
     }
-    // Find the last newline within max_bytes
-    let search_region = &s[..max_bytes.min(s.len())];
+    // Snap to char boundary first to avoid panicking on multi-byte chars.
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    // Find the last newline within the safe region.
+    let search_region = &s[..end];
     if let Some(pos) = search_region.rfind('\n') {
         &s[..pos]
     } else {
-        // No newline found; snap to char boundary
-        let mut end = max_bytes;
-        while end > 0 && !s.is_char_boundary(end) {
-            end -= 1;
-        }
         &s[..end]
     }
 }
@@ -97,17 +97,16 @@ fn safe_split_end(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
         return s;
     }
-    let start = s.len() - max_bytes;
-    // Find the first newline after the start point
+    // Snap start to a valid char boundary first.
+    let mut start = s.len() - max_bytes;
+    while start < s.len() && !s.is_char_boundary(start) {
+        start += 1;
+    }
+    // Find the first newline after the start point.
     if let Some(pos) = s[start..].find('\n') {
         &s[start + pos + 1..]
     } else {
-        // Snap to char boundary
-        let mut idx = start;
-        while idx < s.len() && !s.is_char_boundary(idx) {
-            idx += 1;
-        }
-        &s[idx..]
+        &s[start..]
     }
 }
 
@@ -214,5 +213,39 @@ mod tests {
             "got: {}",
             result
         );
+    }
+
+    #[test]
+    fn safe_split_multibyte_boundary() {
+        // En-dash '–' is 3 bytes (U+2013). Place it so HEAD_KEEP lands inside it.
+        let prefix = "a".repeat(HEAD_KEEP - 1); // 4095 bytes of ASCII
+        let s = format!("{prefix}–rest"); // byte 4095..4098 is '–'
+        // Must not panic.
+        let result = safe_split(&s, HEAD_KEEP);
+        assert!(result.len() <= HEAD_KEEP);
+    }
+
+    #[test]
+    fn safe_split_end_multibyte_boundary() {
+        // Build string where (len - TAIL_KEEP) lands inside a multi-byte char.
+        let suffix = "b".repeat(TAIL_KEEP - 1); // 4095 bytes of ASCII
+        let s = format!("start–{suffix}"); // '–' at bytes 5..8
+        // Total: 5 + 3 + 4095 = 4103; len - TAIL_KEEP = 4103 - 4096 = 7, inside '–' (5..8)
+        let result = safe_split_end(&s, TAIL_KEEP);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn truncate_output_multibyte_no_panic() {
+        // Reproduce the exact crash: content with multi-byte chars exceeding threshold.
+        let mut output = String::new();
+        while output.len() < TRUNCATION_THRESHOLD + 1024 {
+            // Use en-dash '–' to scatter multi-byte chars throughout.
+            output.push_str("This line has an en–dash and some extra padding text here.\n");
+        }
+        assert!(output.len() > TRUNCATION_THRESHOLD);
+        // Must not panic.
+        let result = truncate_output(&output);
+        assert!(result.contains("[..."));
     }
 }
