@@ -7,13 +7,13 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
+    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use oxicode_state::{AppState, StateStore};
 use ratatui::backend::{Backend, CrosstermBackend};
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Terminal;
 use tokio::sync::{mpsc, watch};
 
@@ -110,6 +110,8 @@ pub struct App {
     slash_commands: Vec<SlashCommandMeta>,
     /// Autocomplete dropdown state (active when typing `/...`).
     autocomplete: AutocompleteState,
+    /// Cached message area rect from last draw (for scrollbar hit-testing).
+    message_area: Rect,
 }
 
 impl App {
@@ -154,6 +156,7 @@ impl App {
             turn_started_at: None,
             slash_commands,
             autocomplete: AutocompleteState::new(),
+            message_area: Rect::default(),
         }
     }
 
@@ -374,6 +377,8 @@ impl App {
             // Content area — optionally split into left (messages) + right (agents/tasks)
             let content_area = chunks[1];
             let (left_area, right_area) = self.split_pane.split(content_area);
+            // Store message area for scrollbar hit-testing in handle_mouse().
+            self.message_area = left_area;
 
             // Message view (left pane, or full area when right pane is hidden)
             // Show streaming lines when turn is active OR when committed lines
@@ -1022,13 +1027,40 @@ impl App {
         }
     }
 
-    /// Handle mouse events used by message scrolling.
+    /// Handle mouse events: scroll wheel, scrollbar click/drag.
     fn handle_mouse(&mut self, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollUp => self.scroll_up_by(3),
             MouseEventKind::ScrollDown => self.scroll_down_by(3),
+            MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left) => {
+                self.handle_scrollbar_click(mouse.column, mouse.row);
+            }
             _ => {}
         }
+    }
+
+    /// Handle click/drag on the scrollbar track — jump to proportional position.
+    fn handle_scrollbar_click(&mut self, col: u16, row: u16) {
+        let area = self.message_area;
+        // Only respond to clicks on the rightmost column (scrollbar track).
+        if area.width == 0 || col != area.right().saturating_sub(1) {
+            return;
+        }
+        if row < area.y || row >= area.bottom() {
+            return;
+        }
+        if self.max_scroll_offset == 0 {
+            return;
+        }
+
+        // Map row within area → proportional scroll position.
+        let relative_y = row - area.y;
+        let track_height = area.height.saturating_sub(1).max(1);
+        let ratio = relative_y as f32 / track_height as f32;
+        let new_offset = (ratio * self.max_scroll_offset as f32).round() as u16;
+
+        self.scroll_offset = new_offset.min(self.max_scroll_offset);
+        self.auto_scroll = self.scroll_offset >= self.max_scroll_offset;
     }
 
     /// Handle bracketed paste — insert text at cursor in bulk,
@@ -1855,6 +1887,85 @@ mod tests {
         });
         assert_eq!(app.scroll_offset, 50);
         assert!(app.auto_scroll);
+    }
+
+    #[test]
+    fn test_scrollbar_click_jumps_to_position() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = false;
+        app.max_scroll_offset = 200;
+        app.scroll_offset = 0;
+        // Simulate a message area of 80 cols wide, 40 rows tall at (0, 1).
+        app.message_area = Rect::new(0, 1, 80, 40);
+
+        // Click on rightmost column (col 79), halfway down (row 21 = y=1 + 20).
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 79,
+            row: 21,
+            modifiers: KeyModifiers::NONE,
+        });
+        // ratio = 20 / 39 ≈ 0.513 → offset ≈ 103
+        assert!(app.scroll_offset > 90 && app.scroll_offset < 115,
+            "Expected ~103, got {}", app.scroll_offset);
+        assert!(!app.auto_scroll);
+    }
+
+    #[test]
+    fn test_scrollbar_click_at_bottom_enables_auto_scroll() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = false;
+        app.max_scroll_offset = 200;
+        app.scroll_offset = 0;
+        app.message_area = Rect::new(0, 1, 80, 40);
+
+        // Click at the very bottom of the track (row 40 = y=1 + 39).
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 79,
+            row: 40,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.scroll_offset, 200);
+        assert!(app.auto_scroll);
+    }
+
+    #[test]
+    fn test_scrollbar_click_outside_area_ignored() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = false;
+        app.max_scroll_offset = 200;
+        app.scroll_offset = 50;
+        app.message_area = Rect::new(0, 1, 80, 40);
+
+        // Click on col 78 (not the scrollbar column) — should be ignored.
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 78,
+            row: 20,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.scroll_offset, 50, "Click off scrollbar should not change offset");
+    }
+
+    #[test]
+    fn test_scrollbar_drag_updates_position() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = false;
+        app.max_scroll_offset = 200;
+        app.scroll_offset = 0;
+        app.message_area = Rect::new(0, 1, 80, 40);
+
+        // Drag on rightmost column at row 11 (relative_y = 10).
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: 79,
+            row: 11,
+            modifiers: KeyModifiers::NONE,
+        });
+        // ratio = 10/39 ≈ 0.256 → offset ≈ 51
+        assert!(app.scroll_offset > 40 && app.scroll_offset < 65,
+            "Expected ~51, got {}", app.scroll_offset);
     }
 
     #[tokio::test]
