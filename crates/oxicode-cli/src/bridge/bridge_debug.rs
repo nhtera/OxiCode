@@ -93,9 +93,14 @@ impl BridgeDebugLogger {
             Direction::Recv => self.received.fetch_add(1, Ordering::Relaxed),
         };
 
-        // Truncate long messages for the log.
+        // Truncate long messages for the log (snap to char boundary to avoid
+        // panicking on multi-byte UTF-8).
         let summary = if message.len() > 500 {
-            format!("{}... ({} bytes)", &message[..500], message.len())
+            let mut end = 500;
+            while end > 0 && !message.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}... ({} bytes)", &message[..end], message.len())
         } else {
             message.to_string()
         };

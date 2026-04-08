@@ -103,14 +103,18 @@ fn truncate_entrypoint(content: &str) -> (String, bool) {
 
     let mut result = capped_lines.join("\n");
 
-    // Byte limit.
+    // Byte limit (snap to char boundary to avoid panicking on multi-byte UTF-8).
     if result.len() > MAX_ENTRYPOINT_BYTES {
         truncated = true;
+        let mut end = MAX_ENTRYPOINT_BYTES;
+        while end > 0 && !result.is_char_boundary(end) {
+            end -= 1;
+        }
         // Cut at last newline before byte limit.
-        if let Some(pos) = result[..MAX_ENTRYPOINT_BYTES].rfind('\n') {
+        if let Some(pos) = result[..end].rfind('\n') {
             result.truncate(pos);
         } else {
-            result.truncate(MAX_ENTRYPOINT_BYTES);
+            result.truncate(end);
         }
     }
 

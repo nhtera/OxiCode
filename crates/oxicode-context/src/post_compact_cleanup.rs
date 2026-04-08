@@ -72,9 +72,13 @@ pub fn build_restore_message(ctx: &RestoreContext) -> Option<Message> {
         content.push('\n');
     }
 
-    // Enforce character cap.
+    // Enforce byte cap (snap to char boundary to avoid panicking on multi-byte UTF-8).
     if content.len() > MAX_RESTORE_CHARS {
-        content.truncate(MAX_RESTORE_CHARS);
+        let mut end = MAX_RESTORE_CHARS;
+        while end > 0 && !content.is_char_boundary(end) {
+            end -= 1;
+        }
+        content.truncate(end);
         // Find last newline to avoid cutting mid-line.
         if let Some(pos) = content.rfind('\n') {
             content.truncate(pos);

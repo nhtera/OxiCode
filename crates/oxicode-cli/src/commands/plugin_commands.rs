@@ -127,9 +127,10 @@ fn execute_browse(args: &str) -> CommandOutput {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                // Truncate description to 30 chars.
-                let desc_short = if desc.len() > 30 {
-                    format!("{}...", &desc[..27])
+                // Truncate description to 30 chars (char-safe).
+                let desc_short = if desc.chars().count() > 30 {
+                    let truncated: String = desc.chars().take(27).collect();
+                    format!("{truncated}...")
                 } else {
                     desc.to_string()
                 };
@@ -370,8 +371,9 @@ fn execute_list(plugins_dir: &Path) -> CommandOutput {
     let _ = writeln!(output, "{}", "-".repeat(60));
 
     for plugin in &installed {
-        let desc = if plugin.description.len() > 30 {
-            format!("{}...", &plugin.description[..27])
+        let desc = if plugin.description.chars().count() > 30 {
+            let truncated: String = plugin.description.chars().take(27).collect();
+            format!("{truncated}...")
         } else {
             plugin.description.clone()
         };
