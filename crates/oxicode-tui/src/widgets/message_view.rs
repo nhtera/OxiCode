@@ -459,8 +459,10 @@ impl Widget for MessageView<'_> {
                 .thumb_symbol("█")
                 .track_style(Style::default().fg(Color::DarkGray))
                 .thumb_style(Style::default().fg(Color::Gray));
+            // Use max scrollable range as content_length so the thumb reaches
+            // the very bottom when fully scrolled down.
             let mut scrollbar_state =
-                ScrollbarState::new(wrapped_line_count).position(scroll_y as usize);
+                ScrollbarState::new(actual_max as usize).position(scroll_y as usize);
             scrollbar.render(area, buf, &mut scrollbar_state);
         }
     }
