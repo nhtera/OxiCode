@@ -234,14 +234,11 @@ impl App {
     ) -> io::Result<()> {
         let mut tick_interval = tokio::time::interval(Duration::from_millis(100));
         tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut needs_redraw = true;
+
+        // Draw the initial frame before entering the event loop.
+        self.draw(terminal)?;
 
         loop {
-            if needs_redraw {
-                self.draw(terminal)?;
-                needs_redraw = false;
-            }
-
             if self.should_quit {
                 break;
             }
@@ -255,7 +252,7 @@ impl App {
                         Event::Resize(_, _) => {}
                         _ => {}
                     }
-                    needs_redraw = true;
+                    self.draw(terminal)?;
                 }
                 Some(core_event) = self.core_rx.recv() => {
                     self.handle_core_event(core_event);
@@ -263,11 +260,11 @@ impl App {
                     while let Ok(ev) = self.core_rx.try_recv() {
                         self.handle_core_event(ev);
                     }
-                    needs_redraw = true;
+                    self.draw(terminal)?;
                 }
                 // Tick for spinner animation and notification expiry.
                 _ = tick_interval.tick(), if self.is_turn_active || !self.notifications.is_empty() => {
-                    needs_redraw = true;
+                    self.draw(terminal)?;
                 }
             }
         }
