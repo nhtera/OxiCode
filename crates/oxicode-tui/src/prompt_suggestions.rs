@@ -18,6 +18,7 @@ pub struct PromptSuggestion {
 }
 
 /// Context signals extracted from the conversation for suggestion generation.
+#[allow(clippy::struct_excessive_bools)]
 struct MessageContext {
     has_bash_error: bool,
     has_test_failure: bool,

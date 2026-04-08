@@ -1040,24 +1040,32 @@ impl App {
     }
 
     /// Handle click/drag on the scrollbar track — jump to proportional position.
+    ///
+    /// The message view has a `Block` with `Borders::ALL`, so the scrollbar track
+    /// occupies rows `area.y + 1` to `area.bottom() - 2` (inside borders).
+    /// The scrollbar column is at `area.right() - 1` (right border/track).
     fn handle_scrollbar_click(&mut self, col: u16, row: u16) {
         let area = self.message_area;
-        // Only respond to clicks on the rightmost column (scrollbar track).
-        if area.width == 0 || col != area.right().saturating_sub(1) {
+        // Respond to clicks on rightmost 2 columns (scrollbar track + padding).
+        let scrollbar_col = area.right().saturating_sub(1);
+        if area.width < 2 || col < scrollbar_col.saturating_sub(1) || col > scrollbar_col {
             return;
         }
-        if row < area.y || row >= area.bottom() {
+        // Inner track area excludes top and bottom borders.
+        let track_top = area.y.saturating_add(1);
+        let track_bottom = area.bottom().saturating_sub(1); // exclusive
+        if row < track_top || row >= track_bottom {
             return;
         }
         if self.max_scroll_offset == 0 {
             return;
         }
 
-        // Map row within area → proportional scroll position.
-        let relative_y = row - area.y;
-        let track_height = area.height.saturating_sub(1).max(1);
-        let ratio = relative_y as f32 / track_height as f32;
-        let new_offset = (ratio * self.max_scroll_offset as f32).round() as u16;
+        // Map row within inner track → proportional scroll position.
+        let relative_y = row - track_top;
+        let track_height = track_bottom.saturating_sub(track_top).max(1);
+        let ratio = f32::from(relative_y) / f32::from((track_height.saturating_sub(1)).max(1));
+        let new_offset = (ratio * f32::from(self.max_scroll_offset)).round() as u16;
 
         self.scroll_offset = new_offset.min(self.max_scroll_offset);
         self.auto_scroll = self.scroll_offset >= self.max_scroll_offset;
@@ -1895,17 +1903,18 @@ mod tests {
         app.auto_scroll = false;
         app.max_scroll_offset = 200;
         app.scroll_offset = 0;
-        // Simulate a message area of 80 cols wide, 40 rows tall at (0, 1).
+        // Message area: 80 cols wide, 40 rows tall at (0, 1).
+        // Borders::ALL → inner track rows 2..40 (track_top=2, track_bottom=40).
         app.message_area = Rect::new(0, 1, 80, 40);
 
-        // Click on rightmost column (col 79), halfway down (row 21 = y=1 + 20).
+        // Click on scrollbar col (79), at row 21.
+        // relative_y = 21 - 2 = 19, track_height = 38, ratio = 19/37 ≈ 0.514 → offset ≈ 103
         app.handle_mouse(MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 79,
             row: 21,
             modifiers: KeyModifiers::NONE,
         });
-        // ratio = 20 / 39 ≈ 0.513 → offset ≈ 103
         assert!(app.scroll_offset > 90 && app.scroll_offset < 115,
             "Expected ~103, got {}", app.scroll_offset);
         assert!(!app.auto_scroll);
@@ -1919,11 +1928,11 @@ mod tests {
         app.scroll_offset = 0;
         app.message_area = Rect::new(0, 1, 80, 40);
 
-        // Click at the very bottom of the track (row 40 = y=1 + 39).
+        // Click at the very bottom of inner track (row 39 = track_bottom - 1).
         app.handle_mouse(MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 79,
-            row: 40,
+            row: 39,
             modifiers: KeyModifiers::NONE,
         });
         assert_eq!(app.scroll_offset, 200);
@@ -1931,21 +1940,48 @@ mod tests {
     }
 
     #[test]
-    fn test_scrollbar_click_outside_area_ignored() {
+    fn test_scrollbar_click_on_border_ignored() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.auto_scroll = false;
         app.max_scroll_offset = 200;
         app.scroll_offset = 50;
         app.message_area = Rect::new(0, 1, 80, 40);
 
-        // Click on col 78 (not the scrollbar column) — should be ignored.
+        // Click on top border row (row 1 = area.y) — outside inner track.
         app.handle_mouse(MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: 78,
+            column: 79,
+            row: 1,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.scroll_offset, 50, "Click on top border should be ignored");
+
+        // Click on bottom border row (row 40 = area.bottom()) — outside inner track.
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 79,
+            row: 40,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.scroll_offset, 50, "Click on bottom border should be ignored");
+    }
+
+    #[test]
+    fn test_scrollbar_click_far_from_track_ignored() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = false;
+        app.max_scroll_offset = 200;
+        app.scroll_offset = 50;
+        app.message_area = Rect::new(0, 1, 80, 40);
+
+        // Click on col 77 (more than 1 col away from scrollbar) — ignored.
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 77,
             row: 20,
             modifiers: KeyModifiers::NONE,
         });
-        assert_eq!(app.scroll_offset, 50, "Click off scrollbar should not change offset");
+        assert_eq!(app.scroll_offset, 50, "Click far from scrollbar should not change offset");
     }
 
     #[test]
@@ -1956,16 +1992,35 @@ mod tests {
         app.scroll_offset = 0;
         app.message_area = Rect::new(0, 1, 80, 40);
 
-        // Drag on rightmost column at row 11 (relative_y = 10).
+        // Drag on scrollbar at row 12.
+        // relative_y = 12 - 2 = 10, track_height = 38, ratio = 10/37 ≈ 0.270 → offset ≈ 54
         app.handle_mouse(MouseEvent {
             kind: MouseEventKind::Drag(MouseButton::Left),
             column: 79,
-            row: 11,
+            row: 12,
             modifiers: KeyModifiers::NONE,
         });
-        // ratio = 10/39 ≈ 0.256 → offset ≈ 51
-        assert!(app.scroll_offset > 40 && app.scroll_offset < 65,
-            "Expected ~51, got {}", app.scroll_offset);
+        assert!(app.scroll_offset > 40 && app.scroll_offset < 70,
+            "Expected ~54, got {}", app.scroll_offset);
+    }
+
+    #[test]
+    fn test_scrollbar_click_at_top_scrolls_to_zero() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.auto_scroll = false;
+        app.max_scroll_offset = 200;
+        app.scroll_offset = 100;
+        app.message_area = Rect::new(0, 1, 80, 40);
+
+        // Click at very top of inner track (row 2 = track_top).
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 79,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.scroll_offset, 0, "Click at top should scroll to 0");
+        assert!(!app.auto_scroll);
     }
 
     #[tokio::test]
