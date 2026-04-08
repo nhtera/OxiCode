@@ -9,6 +9,7 @@ use crate::widgets::command_autocomplete::SlashCommandMeta;
 ///
 /// Returns the **suffix** to append (not the full command). For example,
 /// if input is `/mo`, returns `Some("del")` (completing to `/model`).
+/// If input is `/model cl`, returns `Some("aude-sonnet-4-20250514")`.
 ///
 /// Returns `None` when no match or input is empty.
 pub fn complete(input: &str, commands: &[SlashCommandMeta]) -> Option<String> {
@@ -17,14 +18,34 @@ pub fn complete(input: &str, commands: &[SlashCommandMeta]) -> Option<String> {
         return None;
     }
 
-    // Slash command completion: input must start with '/' and be a single token.
+    // Slash command name completion: input starts with '/' and has no space.
     if trimmed.starts_with('/') && !trimmed.contains(' ') {
         let lower = trimmed.to_lowercase();
-        // Find first command that matches the prefix.
         for cmd in commands {
             let full = format!("/{}", cmd.name);
             if full.to_lowercase().starts_with(&lower) && full.len() > lower.len() {
                 return Some(full[lower.len()..].to_string());
+            }
+        }
+    }
+
+    // Argument completion: input starts with '/' and has a space.
+    if trimmed.starts_with('/') && trimmed.contains(' ') {
+        let without_slash = &trimmed[1..];
+        if let Some((cmd_name, partial_arg)) = without_slash.split_once(' ') {
+            let partial = partial_arg.trim();
+            if !partial.is_empty() {
+                // Find the command and check its arg_candidates.
+                for cmd in commands {
+                    if cmd.name == cmd_name {
+                        for candidate in &cmd.arg_candidates {
+                            if candidate.starts_with(partial) && candidate.len() > partial.len() {
+                                return Some(candidate[partial.len()..].to_string());
+                            }
+                        }
+                        break;
+                    }
+                }
             }
         }
     }
@@ -38,12 +59,16 @@ mod tests {
 
     fn sample_commands() -> Vec<SlashCommandMeta> {
         vec![
-            SlashCommandMeta { name: "clear".into(), description: "Clear conversation".into() },
-            SlashCommandMeta { name: "compact".into(), description: "Compact context".into() },
-            SlashCommandMeta { name: "help".into(), description: "Show help".into() },
-            SlashCommandMeta { name: "model".into(), description: "Switch model".into() },
-            SlashCommandMeta { name: "session".into(), description: "Session management".into() },
-            SlashCommandMeta { name: "vim".into(), description: "Toggle vim mode".into() },
+            SlashCommandMeta { name: "clear".into(), description: "Clear conversation".into(), arg_candidates: vec![] },
+            SlashCommandMeta { name: "compact".into(), description: "Compact context".into(), arg_candidates: vec![] },
+            SlashCommandMeta { name: "help".into(), description: "Show help".into(), arg_candidates: vec![] },
+            SlashCommandMeta { name: "model".into(), description: "Switch model".into(), arg_candidates: vec![
+                "claude-sonnet-4-20250514".into(),
+                "claude-opus-4-20250514".into(),
+                "claude-haiku-4-5-20251001".into(),
+            ] },
+            SlashCommandMeta { name: "session".into(), description: "Session management".into(), arg_candidates: vec![] },
+            SlashCommandMeta { name: "vim".into(), description: "Toggle vim mode".into(), arg_candidates: vec![] },
         ]
     }
 
@@ -77,10 +102,20 @@ mod tests {
     }
 
     #[test]
-    fn command_with_args_no_ghost() {
+    fn command_with_args_completes_argument() {
         let cmds = sample_commands();
-        // Once a space is present, don't suggest command completions.
-        assert_eq!(complete("/model son", &cmds), None);
+        // Arg completion for /model with a matching prefix.
+        assert_eq!(complete("/model cl", &cmds), Some("aude-sonnet-4-20250514".to_string()));
+        assert_eq!(complete("/model claude-o", &cmds), Some("pus-4-20250514".to_string()));
+    }
+
+    #[test]
+    fn command_with_unknown_args_no_ghost() {
+        let cmds = sample_commands();
+        // No matching argument candidate.
+        assert_eq!(complete("/model xyz", &cmds), None);
+        // Command without arg_candidates.
+        assert_eq!(complete("/clear foo", &cmds), None);
     }
 
     #[test]

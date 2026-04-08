@@ -665,7 +665,7 @@ impl ServerHandler {
         }
 
         let provider = self.engine.provider_ref().clone();
-        let model = self.engine.model().to_string();
+        let model = self.engine.model();
 
         match oxicode_context::AutoCompactor::compact(&messages, provider.as_ref(), &model).await {
             Ok(summary_msg) => {

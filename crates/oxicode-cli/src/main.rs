@@ -545,12 +545,19 @@ async fn run_tui(
 
     // Build command registry early to extract metadata for TUI autocomplete.
     let command_registry = commands::default_registry();
+    let meta_ctx = commands::CommandContext {
+        state_store: state_store.clone(),
+        model: settings.model.clone(),
+        provider_name: "auto".into(),
+        session_id: String::new(),
+    };
     let slash_command_meta: Vec<oxicode_tui::SlashCommandMeta> = command_registry
-        .all_commands()
+        .all_commands_with_completions(&meta_ctx)
         .into_iter()
-        .map(|(name, desc)| oxicode_tui::SlashCommandMeta {
+        .map(|(name, desc, arg_candidates)| oxicode_tui::SlashCommandMeta {
             name: name.to_string(),
             description: desc.to_string(),
+            arg_candidates,
         })
         .collect();
 
@@ -648,7 +655,7 @@ async fn run_tui(
                         }
 
                         let provider = engine_clone.provider_ref().clone();
-                        let model = engine_clone.model().to_string();
+                        let model = engine_clone.model();
 
                         match oxicode_context::AutoCompactor::compact(
                             &messages,
@@ -712,6 +719,43 @@ async fn run_tui(
                             let _ = core_tx_clone.send(CoreEvent::Error(msg)).await;
                         }
                         Some(commands::CommandOutput::Silent) => {}
+                        Some(commands::CommandOutput::SwitchModel(new_model)) => {
+                            // Validate model via ProviderRouter before switching.
+                            let router = ProviderRouter::from_env();
+                            match router.resolve(&new_model) {
+                                Ok(resolved) => {
+                                    engine_clone.set_model(resolved.model.clone());
+                                    state_store_clone.update(|s| {
+                                        s.current_model.clone_from(&resolved.model);
+                                    });
+                                    let sys_msg = Message {
+                                        id: uuid::Uuid::new_v4().to_string(),
+                                        role: Role::Assistant,
+                                        content: vec![ContentBlock::Text {
+                                            text: format!(
+                                                "Switched to model: {}",
+                                                resolved.model
+                                            ),
+                                        }],
+                                        model: None,
+                                        stop_reason: None,
+                                        created_at: chrono::Utc::now(),
+                                        usage: None,
+                                    };
+                                    state_store_clone.push_message(sys_msg);
+                                    let _ = core_tx_clone
+                                        .send(CoreEvent::MessageComplete)
+                                        .await;
+                                }
+                                Err(e) => {
+                                    let _ = core_tx_clone
+                                        .send(CoreEvent::Error(format!(
+                                            "Cannot switch model: {e}"
+                                        )))
+                                        .await;
+                                }
+                            }
+                        }
                         None => {
                             let _ = core_tx_clone
                                 .send(CoreEvent::Error(format!("Unknown command: /{name}")))

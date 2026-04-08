@@ -8,6 +8,7 @@ use oxicode_context::BudgetManager;
 use oxicode_permissions::PermissionPipeline;
 use oxicode_state::StateStore;
 use oxicode_tools::{ToolContext, ToolRegistry};
+use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 
 use crate::conversation::Conversation;
@@ -26,7 +27,7 @@ pub struct QueryEngine {
     pub(crate) tool_registry: Arc<ToolRegistry>,
     pub(crate) permission_pipeline: Arc<PermissionPipeline>,
     pub(crate) tool_context: ToolContext,
-    model: String,
+    model: StdMutex<String>,
     max_tokens: u32,
     system_prompt: String,
     /// Context budget manager — wrapped in Mutex because check_budget needs &mut self.
@@ -51,7 +52,7 @@ impl QueryEngine {
             tool_registry,
             permission_pipeline,
             tool_context,
-            model,
+            model: StdMutex::new(model),
             max_tokens,
             system_prompt,
             budget_manager: Mutex::new(BudgetManager::new(DEFAULT_MODEL_MAX_TOKENS)),
@@ -69,8 +70,13 @@ impl QueryEngine {
     }
 
     /// Get the current model name.
-    pub fn model(&self) -> &str {
-        &self.model
+    pub fn model(&self) -> String {
+        self.model.lock().unwrap().clone()
+    }
+
+    /// Switch the active model at runtime.
+    pub fn set_model(&self, new_model: String) {
+        *self.model.lock().unwrap() = new_model;
     }
 
     /// Get max tokens setting.
@@ -132,7 +138,7 @@ impl QueryEngine {
                     .apply_defense_with_dir(
                         conversation.api_messages(),
                         self.provider.as_ref(),
-                        &self.model,
+                        &self.model(),
                         &self.tool_context.working_dir,
                     )
                     .await?;
@@ -219,6 +225,7 @@ impl QueryEngine {
     /// Dynamically injects mode-specific system prompt sections (advisor, sandbox)
     /// based on current `active_skills` in the state store.
     fn build_request(&self, conversation: &Conversation) -> MessageRequest {
+        let model = self.model();
         let mut tool_schemas = self.tool_registry.schemas_json();
         for (server_name, server_tools) in self.mcp_tool_schemas() {
             tool_schemas.extend(oxicode_mcp::mcp_tools_to_schemas(
@@ -236,7 +243,7 @@ impl QueryEngine {
                 self.system_prompt.clone()
             };
 
-        let mut request = MessageRequest::new(&self.model, conversation.api_messages().to_vec())
+        let mut request = MessageRequest::new(&model, conversation.api_messages().to_vec())
             .with_system(&effective_prompt)
             .with_max_tokens(self.max_tokens);
         request.tools = tool_schemas;
@@ -262,7 +269,7 @@ impl QueryEngine {
             }
         };
         let mut assistant_msg = Message::assistant();
-        assistant_msg.model = Some(self.model.clone());
+        assistant_msg.model = Some(self.model());
 
         let mut current_text = String::new();
         let mut current_thinking = String::new();
@@ -329,7 +336,7 @@ impl QueryEngine {
                     }
                 }
                 StreamEvent::UsageUpdate(usage) => {
-                    self.state_store.add_usage(&usage, &self.model);
+                    self.state_store.add_usage(&usage, &self.model());
                     assistant_msg.usage = Some(usage);
                 }
                 StreamEvent::MessageStop { stop_reason } => {

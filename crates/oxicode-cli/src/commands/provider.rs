@@ -23,12 +23,8 @@ impl SlashCommand for ModelCommand {
             ));
         }
 
-        // Model switching requires engine mutation — signal it to the TUI loop.
-        // For now, report what would happen.
-        CommandOutput::Message(format!(
-            "Model switch to '{}' requested. Restart with --model {0} for now.",
-            args.trim()
-        ))
+        // Signal the engine task to switch the model at runtime.
+        CommandOutput::SwitchModel(args.trim().to_string())
     }
 
     fn completions(&self, partial: &str, _ctx: &CommandContext) -> Vec<String> {

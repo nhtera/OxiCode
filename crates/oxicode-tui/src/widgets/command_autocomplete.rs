@@ -15,13 +15,15 @@ const MAX_VISIBLE: usize = 8;
 /// Column width reserved for the command name (left-aligned).
 const NAME_COL_WIDTH: usize = 20;
 
-/// Metadata for a slash command (name + description).
+/// Metadata for a slash command (name + description + argument completions).
 #[derive(Debug, Clone)]
 pub struct SlashCommandMeta {
     /// Command name without leading `/` (e.g., `"clear"`).
     pub name: String,
     /// Short description (e.g., `"Clear conversation history"`).
     pub description: String,
+    /// Pre-computed argument completion candidates (e.g., model names for `/model`).
+    pub arg_candidates: Vec<String>,
 }
 
 /// Autocomplete dropdown state tracked by `App`.
@@ -213,22 +215,27 @@ mod tests {
             SlashCommandMeta {
                 name: "clear".into(),
                 description: "Clear conversation".into(),
+                arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "compact".into(),
                 description: "Compact context".into(),
+                arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "help".into(),
                 description: "Show help".into(),
+                arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "model".into(),
                 description: "Switch model".into(),
+                arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "color".into(),
                 description: "Color settings".into(),
+                arg_candidates: vec![],
             },
         ]
     }

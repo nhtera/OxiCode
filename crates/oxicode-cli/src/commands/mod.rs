@@ -56,6 +56,8 @@ pub enum CommandOutput {
     Quit,
     /// Error message.
     Error(String),
+    /// Command requests a model switch.
+    SwitchModel(String),
 }
 
 /// Shared context available to all commands.
@@ -75,7 +77,6 @@ pub trait SlashCommand: Send + Sync {
     /// Execute the command with optional args string.
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput;
     /// Tab-completion candidates for arguments (optional).
-    #[allow(dead_code)] // TODO(gap-phase-6): wire into TUI tab completion
     fn completions(&self, _partial: &str, _ctx: &CommandContext) -> Vec<String> {
         Vec::new()
     }
@@ -119,8 +120,8 @@ impl CommandRegistry {
         }
     }
 
-    /// Get tab-completion candidates for partial input.
-    #[allow(dead_code)] // TODO(gap-phase-6): wire into TUI tab completion
+    /// Get tab-completion candidates for partial input (public API for external callers).
+    #[allow(dead_code)] // Public API — available for IDE server and future TUI integration
     pub fn completions(&self, partial: &str, ctx: &CommandContext) -> Vec<String> {
         let input = partial.trim();
         if !input.starts_with('/') {
@@ -156,6 +157,20 @@ impl CommandRegistry {
             .map(|cmd| (cmd.name(), cmd.description()))
             .collect();
         cmds.sort_by_key(|(name, _)| *name);
+        cmds
+    }
+
+    /// List all commands with pre-computed argument completions for TUI ghost text.
+    pub fn all_commands_with_completions(
+        &self,
+        ctx: &CommandContext,
+    ) -> Vec<(&str, &str, Vec<String>)> {
+        let mut cmds: Vec<_> = self
+            .commands
+            .values()
+            .map(|cmd| (cmd.name(), cmd.description(), cmd.completions("", ctx)))
+            .collect();
+        cmds.sort_by_key(|(name, _, _)| *name);
         cmds
     }
 
@@ -408,6 +423,7 @@ mod tests {
             Some(CommandOutput::Error(e)) => panic!("Expected message, got error: {e}"),
             Some(CommandOutput::Quit) => panic!("Expected message, got quit"),
             Some(CommandOutput::Silent) => panic!("Expected message, got silent"),
+            Some(CommandOutput::SwitchModel(m)) => panic!("Expected message, got SwitchModel({m})"),
             None => panic!("Expected message, got None"),
         }
     }
