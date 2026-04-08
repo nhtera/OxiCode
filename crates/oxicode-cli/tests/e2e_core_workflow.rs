@@ -746,6 +746,7 @@ fn event_name(e: &CoreEvent) -> &'static str {
         CoreEvent::ToolResult { .. } => "ToolResult",
         CoreEvent::PermissionAsk { .. } => "PermissionAsk",
         CoreEvent::RateLimited { .. } => "RateLimited",
+        CoreEvent::ThinkingDelta(_) => "ThinkingDelta",
     }
 }
 

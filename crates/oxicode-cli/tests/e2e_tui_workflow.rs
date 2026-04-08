@@ -174,6 +174,7 @@ enum CoreEventKind {
     MessageComplete,
     Error(String),
     RateLimited,
+    ThinkingDelta,
     Timeout,
 }
 
@@ -188,6 +189,7 @@ fn classify_event(event: &CoreEvent) -> CoreEventKind {
         CoreEvent::MessageComplete => CoreEventKind::MessageComplete,
         CoreEvent::Error(e) => CoreEventKind::Error(e.clone()),
         CoreEvent::RateLimited { .. } => CoreEventKind::RateLimited,
+        CoreEvent::ThinkingDelta(_) => CoreEventKind::ThinkingDelta,
     }
 }
 
