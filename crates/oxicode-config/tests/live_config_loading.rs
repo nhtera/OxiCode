@@ -5,8 +5,8 @@
 //!
 //! Run with: `cargo test -p oxicode-config --test live_config_loading`
 
-use oxicode_config::{load_settings, Settings};
 use oxicode_config::claude_md::discover_claude_md;
+use oxicode_config::{load_settings, Settings};
 use std::fs;
 
 // ── Env Override Integration ────────────────────────────────────
@@ -70,9 +70,18 @@ fn test_env_override_model_aliases() {
     std::env::set_var(keys[2], "claude-opus-4.6-custom");
 
     let settings = load_settings(Some(tmp.path().to_str().unwrap()));
-    assert_eq!(settings.default_haiku_model.as_deref(), Some("claude-haiku-4.5-custom"));
-    assert_eq!(settings.default_sonnet_model.as_deref(), Some("claude-sonnet-4.6-custom"));
-    assert_eq!(settings.default_opus_model.as_deref(), Some("claude-opus-4.6-custom"));
+    assert_eq!(
+        settings.default_haiku_model.as_deref(),
+        Some("claude-haiku-4.5-custom")
+    );
+    assert_eq!(
+        settings.default_sonnet_model.as_deref(),
+        Some("claude-sonnet-4.6-custom")
+    );
+    assert_eq!(
+        settings.default_opus_model.as_deref(),
+        Some("claude-opus-4.6-custom")
+    );
 
     // Restore.
     for (k, prev_val) in prev {
@@ -142,7 +151,11 @@ fn test_settings_toml_roundtrip() {
 #[test]
 fn test_discover_claude_md_in_project_root() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(tmp.path().join("CLAUDE.md"), "# Project Instructions\nBe helpful.").unwrap();
+    fs::write(
+        tmp.path().join("CLAUDE.md"),
+        "# Project Instructions\nBe helpful.",
+    )
+    .unwrap();
 
     let result = discover_claude_md(tmp.path());
     assert!(result.is_some(), "Should find CLAUDE.md in project root");
@@ -180,7 +193,10 @@ fn test_discover_walks_up_to_git_root() {
     fs::create_dir_all(&nested).unwrap();
 
     let result = discover_claude_md(&nested);
-    assert!(result.is_some(), "Should find CLAUDE.md by walking up to .git root");
+    assert!(
+        result.is_some(),
+        "Should find CLAUDE.md by walking up to .git root"
+    );
     let (_, content) = result.unwrap();
     assert_eq!(content, "root instructions");
 }

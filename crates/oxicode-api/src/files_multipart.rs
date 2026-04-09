@@ -160,10 +160,22 @@ mod tests {
 
     #[test]
     fn detect_known_extensions() {
-        assert_eq!(MultipartBuilder::detect_content_type(Path::new("foo.rs")), "text/x-rust");
-        assert_eq!(MultipartBuilder::detect_content_type(Path::new("bar.ts")), "text/typescript");
-        assert_eq!(MultipartBuilder::detect_content_type(Path::new("baz.py")), "text/x-python");
-        assert_eq!(MultipartBuilder::detect_content_type(Path::new("q.json")), "application/json");
+        assert_eq!(
+            MultipartBuilder::detect_content_type(Path::new("foo.rs")),
+            "text/x-rust"
+        );
+        assert_eq!(
+            MultipartBuilder::detect_content_type(Path::new("bar.ts")),
+            "text/typescript"
+        );
+        assert_eq!(
+            MultipartBuilder::detect_content_type(Path::new("baz.py")),
+            "text/x-python"
+        );
+        assert_eq!(
+            MultipartBuilder::detect_content_type(Path::new("q.json")),
+            "application/json"
+        );
     }
 
     #[test]

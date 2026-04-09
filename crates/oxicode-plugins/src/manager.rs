@@ -337,8 +337,10 @@ impl PluginManager {
                 // File doesn't exist yet — normalize manually by resolving parent.
                 if let Some(parent) = dest.parent() {
                     std::fs::create_dir_all(parent).ok();
-                    parent
-                        .canonicalize().map_or_else(|_| dest.clone(), |p| p.join(dest.file_name().unwrap_or_default()))
+                    parent.canonicalize().map_or_else(
+                        |_| dest.clone(),
+                        |p| p.join(dest.file_name().unwrap_or_default()),
+                    )
                 } else {
                     dest.clone()
                 }

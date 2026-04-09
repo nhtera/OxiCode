@@ -25,10 +25,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 /// - `Http` → HTTP POST to URL endpoint
 ///
 /// Returns `HookResponse::Pass` on any failure (fail-open).
-pub async fn execute_hook(
-    hook_def: &HookDef,
-    payload: &HookPayload,
-) -> HookResponse {
+pub async fn execute_hook(hook_def: &HookDef, payload: &HookPayload) -> HookResponse {
     match hook_def.hook_type {
         HookType::Command => {
             let timeout = Duration::from_secs(hook_def.timeout_secs);

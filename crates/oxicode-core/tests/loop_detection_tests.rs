@@ -98,7 +98,10 @@ async fn test_tool_turn_count_resets_between_calls() {
     // Second call should also succeed (turn count resets).
     let mut conv2 = Conversation::new();
     let result2 = engine.execute_turn(&mut conv2, None).await;
-    assert!(result2.is_ok(), "second call should succeed — turn count should reset");
+    assert!(
+        result2.is_ok(),
+        "second call should succeed — turn count should reset"
+    );
 }
 
 #[tokio::test]
@@ -106,11 +109,7 @@ async fn test_normal_conversation_not_affected_by_limit() {
     // Provider returns EndTurn after 3 tool calls — well under 50 limit.
     let mut responses: Vec<Vec<StreamEvent>> = (0..3)
         .map(|i| {
-            tool_use_response_events(
-                &format!("t{i}"),
-                "nonexistent_tool",
-                &serde_json::json!({}),
-            )
+            tool_use_response_events(&format!("t{i}"), "nonexistent_tool", &serde_json::json!({}))
         })
         .collect();
     responses.push(text_response_events("All done!"));

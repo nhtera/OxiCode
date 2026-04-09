@@ -481,10 +481,7 @@ mod tests {
         };
 
         let result = tool
-            .execute(
-                serde_json::json!({"command": "cat /etc/hosts"}),
-                &ctx,
-            )
+            .execute(serde_json::json!({"command": "cat /etc/hosts"}), &ctx)
             .await
             .unwrap();
 
@@ -504,10 +501,7 @@ mod tests {
         };
 
         let result = tool
-            .execute(
-                serde_json::json!({"command": "cat ./test.txt"}),
-                &ctx,
-            )
+            .execute(serde_json::json!({"command": "cat ./test.txt"}), &ctx)
             .await
             .unwrap();
 
@@ -526,10 +520,7 @@ mod tests {
 
         // Commands without file paths should pass through path validation.
         let result = tool
-            .execute(
-                serde_json::json!({"command": "echo hello world"}),
-                &ctx,
-            )
+            .execute(serde_json::json!({"command": "echo hello world"}), &ctx)
             .await
             .unwrap();
 

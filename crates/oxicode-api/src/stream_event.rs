@@ -369,6 +369,9 @@ mod tests {
         let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"abc123signaturedata"}}"#;
         let raw: RawSseEvent = serde_json::from_str(json).unwrap();
         let events = raw.into_stream_events();
-        assert!(events.is_empty(), "signature_delta should produce no stream events");
+        assert!(
+            events.is_empty(),
+            "signature_delta should produce no stream events"
+        );
     }
 }

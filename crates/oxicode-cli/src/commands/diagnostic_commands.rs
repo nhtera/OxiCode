@@ -104,8 +104,7 @@ struct LinuxMemInfo {
 
 #[cfg(target_os = "linux")]
 fn read_linux_memory() -> Result<LinuxMemInfo, String> {
-    let content =
-        std::fs::read_to_string("/proc/self/status").map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string("/proc/self/status").map_err(|e| e.to_string())?;
 
     let mut info = LinuxMemInfo {
         rss: 0,
@@ -211,9 +210,21 @@ impl SlashCommand for PerfIssueCommand {
         let _ = writeln!(output, "  Cache created:      {cache_created}");
         let _ = writeln!(output, "  Cache hit rate:     {cache_hit_rate:.1}%");
         let _ = writeln!(output);
-        let _ = writeln!(output, "  Active agents:      {}", state.active_agents.len());
-        let _ = writeln!(output, "  Background tasks:   {}", state.background_tasks.len());
-        let _ = writeln!(output, "  Active skills:      {}", state.active_skills.len());
+        let _ = writeln!(
+            output,
+            "  Active agents:      {}",
+            state.active_agents.len()
+        );
+        let _ = writeln!(
+            output,
+            "  Background tasks:   {}",
+            state.background_tasks.len()
+        );
+        let _ = writeln!(
+            output,
+            "  Active skills:      {}",
+            state.active_skills.len()
+        );
         output.push_str("\n  Note: latency metrics require instrumented API calls.\n  Use /debug for per-call tracing.");
 
         CommandOutput::Message(output)
@@ -245,13 +256,18 @@ impl SlashCommand for AntTraceCommand {
 
         if messages.is_empty() {
             return CommandOutput::Message(
-                "No messages in current session. Start a conversation to see traces."
-                    .to_string(),
+                "No messages in current session. Start a conversation to see traces.".to_string(),
             );
         }
 
-        let recent: Vec<&oxicode_common::Message> =
-            messages.iter().rev().take(count).collect::<Vec<_>>().into_iter().rev().collect();
+        let recent: Vec<&oxicode_common::Message> = messages
+            .iter()
+            .rev()
+            .take(count)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
 
         let mut output = String::with_capacity(2048);
         output.push_str("Execution Trace\n");
@@ -274,7 +290,12 @@ impl SlashCommand for AntTraceCommand {
             let _ = writeln!(output, "  {:>4}  {:<10}  {preview}", offset + i + 1, role);
         }
 
-        let _ = writeln!(output, "\n  Showing {}/{} messages", recent.len(), messages.len());
+        let _ = writeln!(
+            output,
+            "\n  Showing {}/{} messages",
+            recent.len(),
+            messages.len()
+        );
 
         // Show agent/task summary if any.
         if !state.active_agents.is_empty() {

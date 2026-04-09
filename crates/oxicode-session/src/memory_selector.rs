@@ -75,8 +75,10 @@ pub async fn select_relevant(
                 tracing::warn!("Memory selector: LLM returned no valid indices, using recency");
                 return fallback_recency(memories, max);
             }
-            let selected: Vec<MemoryEntry> =
-                indices.iter().filter_map(|&i| memories.get(i).cloned()).collect();
+            let selected: Vec<MemoryEntry> = indices
+                .iter()
+                .filter_map(|&i| memories.get(i).cloned())
+                .collect();
             SelectionResult {
                 selected,
                 llm_used: true,
@@ -291,10 +293,7 @@ mod tests {
 
     #[tokio::test]
     async fn select_returns_all_when_fewer_than_max() {
-        let memories = vec![
-            make_memory("Only one", &[]),
-            make_memory("Just two", &[]),
-        ];
+        let memories = vec![make_memory("Only one", &[]), make_memory("Just two", &[])];
 
         let llm = MockLlm {
             response: Err("should not be called".to_string()),

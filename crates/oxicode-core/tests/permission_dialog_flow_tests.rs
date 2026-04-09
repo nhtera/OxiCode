@@ -127,7 +127,10 @@ async fn test_permission_deny_blocks_tool() {
     drop(tx);
 
     let (perm_count, tool_results) = collector.await.unwrap();
-    assert!(result.is_ok(), "conversation should complete even with denied tools");
+    assert!(
+        result.is_ok(),
+        "conversation should complete even with denied tools"
+    );
     assert!(perm_count >= 1, "should have asked permission");
 
     // At least one tool result should be an error with "denied" message.

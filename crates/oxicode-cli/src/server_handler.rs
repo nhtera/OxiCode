@@ -98,7 +98,13 @@ impl ServerHandler {
         method: &str,
         params: serde_json::Value,
     ) -> RpcResponse {
-        use bridge::messages::{METHOD_INITIALIZE, InitializeParams, InitializeResult, METHOD_GET_STATUS, GetStatusParams, GetStatusResult, METHOD_GET_CONVERSATION, GetConversationParams, METHOD_SEND_MESSAGE, SendMessageParams, METHOD_APPROVE_PERMISSION, ApprovePermissionParams, METHOD_CANCEL_TURN, CancelTurnParams, METHOD_SWITCH_MODEL, SwitchModelParams};
+        use bridge::messages::{
+            ApprovePermissionParams, CancelTurnParams, GetConversationParams, GetStatusParams,
+            GetStatusResult, InitializeParams, InitializeResult, SendMessageParams,
+            SwitchModelParams, METHOD_APPROVE_PERMISSION, METHOD_CANCEL_TURN,
+            METHOD_GET_CONVERSATION, METHOD_GET_STATUS, METHOD_INITIALIZE, METHOD_SEND_MESSAGE,
+            METHOD_SWITCH_MODEL,
+        };
 
         match method {
             METHOD_INITIALIZE => {
@@ -161,10 +167,7 @@ impl ServerHandler {
                 };
 
                 let is_streaming = state.cancel_tx.is_some();
-                let perm_pending = !state
-                    .active_perms
-                    .try_lock()
-                    .is_ok_and(|p| p.is_empty());
+                let perm_pending = !state.active_perms.try_lock().is_ok_and(|p| p.is_empty());
 
                 let status_str = if is_streaming {
                     "streaming"

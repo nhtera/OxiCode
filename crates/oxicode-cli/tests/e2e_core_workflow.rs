@@ -146,7 +146,9 @@ async fn e2e_streaming_text_response() {
     let provider = make_live_provider();
     let request = MessageRequest::new(
         model_name(),
-        vec![Message::user("Say exactly the word 'oxicode' and nothing else.")],
+        vec![Message::user(
+            "Say exactly the word 'oxicode' and nothing else.",
+        )],
     )
     .with_max_tokens(100);
 
@@ -190,7 +192,9 @@ async fn e2e_streaming_tool_use() {
 
     let mut request = MessageRequest::new(
         model_name(),
-        vec![Message::user("Read the file /tmp/test.txt using the file_read tool.")],
+        vec![Message::user(
+            "Read the file /tmp/test.txt using the file_read tool.",
+        )],
     )
     .with_max_tokens(500);
     request.tools = vec![tool_schema];
@@ -261,7 +265,10 @@ async fn e2e_token_usage_tracking() {
             total_output += usage.output_tokens;
         }
     }
-    assert!(total_output > 0, "Output tokens should be > 0, got {total_output}");
+    assert!(
+        total_output > 0,
+        "Output tokens should be > 0, got {total_output}"
+    );
 }
 
 #[tokio::test]
@@ -276,13 +283,15 @@ async fn e2e_custom_base_url() {
         }
     };
 
-    let token =
-        std::env::var("ANTHROPIC_AUTH_TOKEN").expect("ANTHROPIC_AUTH_TOKEN required");
+    let token = std::env::var("ANTHROPIC_AUTH_TOKEN").expect("ANTHROPIC_AUTH_TOKEN required");
     let provider = AnthropicProvider::new(token).with_base_url(&base_url);
     let request =
         MessageRequest::new(model_name(), vec![Message::user("Say OK")]).with_max_tokens(20);
 
-    let mut stream = provider.stream_message(request).await.expect("stream from custom URL");
+    let mut stream = provider
+        .stream_message(request)
+        .await
+        .expect("stream from custom URL");
     let mut got_text = false;
     while let Some(event) = stream.next().await {
         match event.expect("event") {
@@ -314,10 +323,13 @@ async fn e2e_file_read_tool_loop() {
     );
     conv.push(Message::user(&prompt));
 
-    let result = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     assert!(
         result.text().contains("OXISECRET42"),
@@ -341,10 +353,13 @@ async fn e2e_file_write_tool_loop() {
     );
     conv.push(Message::user(&prompt));
 
-    let _ = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     assert!(target.exists(), "File should be created on disk");
     let content = std::fs::read_to_string(&target).unwrap();
@@ -366,12 +381,18 @@ async fn e2e_file_edit_tool_loop() {
     let mut conv = Conversation::new();
 
     // First read the file (required by edit tool).
-    let read_prompt = format!("Read the file at {}. Use the file_read tool.", file.display());
+    let read_prompt = format!(
+        "Read the file at {}. Use the file_read tool.",
+        file.display()
+    );
     conv.push(Message::user(&read_prompt));
-    let _ = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("read turn");
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("read turn");
 
     // Now edit it.
     let edit_prompt = format!(
@@ -379,14 +400,23 @@ async fn e2e_file_edit_tool_loop() {
         file.display()
     );
     conv.push(Message::user(&edit_prompt));
-    let _ = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("edit turn");
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("edit turn");
 
     let content = std::fs::read_to_string(&file).unwrap();
-    assert!(content.contains("NEW"), "File should contain 'NEW', got: {content}");
-    assert!(!content.contains("OLD"), "File should not contain 'OLD', got: {content}");
+    assert!(
+        content.contains("NEW"),
+        "File should contain 'NEW', got: {content}"
+    );
+    assert!(
+        !content.contains("OLD"),
+        "File should not contain 'OLD', got: {content}"
+    );
 }
 
 #[tokio::test]
@@ -400,10 +430,13 @@ async fn e2e_bash_tool_loop() {
         "Run the bash command `echo RUSTCHECK99` and tell me the output. Use the bash tool.",
     ));
 
-    let result = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     assert!(
         result.text().contains("RUSTCHECK99"),
@@ -429,10 +462,13 @@ async fn e2e_glob_grep_tool_loop() {
     );
     conv.push(Message::user(&prompt));
 
-    let result = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     let text = result.text();
     assert!(
@@ -461,10 +497,13 @@ async fn e2e_multi_tool_sequence() {
     );
     conv.push(Message::user(&prompt));
 
-    let result = tokio::time::timeout(Duration::from_secs(90), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(90),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     let dest = tmp.path().join("dest.txt");
     assert!(dest.exists(), "dest.txt should be created");
@@ -585,7 +624,11 @@ async fn e2e_tui_bridge_text_flow() {
     .await;
 
     // Verify event sequence: StreamStart → TextDelta(s) → StreamEnd → MessageComplete.
-    assert!(events.len() >= 3, "Need at least 3 events, got {}", events.len());
+    assert!(
+        events.len() >= 3,
+        "Need at least 3 events, got {}",
+        events.len()
+    );
     assert!(
         matches!(events[0], CoreEvent::StreamStart),
         "First event should be StreamStart, got: {:?}",
@@ -608,7 +651,10 @@ async fn e2e_tui_bridge_text_flow() {
 
     // Verify state store has messages.
     let state = state_store.current();
-    assert!(state.messages.len() >= 2, "State should have user + assistant messages");
+    assert!(
+        state.messages.len() >= 2,
+        "State should have user + assistant messages"
+    );
 }
 
 #[tokio::test]
@@ -623,13 +669,20 @@ async fn e2e_tui_bridge_tool_flow() {
     let events = run_tui_bridge(
         engine,
         state_store,
-        &format!("Read the file at {} using the file_read tool.", tmp.path().join("data.txt").display()),
+        &format!(
+            "Read the file at {} using the file_read tool.",
+            tmp.path().join("data.txt").display()
+        ),
         None,
     )
     .await;
 
-    let has_tool_start = events.iter().any(|e| matches!(e, CoreEvent::ToolUseStart { .. }));
-    let has_tool_result = events.iter().any(|e| matches!(e, CoreEvent::ToolResult { .. }));
+    let has_tool_start = events
+        .iter()
+        .any(|e| matches!(e, CoreEvent::ToolUseStart { .. }));
+    let has_tool_result = events
+        .iter()
+        .any(|e| matches!(e, CoreEvent::ToolResult { .. }));
 
     assert!(has_tool_start, "Should have ToolUseStart event");
     assert!(has_tool_result, "Should have ToolResult event");
@@ -656,7 +709,9 @@ async fn e2e_tui_bridge_permission_flow() {
     )
     .await;
 
-    let has_tool_result = events.iter().any(|e| matches!(e, CoreEvent::ToolResult { .. }));
+    let has_tool_result = events
+        .iter()
+        .any(|e| matches!(e, CoreEvent::ToolResult { .. }));
     assert!(has_tool_result, "Tool should execute after AllowOnce");
 }
 
@@ -681,7 +736,9 @@ async fn e2e_tui_bridge_permission_deny() {
     let tool_results: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
-            CoreEvent::ToolResult { is_error, content, .. } => Some((is_error, content)),
+            CoreEvent::ToolResult {
+                is_error, content, ..
+            } => Some((is_error, content)),
             _ => None,
         })
         .collect();
@@ -694,9 +751,9 @@ async fn e2e_tui_bridge_permission_deny() {
         );
     }
     // Either way, the conversation should complete.
-    let completed = events.iter().any(|e| {
-        matches!(e, CoreEvent::MessageComplete | CoreEvent::Error(_))
-    });
+    let completed = events
+        .iter()
+        .any(|e| matches!(e, CoreEvent::MessageComplete | CoreEvent::Error(_)));
     assert!(completed, "Should complete or error after denial");
 }
 
@@ -707,10 +764,12 @@ async fn e2e_tui_bridge_error_recovery() {
     let tmp = tempfile::tempdir().unwrap();
 
     // Use a provider with an invalid token to force an error.
-    let provider = Arc::new(AnthropicProvider::new("invalid-token-xxx".to_string()).with_base_url(
-        std::env::var("ANTHROPIC_BASE_URL")
-            .unwrap_or_else(|_| "https://api.anthropic.com".to_string()),
-    ));
+    let provider = Arc::new(
+        AnthropicProvider::new("invalid-token-xxx".to_string()).with_base_url(
+            std::env::var("ANTHROPIC_BASE_URL")
+                .unwrap_or_else(|_| "https://api.anthropic.com".to_string()),
+        ),
+    );
     let state_store = Arc::new(StateStore::new(AppState::default()));
     let tool_registry = Arc::new(oxicode_tools::default_registry());
     let pipeline = Arc::new(PermissionPipeline::new(PermissionMode::Bypass, vec![]));
@@ -729,9 +788,7 @@ async fn e2e_tui_bridge_error_recovery() {
 
     let events = run_tui_bridge(engine, state_store, "Say hello", None).await;
 
-    let has_error = events
-        .iter()
-        .any(|e| matches!(e, CoreEvent::Error(_)));
+    let has_error = events.iter().any(|e| matches!(e, CoreEvent::Error(_)));
     assert!(has_error, "Invalid token should produce CoreEvent::Error");
 }
 
@@ -766,10 +823,13 @@ async fn e2e_session_save_and_resume() {
     let mut conv = Conversation::new();
     conv.push(Message::user("Say exactly 'session-test-ok'."));
 
-    let result = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     // Build session with messages.
     let mut session = oxicode_session::Session::new(model_name());
@@ -801,17 +861,25 @@ async fn e2e_session_multi_turn_resume() {
     // Turn 1.
     let mut conv = Conversation::new();
     conv.push(Message::user("Remember this: my favorite number is 42."));
-    let _r1 = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("turn 1");
+    let _r1 = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("turn 1");
 
     // Turn 2.
-    conv.push(Message::user("What is my favorite number? Reply with just the number."));
-    let r2 = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("turn 2");
+    conv.push(Message::user(
+        "What is my favorite number? Reply with just the number.",
+    ));
+    let r2 = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("turn 2");
 
     // Save session.
     let mut session = oxicode_session::Session::new(model_name());
@@ -821,8 +889,12 @@ async fn e2e_session_multi_turn_resume() {
     oxicode_session::save_session(&session, Some(session_dir.path())).expect("save");
 
     // Load and verify.
-    let loaded = oxicode_session::load_session(&session.id, Some(session_dir.path())).expect("load");
-    assert!(loaded.messages.len() >= 4, "Should have 4+ messages (2 user + 2 assistant)");
+    let loaded =
+        oxicode_session::load_session(&session.id, Some(session_dir.path())).expect("load");
+    assert!(
+        loaded.messages.len() >= 4,
+        "Should have 4+ messages (2 user + 2 assistant)"
+    );
 
     // Verify the model remembered "42".
     assert!(
@@ -841,10 +913,13 @@ async fn e2e_session_state_tracks_usage() {
 
     let mut conv = Conversation::new();
     conv.push(Message::user("Say hello"));
-    let _ = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     let state = state_store.current();
     assert!(
@@ -889,7 +964,10 @@ fn e2e_cli_version_output() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("oxicode"), "Version should contain 'oxicode', got: {stdout}");
+    assert!(
+        stdout.contains("oxicode"),
+        "Version should contain 'oxicode', got: {stdout}"
+    );
 }
 
 #[test]
@@ -910,10 +988,15 @@ fn e2e_cli_help_lists_flags() {
 #[ignore]
 async fn e2e_cli_single_prompt_returns_text() {
     let output = std::process::Command::new(&binary_path())
-        .args(["-p", "Say exactly 'cli-e2e-ok' and nothing else", "--no-onboard"])
-        .envs(std::env::vars().filter(|(k, _)| {
-            k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"
-        }))
+        .args([
+            "-p",
+            "Say exactly 'cli-e2e-ok' and nothing else",
+            "--no-onboard",
+        ])
+        .envs(
+            std::env::vars()
+                .filter(|(k, _)| k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"),
+        )
         .output()
         .expect("run single prompt");
 
@@ -923,7 +1006,10 @@ async fn e2e_cli_single_prompt_returns_text() {
         output.status.success(),
         "Should exit 0.\nstdout: {stdout}\nstderr: {stderr}"
     );
-    assert!(!stdout.is_empty(), "Should produce output.\nstderr: {stderr}");
+    assert!(
+        !stdout.is_empty(),
+        "Should produce output.\nstderr: {stderr}"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -938,7 +1024,10 @@ fn e2e_system_prompt_includes_sections() {
         Some("Skills available"),
         None,
     );
-    assert!(prompt.contains("OxiCode"), "System prompt should contain 'OxiCode'");
+    assert!(
+        prompt.contains("OxiCode"),
+        "System prompt should contain 'OxiCode'"
+    );
     assert!(prompt.contains("Global"), "Should contain global section");
     assert!(prompt.contains("Project"), "Should contain project section");
     assert!(prompt.contains("Skills"), "Should contain skills section");

@@ -62,11 +62,7 @@ fn push_settings(_ctx: &CommandContext) -> CommandOutput {
 
     let content = match std::fs::read_to_string(&settings_path) {
         Ok(c) => c,
-        Err(e) => {
-            return CommandOutput::Error(format!(
-                "Failed to read settings.toml: {e}"
-            ))
-        }
+        Err(e) => return CommandOutput::Error(format!("Failed to read settings.toml: {e}")),
     };
 
     // Count top-level TOML keys as a summary proxy.
@@ -91,11 +87,13 @@ fn push_settings(_ctx: &CommandContext) -> CommandOutput {
     let _ = writeln!(out, "  Sections: {section_count}");
     let _ = writeln!(out, "  Keys:     {key_count}");
     let _ = writeln!(out, "  Size:     {} bytes", content.len());
-    out.push_str(
-        "\nTo enable cloud sync, configure [sync] in settings.toml with your API key.",
-    );
+    out.push_str("\nTo enable cloud sync, configure [sync] in settings.toml with your API key.");
 
-    tracing::debug!("settings-sync push: {} keys, {} sections", key_count, section_count);
+    tracing::debug!(
+        "settings-sync push: {} keys, {} sections",
+        key_count,
+        section_count
+    );
     CommandOutput::Message(out)
 }
 
@@ -115,8 +113,7 @@ fn pull_settings() -> CommandOutput {
 
 /// Show current sync status.
 fn sync_status(_ctx: &CommandContext) -> CommandOutput {
-    let settings_path = dirs::home_dir()
-        .map(|h| h.join(".oxicode").join("settings.toml"));
+    let settings_path = dirs::home_dir().map(|h| h.join(".oxicode").join("settings.toml"));
 
     let file_status = settings_path
         .as_ref()

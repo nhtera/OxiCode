@@ -219,7 +219,12 @@ mod tests {
             .iter()
             .map(|t| serde_json::json!({"name": t}))
             .collect();
-        CacheDetector::snapshot_before(Some(system), &tool_schemas, "claude-sonnet-4-20250514", agent_id)
+        CacheDetector::snapshot_before(
+            Some(system),
+            &tool_schemas,
+            "claude-sonnet-4-20250514",
+            agent_id,
+        )
     }
 
     #[test]
@@ -324,7 +329,10 @@ mod tests {
         let result = detector.detect_break(&snap2, &make_usage(6000, 0));
 
         assert!(result.is_some());
-        assert_eq!(result.unwrap().reason, CacheBreakReason::SystemPromptChanged);
+        assert_eq!(
+            result.unwrap().reason,
+            CacheBreakReason::SystemPromptChanged
+        );
     }
 
     #[test]

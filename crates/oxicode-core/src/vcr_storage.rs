@@ -54,8 +54,7 @@ pub fn save(name: &str, entries: &[VcrEntry]) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create VCR directory {}: {e}", dir.display()))?;
 
     let path = cassette_path(name);
-    let file =
-        std::fs::File::create(&path).map_err(|e| format!("Failed to create file: {e}"))?;
+    let file = std::fs::File::create(&path).map_err(|e| format!("Failed to create file: {e}"))?;
 
     let mut encoder = GzEncoder::new(file, Compression::default());
     encoder
@@ -81,8 +80,8 @@ pub fn save(name: &str, entries: &[VcrEntry]) -> Result<PathBuf, String> {
 pub fn load(name: &str) -> Result<Vec<VcrEntry>, String> {
     let path = cassette_path(name);
 
-    let file =
-        std::fs::File::open(&path).map_err(|e| format!("Cannot open cassette '{}': {e}", path.display()))?;
+    let file = std::fs::File::open(&path)
+        .map_err(|e| format!("Cannot open cassette '{}': {e}", path.display()))?;
 
     let decoder = GzDecoder::new(file);
     // Guard against decompression bombs: limit decompressed read to MAX_RECORDING_BYTES.
@@ -125,8 +124,8 @@ pub fn list() -> Result<Vec<(String, u64, String)>, String> {
 
     let mut results = Vec::new();
 
-    let read_dir = std::fs::read_dir(&dir)
-        .map_err(|e| format!("Cannot read VCR directory: {e}"))?;
+    let read_dir =
+        std::fs::read_dir(&dir).map_err(|e| format!("Cannot read VCR directory: {e}"))?;
 
     for entry in read_dir {
         let entry = entry.map_err(|e| format!("Directory entry error: {e}"))?;
@@ -148,8 +147,8 @@ pub fn list() -> Result<Vec<(String, u64, String)>, String> {
             .unwrap_or(&file_name)
             .to_string();
 
-        let meta = std::fs::metadata(&path)
-            .map_err(|e| format!("Cannot stat {}: {e}", path.display()))?;
+        let meta =
+            std::fs::metadata(&path).map_err(|e| format!("Cannot stat {}: {e}", path.display()))?;
 
         let size = meta.len();
 

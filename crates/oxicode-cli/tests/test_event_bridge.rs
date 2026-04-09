@@ -403,7 +403,9 @@ async fn test_turn_with_tool_use_sequence() {
     assert_eq!(events.len(), 5, "should receive 5 events");
     assert!(matches!(events[0], CoreEvent::StreamStart));
     assert!(matches!(events[1], CoreEvent::ToolUseStart { ref name, .. } if name == "file_read"));
-    assert!(matches!(events[2], CoreEvent::ToolResult { ref tool_use_id, .. } if tool_use_id == "t1"));
+    assert!(
+        matches!(events[2], CoreEvent::ToolResult { ref tool_use_id, .. } if tool_use_id == "t1")
+    );
     assert!(matches!(events[3], CoreEvent::TextDelta(_)));
     assert!(matches!(events[4], CoreEvent::StreamEnd));
 
@@ -451,5 +453,8 @@ async fn test_forwarder_handles_dropped_receiver() {
 
     // Should complete without panic (send errors are ignored with `let _`).
     let result = tokio::time::timeout(std::time::Duration::from_secs(1), handle).await;
-    assert!(result.is_ok(), "forwarder should not panic on dropped receiver");
+    assert!(
+        result.is_ok(),
+        "forwarder should not panic on dropped receiver"
+    );
 }

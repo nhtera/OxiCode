@@ -4,7 +4,7 @@
 //! Run with: `cargo test -p oxicode-session --test live_session_persistence`
 
 use oxicode_common::{ContentBlock, Message, Usage};
-use oxicode_session::{Session, list_sessions, load_session, save_session};
+use oxicode_session::{list_sessions, load_session, save_session, Session};
 
 #[test]
 fn test_session_save_and_load_roundtrip() {

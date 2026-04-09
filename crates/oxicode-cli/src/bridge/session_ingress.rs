@@ -99,18 +99,12 @@ pub fn generate_ingress_token(session_id: &str, secret: &[u8]) -> String {
 /// 1. Token format (`payload.signature`)
 /// 2. HMAC-SHA256 signature
 /// 3. Expiry
-pub fn validate_ingress_token(
-    token: &str,
-    secret: &[u8],
-) -> Result<IngressClaims, IngressError> {
-    let (payload_b64, sig_b64) = token
-        .split_once('.')
-        .ok_or(IngressError::InvalidEncoding)?;
+pub fn validate_ingress_token(token: &str, secret: &[u8]) -> Result<IngressClaims, IngressError> {
+    let (payload_b64, sig_b64) = token.split_once('.').ok_or(IngressError::InvalidEncoding)?;
 
     // Verify signature.
     let expected_sig = compute_hmac(secret, payload_b64.as_bytes());
-    let provided_sig =
-        base64_url_decode(sig_b64).map_err(|_| IngressError::InvalidEncoding)?;
+    let provided_sig = base64_url_decode(sig_b64).map_err(|_| IngressError::InvalidEncoding)?;
 
     if !constant_time_eq(&expected_sig, &provided_sig) {
         return Err(IngressError::InvalidSignature);
@@ -179,8 +173,7 @@ pub fn load_or_generate_secret() -> Vec<u8> {
 
 /// Compute HMAC-SHA256 of `data` with `key`.
 fn compute_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac =
-        HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }
@@ -335,9 +328,6 @@ mod tests {
             IngressError::SessionNotFound("s1".into()).to_string(),
             "session not found: s1"
         );
-        assert_eq!(
-            IngressError::TokenExpired.to_string(),
-            "token expired"
-        );
+        assert_eq!(IngressError::TokenExpired.to_string(), "token expired");
     }
 }

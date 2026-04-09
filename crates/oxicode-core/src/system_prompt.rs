@@ -218,7 +218,8 @@ mod tests {
     #[test]
     fn test_modes_appear_before_global_instructions() {
         let skills = vec!["advisor_mode".to_string()];
-        let prompt = assemble_system_prompt_with_modes(Some("global"), None, None, None, None, &skills);
+        let prompt =
+            assemble_system_prompt_with_modes(Some("global"), None, None, None, None, &skills);
         let modes_pos = prompt.find("Active Modes").unwrap();
         let global_pos = prompt.find("Global Instructions").unwrap();
         assert!(
@@ -284,9 +285,7 @@ mod tests {
 
     #[test]
     fn test_empty_relevant_memories_skipped() {
-        let prompt = assemble_system_prompt_with_modes(
-            None, None, None, None, Some(""), &[],
-        );
+        let prompt = assemble_system_prompt_with_modes(None, None, None, None, Some(""), &[]);
         assert!(!prompt.contains("Relevant Memories"));
     }
 }

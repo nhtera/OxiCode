@@ -48,7 +48,10 @@ async fn test_point_to_point_only_reaches_target() {
     assert_eq!(alice_msgs[0].content, "task for alice");
 
     let bob_msgs = bus.receive("bob").await;
-    assert!(bob_msgs.is_empty(), "bob should NOT receive alice's message");
+    assert!(
+        bob_msgs.is_empty(),
+        "bob should NOT receive alice's message"
+    );
 }
 
 #[tokio::test]
@@ -78,7 +81,11 @@ async fn test_multiple_messages_queued_fifo() {
 
     // Verify FIFO order.
     for (i, msg) in msgs.iter().enumerate() {
-        assert_eq!(msg.content, format!("msg-{i}"), "messages should be in FIFO order");
+        assert_eq!(
+            msg.content,
+            format!("msg-{i}"),
+            "messages should be in FIFO order"
+        );
     }
 
     // Mailbox is drained after receive.

@@ -26,7 +26,12 @@ use tokio::sync::mpsc;
 ///
 /// Returns (App, StateStore, ui_tx sender). The `core_tx` sender is kept
 /// alive inside this function to prevent the core_rx channel from closing.
-fn make_test_app() -> (App, Arc<StateStore>, mpsc::Sender<UiEvent>, mpsc::Sender<CoreEvent>) {
+fn make_test_app() -> (
+    App,
+    Arc<StateStore>,
+    mpsc::Sender<UiEvent>,
+    mpsc::Sender<CoreEvent>,
+) {
     let state_store = Arc::new(StateStore::new(AppState {
         current_model: "claude-sonnet-4.6".to_string(),
         auth_label: "API Key".to_string(),
@@ -51,9 +56,9 @@ fn test_render_with_messages_does_not_panic() {
     // Add messages to state.
     state_store.push_message(Message::user("Hello, how are you?"));
     let mut assistant = Message::assistant();
-    assistant
-        .content
-        .push(ContentBlock::Text { text: "I'm fine!".to_string() });
+    assistant.content.push(ContentBlock::Text {
+        text: "I'm fine!".to_string(),
+    });
     state_store.push_message(assistant);
 
     // Render with TestBackend — should not panic.
@@ -107,9 +112,9 @@ fn test_render_with_tool_use_messages() {
 
     // Final assistant response.
     let mut final_msg = Message::assistant();
-    final_msg
-        .content
-        .push(ContentBlock::Text { text: "The file contains: file contents here".to_string() });
+    final_msg.content.push(ContentBlock::Text {
+        text: "The file contains: file contents here".to_string(),
+    });
     state_store.push_message(final_msg);
 
     // Render — should not panic.
@@ -171,9 +176,9 @@ fn test_message_cache_updates_incrementally() {
 
     // Add second message and render again — cache should update, not crash.
     let mut assistant = Message::assistant();
-    assistant
-        .content
-        .push(ContentBlock::Text { text: "First response".to_string() });
+    assistant.content.push(ContentBlock::Text {
+        text: "First response".to_string(),
+    });
     state_store.push_message(assistant);
 
     app.draw(&mut terminal).unwrap();

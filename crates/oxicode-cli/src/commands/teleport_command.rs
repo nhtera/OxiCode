@@ -67,7 +67,10 @@ fn handle_export(args: &[&str], ctx: &CommandContext) -> CommandOutput {
             return CommandOutput::Error(format!("Failed to create teleport dir: {e}"));
         }
         let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-        teleport_dir.join(format!("session-{}-{timestamp}.tar.gz", &ctx.session_id[..8.min(ctx.session_id.len())]))
+        teleport_dir.join(format!(
+            "session-{}-{timestamp}.tar.gz",
+            &ctx.session_id[..8.min(ctx.session_id.len())]
+        ))
     };
 
     // Collect session state as JSON.
@@ -191,8 +194,7 @@ fn build_archive(
         fs::create_dir_all(parent).map_err(|e| format!("Cannot create output dir: {e}"))?;
     }
 
-    let file =
-        fs::File::create(output_path).map_err(|e| format!("Cannot create archive: {e}"))?;
+    let file = fs::File::create(output_path).map_err(|e| format!("Cannot create archive: {e}"))?;
     let enc = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut archive = tar::Builder::new(enc);
 
@@ -218,9 +220,7 @@ fn build_archive(
     enc.finish()
         .map_err(|e| format!("Gzip finalization failed: {e}"))?;
 
-    let size = fs::metadata(output_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let size = fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
     Ok(size)
 }
 
@@ -251,16 +251,14 @@ struct ImportStats {
 
 /// Extract and validate a teleport archive, restoring memories and settings.
 fn extract_archive(archive_path: &Path) -> Result<ImportStats, String> {
-    let file =
-        fs::File::open(archive_path).map_err(|e| format!("Cannot open archive: {e}"))?;
+    let file = fs::File::open(archive_path).map_err(|e| format!("Cannot open archive: {e}"))?;
     let dec = flate2::read::GzDecoder::new(file);
     let mut archive = tar::Archive::new(dec);
 
     let memory_dir = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".oxicode/memory");
-    fs::create_dir_all(&memory_dir)
-        .map_err(|e| format!("Cannot create memory dir: {e}"))?;
+    fs::create_dir_all(&memory_dir).map_err(|e| format!("Cannot create memory dir: {e}"))?;
 
     let mut stats = ImportStats {
         messages: 0,
@@ -276,8 +274,7 @@ fn extract_archive(archive_path: &Path) -> Result<ImportStats, String> {
         .map_err(|e| format!("Cannot read archive entries: {e}"))?;
 
     for entry_result in entries {
-        let mut entry =
-            entry_result.map_err(|e| format!("Corrupt archive entry: {e}"))?;
+        let mut entry = entry_result.map_err(|e| format!("Corrupt archive entry: {e}"))?;
 
         file_count += 1;
         if file_count > MAX_FILE_COUNT {
@@ -338,9 +335,7 @@ fn extract_archive(archive_path: &Path) -> Result<ImportStats, String> {
             // Validate JSON is parseable and count messages.
             let session: serde_json::Value = serde_json::from_slice(&content)
                 .map_err(|e| format!("Invalid session.json: {e}"))?;
-            stats.messages = session["messages"]
-                .as_array()
-                .map_or(0, Vec::len);
+            stats.messages = session["messages"].as_array().map_or(0, Vec::len);
         } else if let Some(name) = path_str.strip_prefix("memory/") {
             // Security: only allow flat filenames — reject subdirectory paths.
             if name.contains('/') || name.contains('\\') {
@@ -374,8 +369,7 @@ fn extract_archive(archive_path: &Path) -> Result<ImportStats, String> {
             } else {
                 settings_path
             };
-            fs::write(&target, &content)
-                .map_err(|e| format!("Failed to write settings: {e}"))?;
+            fs::write(&target, &content).map_err(|e| format!("Failed to write settings: {e}"))?;
             stats.settings_restored = true;
         }
         // Ignore unknown entries silently.
@@ -452,10 +446,7 @@ mod tests {
         let archive_path = tmp.path().join("test-export.tar.gz");
 
         // Export to local file.
-        let output = handle_export(
-            &["--local", archive_path.to_str().unwrap()],
-            &ctx,
-        );
+        let output = handle_export(&["--local", archive_path.to_str().unwrap()], &ctx);
         match &output {
             CommandOutput::Message(msg) => assert!(msg.contains("exported successfully")),
             CommandOutput::Error(e) => panic!("Export failed: {e}"),
@@ -488,7 +479,7 @@ mod tests {
         let mut raw = [0u8; 512];
         let name = b"../etc/passwd";
         raw[..name.len()].copy_from_slice(name); // offset 0: name
-        // mode at offset 100 (8 bytes octal)
+                                                 // mode at offset 100 (8 bytes octal)
         raw[100..107].copy_from_slice(b"0000644");
         // uid at offset 108
         raw[108..115].copy_from_slice(b"0001000");

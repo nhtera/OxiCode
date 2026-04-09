@@ -69,7 +69,11 @@ mod tests {
     fn make_tool(name: &str, desc: Option<&str>, schema: serde_json::Value) -> model::Tool {
         let schema_map: serde_json::Map<String, serde_json::Value> =
             serde_json::from_value(schema).unwrap_or_default();
-        model::Tool::new(name.to_string(), desc.unwrap_or("").to_string(), Arc::new(schema_map))
+        model::Tool::new(
+            name.to_string(),
+            desc.unwrap_or("").to_string(),
+            Arc::new(schema_map),
+        )
     }
 
     #[test]

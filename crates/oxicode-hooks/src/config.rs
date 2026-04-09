@@ -103,7 +103,10 @@ impl HookDef {
         }
         AgentHookConfig {
             instructions: self.instructions.clone().unwrap_or_default(),
-            model: self.model.clone().unwrap_or_else(|| "claude-haiku".to_string()),
+            model: self
+                .model
+                .clone()
+                .unwrap_or_else(|| "claude-haiku".to_string()),
             timeout_secs: self.timeout_secs,
             max_tokens: 256,
         }

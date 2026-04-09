@@ -94,7 +94,10 @@ mod tests {
         let sonnet_prev = std::env::var(constants::ENV_DEFAULT_SONNET_MODEL).ok();
 
         set_or_remove(constants::ENV_MODEL, None);
-        set_or_remove(constants::ENV_DEFAULT_SONNET_MODEL, Some("claude-sonnet-4.6"));
+        set_or_remove(
+            constants::ENV_DEFAULT_SONNET_MODEL,
+            Some("claude-sonnet-4.6"),
+        );
 
         let mut settings = Settings::default();
         assert_eq!(settings.model, constants::DEFAULT_MODEL);
@@ -112,7 +115,10 @@ mod tests {
         let sonnet_prev = std::env::var(constants::ENV_DEFAULT_SONNET_MODEL).ok();
 
         set_or_remove(constants::ENV_MODEL, Some("claude-opus-4.6"));
-        set_or_remove(constants::ENV_DEFAULT_SONNET_MODEL, Some("claude-sonnet-4.6"));
+        set_or_remove(
+            constants::ENV_DEFAULT_SONNET_MODEL,
+            Some("claude-sonnet-4.6"),
+        );
 
         let mut settings = Settings::default();
         apply_env_overrides(&mut settings);

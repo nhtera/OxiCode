@@ -166,11 +166,7 @@ pub async fn download_session_files(
 ) -> Result<Vec<PathBuf>, FilesApiError> {
     let list_url = format!("{api_base}/sessions/{session_id}/files");
 
-    let resp = client
-        .get(&list_url)
-        .bearer_auth(auth)
-        .send()
-        .await?;
+    let resp = client.get(&list_url).bearer_auth(auth).send().await?;
 
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
@@ -285,14 +281,10 @@ fn validate_no_traversal(path: &Path) -> Result<(), FilesApiError> {
     for component in path.components() {
         match component {
             std::path::Component::ParentDir => {
-                return Err(FilesApiError::PathTraversal(
-                    path.display().to_string(),
-                ));
+                return Err(FilesApiError::PathTraversal(path.display().to_string()));
             }
             std::path::Component::RootDir => {
-                return Err(FilesApiError::PathTraversal(
-                    path.display().to_string(),
-                ));
+                return Err(FilesApiError::PathTraversal(path.display().to_string()));
             }
             _ => {}
         }
@@ -304,9 +296,7 @@ fn validate_no_traversal(path: &Path) -> Result<(), FilesApiError> {
 /// Catches absolute path injection where `Path::join` replaces the base entirely.
 fn validate_within_dir(dest: &Path, resolved: &Path) -> Result<(), FilesApiError> {
     if !resolved.starts_with(dest) {
-        return Err(FilesApiError::PathTraversal(
-            resolved.display().to_string(),
-        ));
+        return Err(FilesApiError::PathTraversal(resolved.display().to_string()));
     }
     Ok(())
 }
@@ -351,9 +341,27 @@ mod tests {
     fn parse_multiple_specs_comma_separated() {
         let specs = parse_file_specs("a.rs:1, b.rs:20, c.rs");
         assert_eq!(specs.len(), 3);
-        assert_eq!(specs[0], FileSpec { path: "a.rs".into(), line: Some(1) });
-        assert_eq!(specs[1], FileSpec { path: "b.rs".into(), line: Some(20) });
-        assert_eq!(specs[2], FileSpec { path: "c.rs".into(), line: None });
+        assert_eq!(
+            specs[0],
+            FileSpec {
+                path: "a.rs".into(),
+                line: Some(1)
+            }
+        );
+        assert_eq!(
+            specs[1],
+            FileSpec {
+                path: "b.rs".into(),
+                line: Some(20)
+            }
+        );
+        assert_eq!(
+            specs[2],
+            FileSpec {
+                path: "c.rs".into(),
+                line: None
+            }
+        );
     }
 
     #[test]
@@ -382,7 +390,10 @@ mod tests {
     fn traversal_blocked() {
         let result = validate_no_traversal(Path::new("../../../etc/passwd"));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), FilesApiError::PathTraversal(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            FilesApiError::PathTraversal(_)
+        ));
     }
 
     #[test]
@@ -399,7 +410,10 @@ mod tests {
     fn absolute_path_blocked() {
         let result = validate_no_traversal(Path::new("/etc/passwd"));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), FilesApiError::PathTraversal(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            FilesApiError::PathTraversal(_)
+        ));
     }
 
     #[test]
@@ -442,8 +456,14 @@ mod tests {
 
     #[test]
     fn file_spec_equality() {
-        let a = FileSpec { path: "foo.rs".into(), line: Some(1) };
-        let b = FileSpec { path: "foo.rs".into(), line: Some(1) };
+        let a = FileSpec {
+            path: "foo.rs".into(),
+            line: Some(1),
+        };
+        let b = FileSpec {
+            path: "foo.rs".into(),
+            line: Some(1),
+        };
         assert_eq!(a, b);
     }
 

@@ -25,4 +25,6 @@ pub use tool_use_summary::ToolUseSummary;
 pub use turn_event::TurnEvent;
 pub use vcr_player::VcrPlayer;
 pub use vcr_recorder::{VcrEntry, VcrRecorder};
-pub use vcr_storage::{delete as vcr_delete, list as vcr_list, load as vcr_load, save as vcr_save, vcr_dir};
+pub use vcr_storage::{
+    delete as vcr_delete, list as vcr_list, load as vcr_load, save as vcr_save, vcr_dir,
+};

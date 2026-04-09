@@ -221,7 +221,10 @@ mod tests {
         assert!(result.contains(para_a), "first paragraph missing");
         assert!(result.contains(para_c), "last paragraph missing");
         assert!(result.contains("..."), "ellipsis missing");
-        assert!(!result.contains(para_b), "middle paragraph should be dropped");
+        assert!(
+            !result.contains(para_b),
+            "middle paragraph should be dropped"
+        );
     }
 
     #[test]
@@ -229,8 +232,8 @@ mod tests {
         // Single paragraph, no "\n\n" — should fall back to truncation.
         let long_single = "word ".repeat(500); // ~2500 chars
         let result = compress_output(&long_single, 1); // max 1 token → triggers compression
-        // truncate_summary caps at 200 chars + '…' (3-byte UTF-8).
-        // Use char count, not byte length, since '…' is multi-byte.
+                                                       // truncate_summary caps at 200 chars + '…' (3-byte UTF-8).
+                                                       // Use char count, not byte length, since '…' is multi-byte.
         assert!(result.chars().count() <= 201); // 200 chars + 1 ellipsis char
     }
 }

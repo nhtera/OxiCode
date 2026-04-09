@@ -32,7 +32,11 @@ impl HealthChecker {
     ///
     /// Pass `0` to use the default of 30 seconds.
     pub fn new(interval_secs: u64) -> Self {
-        let secs = if interval_secs == 0 { 30 } else { interval_secs };
+        let secs = if interval_secs == 0 {
+            30
+        } else {
+            interval_secs
+        };
         tracing::debug!("HealthChecker created (interval={}s)", secs);
         Self {
             last_pong: None,
@@ -54,10 +58,7 @@ impl HealthChecker {
     pub fn record_ping(&mut self) {
         self.missed_pongs += 1;
         self.last_check = Some(Instant::now());
-        tracing::debug!(
-            "Bridge ping sent (missed_pongs={})",
-            self.missed_pongs
-        );
+        tracing::debug!("Bridge ping sent (missed_pongs={})", self.missed_pongs);
     }
 
     /// Record that a pong was received (resets the missed-pong counter).

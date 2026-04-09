@@ -113,17 +113,18 @@ mod inner {
         };
 
         if !response.status().is_success() {
-            result.errors.push(format!(
-                "Sync endpoint returned {}",
-                response.status()
-            ));
+            result
+                .errors
+                .push(format!("Sync endpoint returned {}", response.status()));
             return result;
         }
 
         let sync_response: SyncResponse = match response.json().await {
             Ok(r) => r,
             Err(e) => {
-                result.errors.push(format!("Failed to parse sync response: {e}"));
+                result
+                    .errors
+                    .push(format!("Failed to parse sync response: {e}"));
                 return result;
             }
         };

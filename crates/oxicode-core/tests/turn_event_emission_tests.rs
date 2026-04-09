@@ -34,7 +34,10 @@ fn make_engine(provider: MockLlmProvider) -> QueryEngine {
 async fn collect_events(
     engine: &QueryEngine,
     conv: &mut Conversation,
-) -> (Result<oxicode_common::Message, oxicode_common::OxiError>, Vec<TurnEvent>) {
+) -> (
+    Result<oxicode_common::Message, oxicode_common::OxiError>,
+    Vec<TurnEvent>,
+) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<TurnEvent>(256);
 
     let result = engine.execute_turn(conv, Some(&tx)).await;
@@ -96,10 +99,7 @@ async fn test_tool_use_start_event_emitted() {
         })
         .collect();
 
-    assert!(
-        !tool_starts.is_empty(),
-        "should emit ToolUseStart event"
-    );
+    assert!(!tool_starts.is_empty(), "should emit ToolUseStart event");
     assert_eq!(tool_starts[0].0, "tool_123");
     assert_eq!(tool_starts[0].1, "test_tool");
 }
@@ -130,10 +130,7 @@ async fn test_tool_result_event_emitted() {
         })
         .collect();
 
-    assert!(
-        !tool_results.is_empty(),
-        "should emit ToolResult event"
-    );
+    assert!(!tool_results.is_empty(), "should emit ToolResult event");
     assert_eq!(tool_results[0].0, "tr_id", "tool_use_id should match");
 }
 
@@ -150,9 +147,7 @@ async fn test_turn_start_and_end_events_bracket_stream() {
     let start_idx = events
         .iter()
         .position(|e| matches!(e, TurnEvent::TurnStart));
-    let end_idx = events
-        .iter()
-        .rposition(|e| matches!(e, TurnEvent::TurnEnd));
+    let end_idx = events.iter().rposition(|e| matches!(e, TurnEvent::TurnEnd));
 
     assert!(start_idx.is_some(), "should have TurnStart event");
     assert!(end_idx.is_some(), "should have TurnEnd event");

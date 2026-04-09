@@ -42,14 +42,22 @@ async fn test_multiple_tools_execute_in_sequence() {
         "content": "sequential write test"
     });
     let write_result = reg.execute("file_write", write_input, &ctx).await.unwrap();
-    assert!(!write_result.is_error, "file_write should succeed: {}", write_result.content);
+    assert!(
+        !write_result.is_error,
+        "file_write should succeed: {}",
+        write_result.content
+    );
 
     // Step 2: Read the same file — should see the written content (ordering guarantee).
     let read_input = serde_json::json!({
         "file_path": file_path.to_str().unwrap()
     });
     let read_result = reg.execute("file_read", read_input, &ctx).await.unwrap();
-    assert!(!read_result.is_error, "file_read should succeed: {}", read_result.content);
+    assert!(
+        !read_result.is_error,
+        "file_read should succeed: {}",
+        read_result.content
+    );
     assert!(
         read_result.content.contains("sequential write test"),
         "read should see write's content, got: {}",

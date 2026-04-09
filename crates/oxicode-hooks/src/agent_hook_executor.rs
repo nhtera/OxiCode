@@ -80,10 +80,7 @@ impl From<AgentHookResponse> for HookResponse {
 /// calls the LLM provider, and parses the structured response.
 ///
 /// On any failure (network, parse, timeout), returns `HookResponse::Pass` (fail-open).
-pub async fn execute_agent_hook(
-    payload: &HookPayload,
-    config: &AgentHookConfig,
-) -> HookResponse {
+pub async fn execute_agent_hook(payload: &HookPayload, config: &AgentHookConfig) -> HookResponse {
     let timeout = Duration::from_secs(config.timeout_secs);
 
     let result = tokio::time::timeout(timeout, call_agent(payload, config)).await;
@@ -95,10 +92,7 @@ pub async fn execute_agent_hook(
             HookResponse::Pass
         }
         Err(_) => {
-            tracing::warn!(
-                "Agent hook timed out after {}s",
-                config.timeout_secs
-            );
+            tracing::warn!("Agent hook timed out after {}s", config.timeout_secs);
             HookResponse::Pass
         }
     }
@@ -159,8 +153,7 @@ fn build_system_prompt(config: &AgentHookConfig) -> String {
 
 /// Build user message from the hook event payload.
 fn build_user_message(payload: &HookPayload) -> Result<String, String> {
-    serde_json::to_string_pretty(payload)
-        .map_err(|e| format!("Failed to serialize payload: {e}"))
+    serde_json::to_string_pretty(payload).map_err(|e| format!("Failed to serialize payload: {e}"))
 }
 
 /// Parse LLM response text into a structured agent hook response.
@@ -238,15 +231,13 @@ mod tests {
 
     #[test]
     fn test_parse_modify() {
-        let resp =
-            parse_agent_response(r#"{"action":"modify","text":"added context"}"#).unwrap();
+        let resp = parse_agent_response(r#"{"action":"modify","text":"added context"}"#).unwrap();
         assert!(matches!(resp, AgentHookResponse::Modify { text } if text == "added context"));
     }
 
     #[test]
     fn test_parse_abort() {
-        let resp =
-            parse_agent_response(r#"{"action":"abort","reason":"contains PII"}"#).unwrap();
+        let resp = parse_agent_response(r#"{"action":"abort","reason":"contains PII"}"#).unwrap();
         assert!(matches!(resp, AgentHookResponse::Abort { reason } if reason == "contains PII"));
     }
 

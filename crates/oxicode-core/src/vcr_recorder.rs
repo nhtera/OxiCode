@@ -48,7 +48,10 @@ impl VcrRecorder {
     /// The recorder is left in a stopped state with an empty entry list.
     pub fn stop(&mut self) -> Vec<VcrEntry> {
         self.recording = false;
-        tracing::debug!("VCR recording stopped — {} entries captured", self.entries.len());
+        tracing::debug!(
+            "VCR recording stopped — {} entries captured",
+            self.entries.len()
+        );
         std::mem::take(&mut self.entries)
     }
 

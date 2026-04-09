@@ -404,12 +404,16 @@ fn format_registry_entry(entry: &serde_json::Value) -> String {
         .unwrap_or("N/A");
     let permissions = entry
         .get("permissions")
-        .and_then(|v| v.as_array()).map_or_else(|| "none".into(), |arr| {
-            arr.iter()
-                .filter_map(|p| p.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        });
+        .and_then(|v| v.as_array())
+        .map_or_else(
+            || "none".into(),
+            |arr| {
+                arr.iter()
+                    .filter_map(|p| p.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+        );
     let keywords = entry
         .get("keywords")
         .and_then(|v| v.as_array())

@@ -155,9 +155,7 @@ impl SlashCommand for BughunterCommand {
         for (i, finding) in findings.iter().enumerate() {
             let _ = writeln!(output, "  {}. {finding}", i + 1);
         }
-        output.push_str(
-            "\nNote: these are heuristic checks — review each finding manually.",
-        );
+        output.push_str("\nNote: these are heuristic checks — review each finding manually.");
         CommandOutput::Message(output)
     }
 }
@@ -165,7 +163,10 @@ impl SlashCommand for BughunterCommand {
 /// Scan Rust sources for common patterns.
 fn scan_rust_patterns(root: &Path, findings: &mut Vec<String>) {
     let patterns = [
-        (".unwrap()", "Rust: unwrap() without context — prefer expect() or ?"),
+        (
+            ".unwrap()",
+            "Rust: unwrap() without context — prefer expect() or ?",
+        ),
         ("todo!()", "Rust: todo!() macro — unfinished implementation"),
         ("unsafe {", "Rust: unsafe block — review for soundness"),
         ("panic!(", "Rust: explicit panic — may crash at runtime"),
@@ -187,10 +188,16 @@ fn scan_js_patterns(root: &Path, findings: &mut Vec<String>) {
 /// Scan Python sources for common patterns.
 fn scan_python_patterns(root: &Path, findings: &mut Vec<String>) {
     let patterns = [
-        ("except:", "Python: bare except — catches SystemExit/KeyboardInterrupt"),
+        (
+            "except:",
+            "Python: bare except — catches SystemExit/KeyboardInterrupt",
+        ),
         ("eval(", "Python: eval() — security risk"),
         ("exec(", "Python: exec() — security risk"),
-        ("# type: ignore", "Python: type: ignore — suppressed type check"),
+        (
+            "# type: ignore",
+            "Python: type: ignore — suppressed type check",
+        ),
     ];
     scan_files_for_patterns(root, &["py"], &patterns, findings);
 }
@@ -220,11 +227,27 @@ fn scan_files_for_patterns(
         root.to_path_buf()
     };
 
-    let skip_dirs = ["node_modules", "target", ".git", "vendor", "__pycache__", "dist", "build"];
+    let skip_dirs = [
+        "node_modules",
+        "target",
+        ".git",
+        "vendor",
+        "__pycache__",
+        "dist",
+        "build",
+    ];
     let mut file_count = 0u32;
     let max_files = 500;
 
-    scan_dir_recursive(&scan_dir, extensions, &skip_dirs, patterns, findings, &mut file_count, max_files);
+    scan_dir_recursive(
+        &scan_dir,
+        extensions,
+        &skip_dirs,
+        patterns,
+        findings,
+        &mut file_count,
+        max_files,
+    );
 }
 
 /// Recursively scan directory for files matching extensions.
@@ -254,7 +277,9 @@ fn scan_dir_recursive(
         if path.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if !skip_dirs.contains(&name) {
-                scan_dir_recursive(&path, extensions, skip_dirs, patterns, findings, file_count, max_files);
+                scan_dir_recursive(
+                    &path, extensions, skip_dirs, patterns, findings, file_count, max_files,
+                );
             }
         } else if path.is_file() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -362,7 +387,12 @@ impl SlashCommand for CtxVizCommand {
             );
         }
 
-        let _ = writeln!(output, "\n  Model: {} | Messages: {}", ctx.model, state.messages.len());
+        let _ = writeln!(
+            output,
+            "\n  Model: {} | Messages: {}",
+            ctx.model,
+            state.messages.len()
+        );
 
         CommandOutput::Message(output)
     }
@@ -465,9 +495,7 @@ impl SlashCommand for AutofixPrCommand {
             }
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                return CommandOutput::Error(format!(
-                    "Failed to get PR #{pr_ref} diff: {stderr}"
-                ));
+                return CommandOutput::Error(format!("Failed to get PR #{pr_ref} diff: {stderr}"));
             }
             Err(e) => {
                 return CommandOutput::Error(format!(
@@ -484,8 +512,14 @@ impl SlashCommand for AutofixPrCommand {
         }
 
         // Summarize diff stats.
-        let additions = diff_output.lines().filter(|l| l.starts_with('+') && !l.starts_with("+++")).count();
-        let deletions = diff_output.lines().filter(|l| l.starts_with('-') && !l.starts_with("---")).count();
+        let additions = diff_output
+            .lines()
+            .filter(|l| l.starts_with('+') && !l.starts_with("+++"))
+            .count();
+        let deletions = diff_output
+            .lines()
+            .filter(|l| l.starts_with('-') && !l.starts_with("---"))
+            .count();
         let files_changed: Vec<&str> = diff_output
             .lines()
             .filter(|l| l.starts_with("diff --git"))

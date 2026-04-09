@@ -20,9 +20,7 @@ use oxicode_common::OxiResult;
 
 /// Async tool handler function signature for dynamic tool dispatch.
 pub type AsyncToolHandler = Arc<
-    dyn Fn(serde_json::Value) -> Pin<Box<dyn Future<Output = CallToolResult> + Send>>
-        + Send
-        + Sync,
+    dyn Fn(serde_json::Value) -> Pin<Box<dyn Future<Output = CallToolResult> + Send>> + Send + Sync,
 >;
 
 /// Tool registration entry for the MCP server.
@@ -147,9 +145,7 @@ pub async fn run_mcp_server(server: OxiMcpServer) -> OxiResult<()> {
     let service = server
         .serve(rmcp::transport::stdio())
         .await
-        .map_err(|e| {
-            oxicode_common::OxiError::Other(format!("Failed to start MCP server: {e}"))
-        })?;
+        .map_err(|e| oxicode_common::OxiError::Other(format!("Failed to start MCP server: {e}")))?;
 
     service
         .waiting()

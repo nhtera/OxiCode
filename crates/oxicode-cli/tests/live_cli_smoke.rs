@@ -73,10 +73,7 @@ fn test_cli_help() {
         stdout.contains("OxiCode"),
         "Help should mention 'OxiCode', got: {stdout}"
     );
-    assert!(
-        stdout.contains("--model"),
-        "Help should list --model flag"
-    );
+    assert!(stdout.contains("--model"), "Help should list --model flag");
     assert!(
         stdout.contains("--prompt"),
         "Help should list --prompt flag"
@@ -108,10 +105,15 @@ fn test_cli_completions() {
 async fn test_cli_single_prompt_text() {
     let bin = binary_path();
     let output = Command::new(&bin)
-        .args(["-p", "Say exactly 'hello oxicode' and nothing else", "--no-onboard"])
-        .envs(std::env::vars().filter(|(k, _)| {
-            k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"
-        }))
+        .args([
+            "-p",
+            "Say exactly 'hello oxicode' and nothing else",
+            "--no-onboard",
+        ])
+        .envs(
+            std::env::vars()
+                .filter(|(k, _)| k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"),
+        )
         .output()
         .expect("Failed to run single prompt");
 
@@ -133,16 +135,11 @@ async fn test_cli_single_prompt_text() {
 async fn test_cli_single_prompt_json_output() {
     let bin = binary_path();
     let output = Command::new(&bin)
-        .args([
-            "-p",
-            "Say hello",
-            "--output",
-            "json",
-            "--no-onboard",
-        ])
-        .envs(std::env::vars().filter(|(k, _)| {
-            k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"
-        }))
+        .args(["-p", "Say hello", "--output", "json", "--no-onboard"])
+        .envs(
+            std::env::vars()
+                .filter(|(k, _)| k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"),
+        )
         .output()
         .expect("Failed to run JSON prompt");
 
@@ -188,7 +185,8 @@ fn test_cli_no_api_key_exits_cleanly() {
     // Just verify it doesn't panic (exit code 101 = panic).
     let code = output.status.code().unwrap_or(-1);
     assert_ne!(
-        code, 101,
+        code,
+        101,
         "Should not panic without API key. stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -208,9 +206,10 @@ async fn test_cli_single_prompt_math() {
             "What is 2+2? Reply with just the number.",
             "--no-onboard",
         ])
-        .envs(std::env::vars().filter(|(k, _)| {
-            k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"
-        }))
+        .envs(
+            std::env::vars()
+                .filter(|(k, _)| k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"),
+        )
         .output()
         .expect("Failed to run math prompt");
 
@@ -220,10 +219,7 @@ async fn test_cli_single_prompt_math() {
         output.status.success(),
         "Math prompt should exit 0.\nstdout: {stdout}\nstderr: {stderr}"
     );
-    assert!(
-        stdout.contains('4'),
-        "Should contain 4, got: {stdout}"
-    );
+    assert!(stdout.contains('4'), "Should contain 4, got: {stdout}");
 }
 
 #[tokio::test]
@@ -231,16 +227,11 @@ async fn test_cli_single_prompt_math() {
 async fn test_cli_json_has_session_events() {
     let bin = binary_path();
     let output = Command::new(&bin)
-        .args([
-            "-p",
-            "Say OK",
-            "--output",
-            "json",
-            "--no-onboard",
-        ])
-        .envs(std::env::vars().filter(|(k, _)| {
-            k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"
-        }))
+        .args(["-p", "Say OK", "--output", "json", "--no-onboard"])
+        .envs(
+            std::env::vars()
+                .filter(|(k, _)| k.starts_with("ANTHROPIC_") || k == "PATH" || k == "HOME"),
+        )
         .output()
         .expect("Failed to run JSON events prompt");
 

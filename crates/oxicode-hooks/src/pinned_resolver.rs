@@ -175,9 +175,7 @@ mod tests {
         let resolver = PinnedResolver::new();
         let result = resolver.resolve("127.0.0.1", 80);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("private IP"));
+        assert!(result.unwrap_err().contains("private IP"));
     }
 
     #[test]

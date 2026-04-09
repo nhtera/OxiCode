@@ -184,9 +184,18 @@ mod tests {
     #[test]
     fn test_max_attempts_gives_up() {
         let mut mgr = ReconnectionManager::new(1, 3);
-        assert!(matches!(mgr.on_disconnect(), ReconnectAction::RetryAfter(_)));
-        assert!(matches!(mgr.on_disconnect(), ReconnectAction::RetryAfter(_)));
-        assert!(matches!(mgr.on_disconnect(), ReconnectAction::RetryAfter(_)));
+        assert!(matches!(
+            mgr.on_disconnect(),
+            ReconnectAction::RetryAfter(_)
+        ));
+        assert!(matches!(
+            mgr.on_disconnect(),
+            ReconnectAction::RetryAfter(_)
+        ));
+        assert!(matches!(
+            mgr.on_disconnect(),
+            ReconnectAction::RetryAfter(_)
+        ));
         // 4th attempt exceeds max=3.
         assert!(matches!(
             mgr.on_disconnect(),
@@ -218,7 +227,10 @@ mod tests {
         assert!(!mgr.has_given_up());
         assert_eq!(mgr.attempt(), 0);
         // Can try again.
-        assert!(matches!(mgr.on_disconnect(), ReconnectAction::RetryAfter(_)));
+        assert!(matches!(
+            mgr.on_disconnect(),
+            ReconnectAction::RetryAfter(_)
+        ));
     }
 
     #[test]
@@ -226,15 +238,20 @@ mod tests {
         let mut mgr = ReconnectionManager::new(1, 1);
         mgr.on_disconnect();
         mgr.on_disconnect(); // give up
-        // Subsequent calls also return GiveUp.
-        assert!(matches!(mgr.on_disconnect(), ReconnectAction::GiveUp { .. }));
+                             // Subsequent calls also return GiveUp.
+        assert!(matches!(
+            mgr.on_disconnect(),
+            ReconnectAction::GiveUp { .. }
+        ));
     }
 
     #[test]
     fn test_jitter_varies() {
         // Run apply_jitter many times — values should not all be identical.
         let base = Duration::from_secs(10);
-        let values: Vec<u64> = (0..20).map(|_| apply_jitter(base).as_millis() as u64).collect();
+        let values: Vec<u64> = (0..20)
+            .map(|_| apply_jitter(base).as_millis() as u64)
+            .collect();
         let unique: std::collections::HashSet<_> = values.iter().collect();
         // With ±10% jitter on 10s, expect at least some variation.
         assert!(unique.len() > 1, "Jitter should produce varied values");

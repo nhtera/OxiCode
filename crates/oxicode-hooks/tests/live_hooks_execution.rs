@@ -249,7 +249,10 @@ fn test_payload_serialization_has_all_fields() {
 
     assert!(json.get("event").is_some(), "Should have 'event' field");
     assert!(json.get("data").is_some(), "Should have 'data' field");
-    assert!(json.get("session_id").is_some(), "Should have 'session_id' field");
+    assert!(
+        json.get("session_id").is_some(),
+        "Should have 'session_id' field"
+    );
     assert!(json.get("model").is_some(), "Should have 'model' field");
     assert_eq!(json["event"], "tool_call_before");
     assert_eq!(json["session_id"], "test-session-123");
@@ -259,9 +262,15 @@ fn test_payload_serialization_has_all_fields() {
 fn test_hook_response_roundtrip() {
     let cases = vec![
         (r#"{"action":"pass"}"#, "Pass"),
-        (r#"{"action":"modify_prompt","text":"extra"}"#, "ModifyPrompt"),
+        (
+            r#"{"action":"modify_prompt","text":"extra"}"#,
+            "ModifyPrompt",
+        ),
         (r#"{"action":"abort","reason":"no"}"#, "Abort"),
-        (r#"{"action":"override_result","text":"replaced"}"#, "OverrideResult"),
+        (
+            r#"{"action":"override_result","text":"replaced"}"#,
+            "OverrideResult",
+        ),
     ];
     for (json, expected_variant) in cases {
         let parsed: HookResponse = serde_json::from_str(json).unwrap();
@@ -290,7 +299,10 @@ fn test_all_hook_events_have_str_names() {
     assert_eq!(HookEvent::ALL.len(), 29);
     for event in HookEvent::ALL {
         let name = event.as_str();
-        assert!(!name.is_empty(), "Event {event:?} should have non-empty name");
+        assert!(
+            !name.is_empty(),
+            "Event {event:?} should have non-empty name"
+        );
         assert!(
             name.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
             "Event name should be snake_case: {name}"

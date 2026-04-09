@@ -101,7 +101,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_subscriber_does_not_panic() {
         let tap = EventTap::new(0); // 0 → default 64
-        // Emit with no subscribers — should not panic.
+                                    // Emit with no subscribers — should not panic.
         tap.emit(TapEvent {
             timestamp: Instant::now(),
             direction: Direction::Outbound,

@@ -141,7 +141,8 @@ impl SlashCommand for AddDirCommand {
 
         // Canonicalize for display.
         let canonical = path
-            .canonicalize().map_or_else(|_| path_str.to_string(), |p| p.display().to_string());
+            .canonicalize()
+            .map_or_else(|_| path_str.to_string(), |p| p.display().to_string());
 
         // TODO(gap-phase-6): persist in StateStore.working_dirs and pass to context builder.
         // Currently logged for tracing; full integration requires TUI + context builder changes.

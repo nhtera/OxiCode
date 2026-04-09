@@ -60,7 +60,9 @@ pub mod kill_bash;
 
 // Re-exports
 pub use registry::ToolRegistry;
-pub use tool_trait::{BashProcess, BashProcessMap, PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
+pub use tool_trait::{
+    BashProcess, BashProcessMap, PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema,
+};
 
 /// Create a registry pre-loaded with all built-in tools.
 pub fn default_registry() -> ToolRegistry {

@@ -55,10 +55,7 @@ fn test_task_dependency_blocks_execution() {
         mgr.get_task(&id_a).unwrap().status,
         TaskStatus::Completed { .. }
     );
-    assert!(
-        !a_is_complete,
-        "A should be Pending, so B should NOT start"
-    );
+    assert!(!a_is_complete, "A should be Pending, so B should NOT start");
 
     // After completing A, B can proceed.
     mgr.update_status(&id_a, TaskStatus::Running);
@@ -130,7 +127,10 @@ fn test_task_failure_cascades_to_dependents() {
     );
 
     // Simulate cascade: when A fails, mark dependents as failed too.
-    let a_failed = matches!(mgr.get_task(&id_a).unwrap().status, TaskStatus::Failed { .. });
+    let a_failed = matches!(
+        mgr.get_task(&id_a).unwrap().status,
+        TaskStatus::Failed { .. }
+    );
     assert!(a_failed);
 
     if a_failed {

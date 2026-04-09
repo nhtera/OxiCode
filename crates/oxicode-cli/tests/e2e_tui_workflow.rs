@@ -65,10 +65,7 @@ fn live_engine(dir: &Path) -> (Arc<QueryEngine>, Arc<StateStore>) {
     live_engine_with_mode(dir, PermissionMode::Bypass)
 }
 
-fn live_engine_with_mode(
-    dir: &Path,
-    mode: PermissionMode,
-) -> (Arc<QueryEngine>, Arc<StateStore>) {
+fn live_engine_with_mode(dir: &Path, mode: PermissionMode) -> (Arc<QueryEngine>, Arc<StateStore>) {
     let provider = Arc::new(live_provider());
     let ss = Arc::new(StateStore::new(AppState::default()));
     let tools = Arc::new(oxicode_tools::default_registry());
@@ -147,7 +144,10 @@ async fn collect_events_auto_approve(
                 if let CoreEvent::PermissionAsk { reply_tx, .. } = event {
                     let _ = reply_tx.send(PermissionResponse::AllowOnce);
                 }
-                let is_terminal = matches!(kind, CoreEventKind::MessageComplete | CoreEventKind::Error(_));
+                let is_terminal = matches!(
+                    kind,
+                    CoreEventKind::MessageComplete | CoreEventKind::Error(_)
+                );
                 events.push(kind);
                 if is_terminal {
                     break;
@@ -185,7 +185,9 @@ fn classify_event(event: &CoreEvent) -> CoreEventKind {
         CoreEvent::TextDelta(t) => CoreEventKind::TextDelta(t.clone()),
         CoreEvent::StreamEnd => CoreEventKind::StreamEnd,
         CoreEvent::ToolUseStart { name, .. } => CoreEventKind::ToolUseStart { name: name.clone() },
-        CoreEvent::ToolResult { is_error, .. } => CoreEventKind::ToolResult { is_error: *is_error },
+        CoreEvent::ToolResult { is_error, .. } => CoreEventKind::ToolResult {
+            is_error: *is_error,
+        },
         CoreEvent::PermissionAsk { .. } => CoreEventKind::PermissionAsk,
         CoreEvent::MessageComplete => CoreEventKind::MessageComplete,
         CoreEvent::Error(e) => CoreEventKind::Error(e.clone()),
@@ -275,13 +277,7 @@ async fn e2e_tui_full_roundtrip_real_api() {
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(256);
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    let engine_handle = spawn_engine_task(
-        engine,
-        state_store.clone(),
-        ui_rx,
-        core_tx,
-        cancel_flag,
-    );
+    let engine_handle = spawn_engine_task(engine, state_store.clone(), ui_rx, core_tx, cancel_flag);
 
     // Send user input through TUI channel.
     ui_tx
@@ -299,7 +295,9 @@ async fn e2e_tui_full_roundtrip_real_api() {
 
     // Verify event sequence: StreamStart → TextDelta(s) → StreamEnd → MessageComplete.
     assert!(
-        events.iter().any(|e| matches!(e, CoreEventKind::StreamStart)),
+        events
+            .iter()
+            .any(|e| matches!(e, CoreEventKind::StreamStart)),
         "Should have StreamStart, events: {events:?}"
     );
 
@@ -316,7 +314,9 @@ async fn e2e_tui_full_roundtrip_real_api() {
     );
 
     assert!(
-        events.iter().any(|e| matches!(e, CoreEventKind::MessageComplete)),
+        events
+            .iter()
+            .any(|e| matches!(e, CoreEventKind::MessageComplete)),
         "Should end with MessageComplete"
     );
 
@@ -396,13 +396,7 @@ async fn e2e_permission_dialog_real_api() {
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(256);
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    let engine_handle = spawn_engine_task(
-        engine,
-        state_store.clone(),
-        ui_rx,
-        core_tx,
-        cancel_flag,
-    );
+    let engine_handle = spawn_engine_task(engine, state_store.clone(), ui_rx, core_tx, cancel_flag);
 
     // Use file_write (non-readonly) to trigger permission dialog.
     let target = tmp.path().join("perm_write_test.txt");
@@ -410,10 +404,7 @@ async fn e2e_permission_dialog_real_api() {
         "Write the text 'hello_perm' to the file at {} using the file_write tool.",
         target.display()
     );
-    ui_tx
-        .send(UiEvent::UserInput(prompt))
-        .await
-        .unwrap();
+    ui_tx.send(UiEvent::UserInput(prompt)).await.unwrap();
 
     // Collect events, auto-approving permissions.
     let events = collect_events_auto_approve(&mut core_rx, 60).await;
@@ -457,13 +448,7 @@ async fn e2e_multi_turn_state_preserved() {
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(256);
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    let engine_handle = spawn_engine_task(
-        engine,
-        state_store.clone(),
-        ui_rx,
-        core_tx,
-        cancel_flag,
-    );
+    let engine_handle = spawn_engine_task(engine, state_store.clone(), ui_rx, core_tx, cancel_flag);
 
     // Turn 1: Set a fact.
     ui_tx
@@ -475,7 +460,9 @@ async fn e2e_multi_turn_state_preserved() {
 
     let events1 = collect_events_auto_approve(&mut core_rx, 30).await;
     assert!(
-        events1.iter().any(|e| matches!(e, CoreEventKind::MessageComplete)),
+        events1
+            .iter()
+            .any(|e| matches!(e, CoreEventKind::MessageComplete)),
         "Turn 1 should complete"
     );
 
@@ -527,10 +514,13 @@ async fn e2e_session_roundtrip_real_data() {
     let mut conversation = Conversation::new();
     conversation.push(Message::user("Say exactly 'session_test_ok'."));
 
-    let result = tokio::time::timeout(Duration::from_secs(30), engine.execute_turn(&mut conversation, None))
-        .await
-        .expect("timeout")
-        .expect("execute_turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(30),
+        engine.execute_turn(&mut conversation, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("execute_turn");
 
     // Build a session from the real conversation.
     let mut session = oxicode_session::Session::new(&model());
@@ -574,13 +564,7 @@ async fn e2e_cancel_mid_stream() {
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(256);
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    let engine_handle = spawn_engine_task(
-        engine,
-        state_store.clone(),
-        ui_rx,
-        core_tx,
-        cancel_flag,
-    );
+    let engine_handle = spawn_engine_task(engine, state_store.clone(), ui_rx, core_tx, cancel_flag);
 
     // Ask for a long response.
     ui_tx
@@ -656,22 +640,13 @@ async fn e2e_tui_bridge_tool_use_real_api() {
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(256);
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    let engine_handle = spawn_engine_task(
-        engine,
-        state_store.clone(),
-        ui_rx,
-        core_tx,
-        cancel_flag,
-    );
+    let engine_handle = spawn_engine_task(engine, state_store.clone(), ui_rx, core_tx, cancel_flag);
 
     let prompt = format!(
         "Read the file at {} and tell me its content. Use the file_read tool.",
         target.display()
     );
-    ui_tx
-        .send(UiEvent::UserInput(prompt))
-        .await
-        .unwrap();
+    ui_tx.send(UiEvent::UserInput(prompt)).await.unwrap();
 
     let events = collect_events_auto_approve(&mut core_rx, 60).await;
 
@@ -693,7 +668,9 @@ async fn e2e_tui_bridge_tool_use_real_api() {
 
     // Verify tool result.
     assert!(
-        events.iter().any(|e| matches!(e, CoreEventKind::ToolResult { is_error: false })),
+        events
+            .iter()
+            .any(|e| matches!(e, CoreEventKind::ToolResult { is_error: false })),
         "Should see successful tool result"
     );
 
@@ -726,13 +703,7 @@ async fn e2e_state_usage_tracking_real_api() {
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(256);
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    let engine_handle = spawn_engine_task(
-        engine,
-        state_store.clone(),
-        ui_rx,
-        core_tx,
-        cancel_flag,
-    );
+    let engine_handle = spawn_engine_task(engine, state_store.clone(), ui_rx, core_tx, cancel_flag);
 
     ui_tx
         .send(UiEvent::UserInput("Say hi".to_string()))

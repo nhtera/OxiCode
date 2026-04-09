@@ -14,23 +14,23 @@ pub mod types;
 #[cfg(feature = "bridge_debug")]
 pub mod bridge_debug_logger;
 #[cfg(feature = "bridge_debug")]
-pub mod bridge_status_tracker;
-#[cfg(feature = "bridge_debug")]
 pub mod bridge_diagnostics;
 #[cfg(feature = "bridge_debug")]
-pub mod bridge_message_inspector;
+pub mod bridge_event_tap;
 #[cfg(feature = "bridge_debug")]
 pub mod bridge_health_check;
 #[cfg(feature = "bridge_debug")]
-pub mod bridge_event_tap;
+pub mod bridge_message_inspector;
+#[cfg(feature = "bridge_debug")]
+pub mod bridge_status_tracker;
 
 // ---------------------------------------------------------------------------
 // Bridge UI modules (always available)
 // ---------------------------------------------------------------------------
 
-pub mod bridge_ui_permission_dialog;
 pub mod bridge_ui_config_dialog;
 pub mod bridge_ui_notification;
+pub mod bridge_ui_permission_dialog;
 
 pub use config::{McpAuthConfig, McpConfig, McpServerConfig};
 pub use doctor::{diagnose_all, diagnose_server, DiagResult, DiagStatus};

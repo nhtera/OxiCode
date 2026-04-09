@@ -2,10 +2,10 @@
 //!
 //! Commands are invoked with `/name [args]` in the TUI input.
 
-pub mod ultraplan_command;
 pub mod buddy_command;
 pub mod good_claude_command;
 pub mod settings_sync_command;
+pub mod ultraplan_command;
 pub mod vcr_command;
 
 pub mod agent_commands;

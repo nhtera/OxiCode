@@ -220,7 +220,7 @@ mod tests {
         // En-dash '–' is 3 bytes (U+2013). Place it so HEAD_KEEP lands inside it.
         let prefix = "a".repeat(HEAD_KEEP - 1); // 4095 bytes of ASCII
         let s = format!("{prefix}–rest"); // byte 4095..4098 is '–'
-        // Must not panic.
+                                          // Must not panic.
         let result = safe_split(&s, HEAD_KEEP);
         assert!(result.len() <= HEAD_KEEP);
     }
@@ -230,7 +230,7 @@ mod tests {
         // Build string where (len - TAIL_KEEP) lands inside a multi-byte char.
         let suffix = "b".repeat(TAIL_KEEP - 1); // 4095 bytes of ASCII
         let s = format!("start–{suffix}"); // '–' at bytes 5..8
-        // Total: 5 + 3 + 4095 = 4103; len - TAIL_KEEP = 4103 - 4096 = 7, inside '–' (5..8)
+                                           // Total: 5 + 3 + 4095 = 4103; len - TAIL_KEEP = 4103 - 4096 = 7, inside '–' (5..8)
         let result = safe_split_end(&s, TAIL_KEEP);
         assert!(!result.is_empty());
     }

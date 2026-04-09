@@ -102,8 +102,7 @@ async fn test_user_input_produces_core_events() {
                     state_clone.push_message(user_msg.clone());
                     conversation.push(user_msg);
 
-                    let (turn_tx, mut turn_rx) =
-                        mpsc::channel::<TurnEvent>(256);
+                    let (turn_tx, mut turn_rx) = mpsc::channel::<TurnEvent>(256);
                     let fwd_tx = core_tx_clone.clone();
                     let forwarder = tokio::spawn(async move {
                         while let Some(te) = turn_rx.recv().await {

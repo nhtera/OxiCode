@@ -6,7 +6,7 @@
 //! Run with: `cargo test -p oxicode-state --test live_cost_tracking`
 
 use oxicode_common::Usage;
-use oxicode_state::cost_tracker::{calculate_cost, get_rate, save_costs, load_costs, CostTracker};
+use oxicode_state::cost_tracker::{calculate_cost, get_rate, load_costs, save_costs, CostTracker};
 use oxicode_state::{AppState, StateStore};
 
 // ── Helper ──────────────────────────────────────────────────────
@@ -24,8 +24,16 @@ fn make_usage_with_cache(input: u32, output: u32, cache_read: u32, cache_write: 
     Usage {
         input_tokens: input,
         output_tokens: output,
-        cache_read_input_tokens: if cache_read > 0 { Some(cache_read) } else { None },
-        cache_creation_input_tokens: if cache_write > 0 { Some(cache_write) } else { None },
+        cache_read_input_tokens: if cache_read > 0 {
+            Some(cache_read)
+        } else {
+            None
+        },
+        cache_creation_input_tokens: if cache_write > 0 {
+            Some(cache_write)
+        } else {
+            None
+        },
     }
 }
 
@@ -65,7 +73,10 @@ fn test_unknown_model_uses_sonnet_fallback() {
 fn test_calculate_cost_basic() {
     // 100K input at $3/Mtok + 50K output at $15/Mtok = $0.30 + $0.75 = $1.05
     let cost = calculate_cost("claude-sonnet-4-20250514", &make_usage(100_000, 50_000));
-    assert!((cost - 1.05).abs() < 0.001, "Expected $1.05, got ${cost:.4}");
+    assert!(
+        (cost - 1.05).abs() < 0.001,
+        "Expected $1.05, got ${cost:.4}"
+    );
 }
 
 #[test]
@@ -74,7 +85,10 @@ fn test_calculate_cost_with_cache() {
     // = 3.0 + 7.5 + 0.06 + 0.375 = 10.935
     let usage = make_usage_with_cache(1_000_000, 500_000, 200_000, 100_000);
     let cost = calculate_cost("claude-sonnet-4-20250514", &usage);
-    assert!((cost - 10.935).abs() < 0.001, "Expected $10.935, got ${cost:.4}");
+    assert!(
+        (cost - 10.935).abs() < 0.001,
+        "Expected $10.935, got ${cost:.4}"
+    );
 }
 
 #[test]
@@ -125,7 +139,10 @@ fn test_tracker_total_cost_sums_models() {
 
     // Sonnet: 1M × $3/Mtok = $3.00, Haiku: 1M × $1/Mtok = $1.00
     let total = tracker.total_cost();
-    assert!((total - 4.0).abs() < 0.01, "Expected ~$4.00, got ${total:.4}");
+    assert!(
+        (total - 4.0).abs() < 0.01,
+        "Expected ~$4.00, got ${total:.4}"
+    );
 }
 
 // ── CostTracker Persistence ─────────────────────────────────────
@@ -136,7 +153,10 @@ fn test_tracker_save_and_load_roundtrip() {
     let path = tmp.path().join("costs.json");
 
     let mut tracker = CostTracker::new("sess-roundtrip".to_string());
-    tracker.record("claude-sonnet-4-20250514", &make_usage_with_cache(5000, 2000, 1000, 500));
+    tracker.record(
+        "claude-sonnet-4-20250514",
+        &make_usage_with_cache(5000, 2000, 1000, 500),
+    );
 
     save_costs(&path, &tracker).unwrap();
     let loaded = load_costs(&path, "sess-roundtrip").expect("Should load with matching session ID");
@@ -183,7 +203,10 @@ fn test_state_store_add_usage_updates_cost_tracker() {
     let state = store.current();
     assert_eq!(state.total_usage.input_tokens, 10_000);
     assert_eq!(state.total_usage.output_tokens, 5_000);
-    assert!(state.cost_tracker.total_cost() > 0.0, "Cost should be tracked");
+    assert!(
+        state.cost_tracker.total_cost() > 0.0,
+        "Cost should be tracked"
+    );
     assert_eq!(state.cost_tracker.models.len(), 1);
 }
 

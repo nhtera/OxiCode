@@ -67,16 +67,10 @@ impl BridgeStatusTracker {
     /// Increments `reconnect_count` when transitioning into `Connecting`
     /// from any state other than `Disconnected` on startup.
     pub fn transition(&mut self, new_state: ConnectionState) {
-        tracing::debug!(
-            "Bridge state: {:?} → {:?}",
-            self.state,
-            new_state
-        );
+        tracing::debug!("Bridge state: {:?} → {:?}", self.state, new_state);
 
         // Count reconnection attempts (any Connecting transition after the first).
-        if new_state == ConnectionState::Connecting
-            && self.state != ConnectionState::Disconnected
-        {
+        if new_state == ConnectionState::Connecting && self.state != ConnectionState::Disconnected {
             self.reconnect_count += 1;
         }
 

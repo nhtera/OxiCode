@@ -161,9 +161,7 @@ impl SessionBridge {
         auth_header: &str,
         secret: &[u8],
     ) -> Result<IngressClaims, IngressError> {
-        let token = auth_header
-            .strip_prefix("Bearer ")
-            .unwrap_or(auth_header);
+        let token = auth_header.strip_prefix("Bearer ").unwrap_or(auth_header);
 
         let claims = session_ingress::validate_ingress_token(token, secret)?;
 
@@ -277,7 +275,9 @@ mod tests {
         let bridge = SessionBridge::new();
         let _id = bridge.create_session("model").await;
 
-        let result = bridge.validate_ingress("Bearer invalid.token", b"secret").await;
+        let result = bridge
+            .validate_ingress("Bearer invalid.token", b"secret")
+            .await;
         assert!(result.is_err());
     }
 

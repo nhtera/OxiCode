@@ -32,8 +32,7 @@ static LIVE_LOCK: Mutex<()> = Mutex::new(());
 // ═══════════════════════════════════════════════════════════════════
 
 fn live_provider() -> AnthropicProvider {
-    let token =
-        std::env::var("ANTHROPIC_AUTH_TOKEN").expect("ANTHROPIC_AUTH_TOKEN required");
+    let token = std::env::var("ANTHROPIC_AUTH_TOKEN").expect("ANTHROPIC_AUTH_TOKEN required");
     let base_url = std::env::var("ANTHROPIC_BASE_URL")
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
     AnthropicProvider::new(token).with_base_url(base_url)
@@ -77,10 +76,7 @@ fn live_engine(dir: &Path) -> (Arc<QueryEngine>, Arc<StateStore>) {
     (engine, ss)
 }
 
-fn mock_engine(
-    dir: &Path,
-    mock: MockLlmProvider,
-) -> (Arc<QueryEngine>, Arc<StateStore>) {
+fn mock_engine(dir: &Path, mock: MockLlmProvider) -> (Arc<QueryEngine>, Arc<StateStore>) {
     let provider = Arc::new(mock);
     let ss = Arc::new(StateStore::new(AppState::default()));
     let tools = Arc::new(oxicode_tools::default_registry());
@@ -143,11 +139,7 @@ fn translate(te: TurnEvent) -> CoreEvent {
 }
 
 /// Run the TUI bridge loop and collect CoreEvents.
-async fn bridge(
-    engine: Arc<QueryEngine>,
-    ss: Arc<StateStore>,
-    prompt: &str,
-) -> Vec<CoreEvent> {
+async fn bridge(engine: Arc<QueryEngine>, ss: Arc<StateStore>, prompt: &str) -> Vec<CoreEvent> {
     let (_ui_tx, mut _ui_rx) = mpsc::channel::<UiEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(256);
 
@@ -176,9 +168,7 @@ async fn bridge(
             }
         });
 
-        let result = engine_c
-            .execute_turn(&mut conv, Some(&turn_tx))
-            .await;
+        let result = engine_c.execute_turn(&mut conv, Some(&turn_tx)).await;
         drop(turn_tx);
         let _ = forwarder.await;
 
@@ -233,10 +223,13 @@ async fn e2e_write_edit_read_chain() {
         file.display()
     );
     conv.push(Message::user(&prompt));
-    let _ = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("write turn");
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("write turn");
     assert!(file.exists(), "File should exist after write");
 
     // Step 2: Read it (required before edit).
@@ -244,31 +237,39 @@ async fn e2e_write_edit_read_chain() {
         "Read the file at {}. Use the file_read tool.",
         file.display()
     )));
-    let _ = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("read turn");
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("read turn");
 
     // Step 3: Edit it.
     conv.push(Message::user(&format!(
         "Edit the file at {} by replacing 'ORIGINAL' with 'MODIFIED'. Use the file_edit tool.",
         file.display()
     )));
-    let _ = tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-        .await
-        .expect("timeout")
-        .expect("edit turn");
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("edit turn");
 
     // Step 4: Read again and verify.
     conv.push(Message::user(&format!(
         "Read the file at {} and tell me its content. Use the file_read tool.",
         file.display()
     )));
-    let result =
-        tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-            .await
-            .expect("timeout")
-            .expect("final read turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("final read turn");
 
     let content = std::fs::read_to_string(&file).unwrap();
     assert!(
@@ -299,7 +300,11 @@ async fn e2e_grep_tool_finds_pattern() {
     // Create files with specific content.
     std::fs::write(tmp.path().join("alpha.rs"), "fn alpha_secret_function() {}").unwrap();
     std::fs::write(tmp.path().join("beta.rs"), "fn beta_function() {}").unwrap();
-    std::fs::write(tmp.path().join("gamma.txt"), "this has alpha_secret_function too").unwrap();
+    std::fs::write(
+        tmp.path().join("gamma.txt"),
+        "this has alpha_secret_function too",
+    )
+    .unwrap();
 
     let (engine, _) = live_engine(tmp.path());
     let mut conv = Conversation::new();
@@ -310,11 +315,13 @@ async fn e2e_grep_tool_finds_pattern() {
     );
     conv.push(Message::user(&prompt));
 
-    let result =
-        tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-            .await
-            .expect("timeout")
-            .expect("grep turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("grep turn");
 
     let text = result.text();
     assert!(
@@ -347,11 +354,13 @@ async fn e2e_bash_then_file_read_chain() {
     );
     conv.push(Message::user(&prompt));
 
-    let result =
-        tokio::time::timeout(Duration::from_secs(90), engine.execute_turn(&mut conv, None))
-            .await
-            .expect("timeout")
-            .expect("chain turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(90),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("chain turn");
 
     let text = result.text();
     assert!(
@@ -404,7 +413,10 @@ async fn e2e_event_sequence_text_only() {
         .iter()
         .position(|e| matches!(e, CoreEvent::MessageComplete))
         .unwrap();
-    assert!(end_pos < complete_pos, "StreamEnd must precede MessageComplete");
+    assert!(
+        end_pos < complete_pos,
+        "StreamEnd must precede MessageComplete"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -430,8 +442,12 @@ async fn e2e_event_sequence_with_tool() {
     .await;
 
     // Should have tool events in the sequence.
-    let has_tool_start = events.iter().any(|e| matches!(e, CoreEvent::ToolUseStart { .. }));
-    let has_tool_result = events.iter().any(|e| matches!(e, CoreEvent::ToolResult { .. }));
+    let has_tool_start = events
+        .iter()
+        .any(|e| matches!(e, CoreEvent::ToolUseStart { .. }));
+    let has_tool_result = events
+        .iter()
+        .any(|e| matches!(e, CoreEvent::ToolResult { .. }));
 
     assert!(has_tool_start, "Should have ToolUseStart");
     assert!(has_tool_result, "Should have ToolResult");
@@ -546,11 +562,13 @@ async fn e2e_tool_error_recovery() {
          If the file doesn't exist, just say 'file not found'.",
     ));
 
-    let result =
-        tokio::time::timeout(Duration::from_secs(60), engine.execute_turn(&mut conv, None))
-            .await
-            .expect("timeout")
-            .expect("error recovery turn");
+    let result = tokio::time::timeout(
+        Duration::from_secs(60),
+        engine.execute_turn(&mut conv, None),
+    )
+    .await
+    .expect("timeout")
+    .expect("error recovery turn");
 
     let text = result.text().to_lowercase();
     assert!(

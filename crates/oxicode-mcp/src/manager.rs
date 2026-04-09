@@ -56,43 +56,39 @@ impl McpServerManager {
 
     /// Start a single server: create transport, initialize via rmcp, discover tools.
     async fn start_server(&mut self, name: &str, config: &McpServerConfig) -> OxiResult<()> {
-        let client: DynClient = match &config.transport {
-            McpTransportType::Stdio => {
-                let command = config.command.as_deref().ok_or_else(|| {
-                    OxiError::Other(format!("MCP server '{name}' has no command"))
-                })?;
+        let client: DynClient =
+            match &config.transport {
+                McpTransportType::Stdio => {
+                    let command = config.command.as_deref().ok_or_else(|| {
+                        OxiError::Other(format!("MCP server '{name}' has no command"))
+                    })?;
 
-                let mut cmd = tokio::process::Command::new(command);
-                cmd.args(&config.args);
-                for (k, v) in &config.env {
-                    cmd.env(k, v);
+                    let mut cmd = tokio::process::Command::new(command);
+                    cmd.args(&config.args);
+                    for (k, v) in &config.env {
+                        cmd.env(k, v);
+                    }
+
+                    let transport = TokioChildProcess::new(cmd)
+                        .map_err(|e| OxiError::Other(format!("Failed to spawn '{name}': {e}")))?;
+
+                    ().into_dyn().serve(transport).await.map_err(|e| {
+                        OxiError::Other(format!("Failed to initialize '{name}': {e}"))
+                    })?
                 }
+                McpTransportType::Http | McpTransportType::Sse => {
+                    // StreamableHttpClientTransport handles both SSE and Streamable HTTP.
+                    let url = config.url.as_deref().ok_or_else(|| {
+                        OxiError::Other(format!("MCP server '{name}' has no URL"))
+                    })?;
 
-                let transport = TokioChildProcess::new(cmd)
-                    .map_err(|e| OxiError::Other(format!("Failed to spawn '{name}': {e}")))?;
+                    let transport = rmcp::transport::StreamableHttpClientTransport::from_uri(url);
 
-                ()
-                    .into_dyn()
-                    .serve(transport)
-                    .await
-                    .map_err(|e| OxiError::Other(format!("Failed to initialize '{name}': {e}")))?
-            }
-            McpTransportType::Http | McpTransportType::Sse => {
-                // StreamableHttpClientTransport handles both SSE and Streamable HTTP.
-                let url = config.url.as_deref().ok_or_else(|| {
-                    OxiError::Other(format!("MCP server '{name}' has no URL"))
-                })?;
-
-                let transport =
-                    rmcp::transport::StreamableHttpClientTransport::from_uri(url);
-
-                ()
-                    .into_dyn()
-                    .serve(transport)
-                    .await
-                    .map_err(|e| OxiError::Other(format!("Failed to initialize '{name}': {e}")))?
-            }
-        };
+                    ().into_dyn().serve(transport).await.map_err(|e| {
+                        OxiError::Other(format!("Failed to initialize '{name}': {e}"))
+                    })?
+                }
+            };
 
         // Discover tools (rmcp handles capabilities check + auto-pagination).
         let tools = match client.list_all_tools().await {
@@ -140,16 +136,16 @@ impl McpServerManager {
         tool_name: &str,
         arguments: serde_json::Value,
     ) -> OxiResult<CallToolResult> {
-        let managed = self.clients.get(server_name).ok_or_else(|| {
-            OxiError::Other(format!("MCP server '{server_name}' not found"))
-        })?;
+        let managed = self
+            .clients
+            .get(server_name)
+            .ok_or_else(|| OxiError::Other(format!("MCP server '{server_name}' not found")))?;
 
         let args_map: serde_json::Map<String, serde_json::Value> =
             serde_json::from_value(arguments)
                 .map_err(|e| OxiError::Other(format!("Invalid tool arguments: {e}")))?;
 
-        let params = CallToolRequestParams::new(tool_name.to_string())
-            .with_arguments(args_map);
+        let params = CallToolRequestParams::new(tool_name.to_string()).with_arguments(args_map);
 
         managed
             .client
@@ -196,9 +192,10 @@ impl McpServerManager {
         server_name: &str,
         uri: &str,
     ) -> OxiResult<rmcp::model::ReadResourceResult> {
-        let managed = self.clients.get(server_name).ok_or_else(|| {
-            OxiError::Other(format!("MCP server '{server_name}' not found"))
-        })?;
+        let managed = self
+            .clients
+            .get(server_name)
+            .ok_or_else(|| OxiError::Other(format!("MCP server '{server_name}' not found")))?;
 
         let params = rmcp::model::ReadResourceRequestParams::new(uri);
 
@@ -233,9 +230,10 @@ impl McpServerManager {
         prompt_name: &str,
         arguments: Option<HashMap<String, String>>,
     ) -> OxiResult<rmcp::model::GetPromptResult> {
-        let managed = self.clients.get(server_name).ok_or_else(|| {
-            OxiError::Other(format!("MCP server '{server_name}' not found"))
-        })?;
+        let managed = self
+            .clients
+            .get(server_name)
+            .ok_or_else(|| OxiError::Other(format!("MCP server '{server_name}' not found")))?;
 
         let mut params = GetPromptRequestParams::new(prompt_name);
         if let Some(args) = arguments {

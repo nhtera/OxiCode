@@ -57,10 +57,7 @@ impl BridgeDiagnostics {
     pub fn record_error(&mut self) {
         self.error_count += 1;
         self.total_messages += 1;
-        tracing::warn!(
-            "Bridge error recorded (total errors={})",
-            self.error_count
-        );
+        tracing::warn!("Bridge error recorded (total errors={})", self.error_count);
     }
 
     /// 50th-percentile latency for the given message type.

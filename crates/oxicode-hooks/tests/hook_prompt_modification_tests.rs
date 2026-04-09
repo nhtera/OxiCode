@@ -84,7 +84,11 @@ async fn test_multiple_hooks_compose() {
         modifications.push(text);
     }
 
-    assert_eq!(modifications.len(), 2, "both hooks should produce modifications");
+    assert_eq!(
+        modifications.len(),
+        2,
+        "both hooks should produce modifications"
+    );
     assert_eq!(modifications[0], "rule A");
     assert_eq!(modifications[1], "rule B");
 }
@@ -94,12 +98,7 @@ async fn test_hook_error_does_not_block_execution() {
     let payload = test_payload(HookEvent::PreQuery);
 
     // Hook script exits with error code — should return Pass (fail-open).
-    let response = execute_hook_script(
-        "exit 1",
-        &payload,
-        Some(Duration::from_secs(5)),
-    )
-    .await;
+    let response = execute_hook_script("exit 1", &payload, Some(Duration::from_secs(5))).await;
 
     assert!(
         matches!(response, HookResponse::Pass),

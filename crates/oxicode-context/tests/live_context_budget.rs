@@ -8,7 +8,7 @@
 
 use oxicode_common::{ContentBlock, Message};
 use oxicode_context::{
-    truncate_messages, microcompact_messages, BudgetManager, BudgetStatus, TokenCounter,
+    microcompact_messages, truncate_messages, BudgetManager, BudgetStatus, TokenCounter,
 };
 
 // ── Helper ──────────────────────────────────────────────────────
@@ -32,7 +32,10 @@ fn make_conversation(count: usize, chars_each: usize) -> Vec<Message> {
 
 /// Create a message with a large ToolResult content block.
 fn make_tool_result_message(lines: usize) -> Message {
-    let content: String = (0..lines).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+    let content: String = (0..lines)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let mut msg = Message::user("");
     msg.content = vec![ContentBlock::ToolResult {
         tool_use_id: "tu_1".to_string(),
@@ -61,7 +64,10 @@ fn test_budget_status_l1_when_80_percent() {
     let msgs = make_conversation(6, 40);
     let status = mgr.check_budget(&msgs);
     assert!(
-        matches!(status, BudgetStatus::NeedsL1Truncation | BudgetStatus::NeedsL2Microcompact),
+        matches!(
+            status,
+            BudgetStatus::NeedsL1Truncation | BudgetStatus::NeedsL2Microcompact
+        ),
         "Expected L1 or L2 at ~84%, got: {status:?}"
     );
 }
@@ -188,9 +194,15 @@ fn test_l2_microcompact_truncates_large_tool_results() {
 fn test_l2_microcompact_strips_thinking_blocks() {
     let mut msgs = vec![Message::user("")];
     msgs[0].content = vec![
-        ContentBlock::Text { text: "keep this".to_string() },
-        ContentBlock::Thinking { thinking: "internal reasoning".to_string() },
-        ContentBlock::Text { text: " and this".to_string() },
+        ContentBlock::Text {
+            text: "keep this".to_string(),
+        },
+        ContentBlock::Thinking {
+            thinking: "internal reasoning".to_string(),
+        },
+        ContentBlock::Text {
+            text: " and this".to_string(),
+        },
     ];
 
     microcompact_messages(&mut msgs);
@@ -206,9 +218,15 @@ fn test_l2_microcompact_strips_thinking_blocks() {
 fn test_l2_microcompact_collapses_consecutive_text() {
     let mut msgs = vec![Message::user("")];
     msgs[0].content = vec![
-        ContentBlock::Text { text: "part1 ".to_string() },
-        ContentBlock::Text { text: "part2 ".to_string() },
-        ContentBlock::Text { text: "part3".to_string() },
+        ContentBlock::Text {
+            text: "part1 ".to_string(),
+        },
+        ContentBlock::Text {
+            text: "part2 ".to_string(),
+        },
+        ContentBlock::Text {
+            text: "part3".to_string(),
+        },
     ];
 
     microcompact_messages(&mut msgs);

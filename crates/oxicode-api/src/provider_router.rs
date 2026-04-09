@@ -42,7 +42,9 @@ impl ProviderRouter {
         let mut providers: Vec<(String, Arc<dyn LlmProvider>)> = Vec::new();
 
         // Anthropic: OAuth token > API key > Auth token.
-        let base_url = std::env::var("ANTHROPIC_BASE_URL").ok().filter(|s| !s.is_empty());
+        let base_url = std::env::var("ANTHROPIC_BASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
 
         if let Some(token) = oauth_token {
             let mut p = AnthropicProvider::with_oauth_token(token);

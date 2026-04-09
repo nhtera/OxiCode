@@ -82,9 +82,11 @@ async fn test_live_api_tool_use_response() {
         }
     });
 
-    let mut request =
-        MessageRequest::new(model_name(), vec![Message::user("Read the file /tmp/test.txt")])
-            .with_max_tokens(500);
+    let mut request = MessageRequest::new(
+        model_name(),
+        vec![Message::user("Read the file /tmp/test.txt")],
+    )
+    .with_max_tokens(500);
     request.tools = vec![tool_schema];
 
     let mut stream = provider
@@ -125,8 +127,8 @@ async fn test_live_api_tool_use_response() {
 #[ignore]
 async fn test_live_api_streaming_token_usage() {
     let provider = make_live_provider();
-    let request = MessageRequest::new(model_name(), vec![Message::user("Say hi")])
-        .with_max_tokens(50);
+    let request =
+        MessageRequest::new(model_name(), vec![Message::user("Say hi")]).with_max_tokens(50);
 
     let mut stream = provider
         .stream_message(request)
@@ -169,8 +171,8 @@ async fn test_live_api_custom_base_url() {
     };
 
     let provider = AnthropicProvider::new(token).with_base_url(&base_url);
-    let request = MessageRequest::new(model_name(), vec![Message::user("Say OK")])
-        .with_max_tokens(20);
+    let request =
+        MessageRequest::new(model_name(), vec![Message::user("Say OK")]).with_max_tokens(20);
 
     let mut stream = provider
         .stream_message(request)

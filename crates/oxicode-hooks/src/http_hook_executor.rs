@@ -70,7 +70,11 @@ pub async fn execute_http_hook(
             HookResponse::Pass
         }
         Err(_) => {
-            tracing::warn!("HTTP hook timed out after {}s: {}", config.timeout_secs, config.url);
+            tracing::warn!(
+                "HTTP hook timed out after {}s: {}",
+                config.timeout_secs,
+                config.url
+            );
             HookResponse::Pass
         }
     }
@@ -90,8 +94,7 @@ async fn post_hook(
 
     // If resolver provided, also pin DNS resolution.
     if let Some(resolver) = resolver {
-        let parsed = url::Url::parse(&config.url)
-            .map_err(|e| format!("Invalid URL: {e}"))?;
+        let parsed = url::Url::parse(&config.url).map_err(|e| format!("Invalid URL: {e}"))?;
         if let Some(host) = parsed.host_str() {
             let port = parsed.port_or_known_default().unwrap_or(443);
             resolver.resolve(host, port)?;
@@ -143,8 +146,7 @@ async fn post_hook(
         return Ok(HookResponse::Pass);
     }
 
-    serde_json::from_str(trimmed)
-        .map_err(|e| format!("Failed to parse HTTP hook response: {e}"))
+    serde_json::from_str(trimmed).map_err(|e| format!("Failed to parse HTTP hook response: {e}"))
 }
 
 /// Build the JSON request body sent to the hook endpoint.
@@ -171,9 +173,7 @@ fn validate_url_ssrf(url: &str) -> Result<(), String> {
         scheme => return Err(format!("SSRF: disallowed scheme '{scheme}'")),
     }
 
-    let host = parsed
-        .host_str()
-        .ok_or("SSRF: URL has no host")?;
+    let host = parsed.host_str().ok_or("SSRF: URL has no host")?;
 
     // Check if it's a raw IP address.
     if let Ok(ip) = host.parse::<IpAddr>() {
@@ -201,7 +201,6 @@ fn validate_url_ssrf(url: &str) -> Result<(), String> {
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {

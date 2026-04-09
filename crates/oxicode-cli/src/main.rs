@@ -256,9 +256,9 @@ async fn main() -> Result<()> {
         team_manager: std::sync::Arc::new(
             std::sync::Mutex::new(oxicode_agents::TeamManager::new()),
         ),
-        bash_processes: std::sync::Arc::new(std::sync::Mutex::new(
-            std::collections::HashMap::new(),
-        )),
+        bash_processes: std::sync::Arc::new(
+            std::sync::Mutex::new(std::collections::HashMap::new()),
+        ),
     };
 
     let engine = Arc::new(QueryEngine::new(
@@ -554,11 +554,13 @@ async fn run_tui(
     let slash_command_meta: Vec<oxicode_tui::SlashCommandMeta> = command_registry
         .all_commands_with_completions(&meta_ctx)
         .into_iter()
-        .map(|(name, desc, arg_candidates)| oxicode_tui::SlashCommandMeta {
-            name: name.to_string(),
-            description: desc.to_string(),
-            arg_candidates,
-        })
+        .map(
+            |(name, desc, arg_candidates)| oxicode_tui::SlashCommandMeta {
+                name: name.to_string(),
+                description: desc.to_string(),
+                arg_candidates,
+            },
+        )
         .collect();
 
     let mut app = App::new(&state_store, ui_tx, core_rx, slash_command_meta);
@@ -614,7 +616,11 @@ async fn run_tui(
 
                     // Run execute_turn in this task (owns conversation).
                     let result = engine_clone
-                        .execute_turn_with_cancel(&mut conversation, Some(&turn_tx), Some(&cancel_flag_engine))
+                        .execute_turn_with_cancel(
+                            &mut conversation,
+                            Some(&turn_tx),
+                            Some(&cancel_flag_engine),
+                        )
                         .await;
 
                     // Drop sender to close forwarder, then wait for it.
@@ -732,10 +738,7 @@ async fn run_tui(
                                         id: uuid::Uuid::new_v4().to_string(),
                                         role: Role::Assistant,
                                         content: vec![ContentBlock::Text {
-                                            text: format!(
-                                                "Switched to model: {}",
-                                                resolved.model
-                                            ),
+                                            text: format!("Switched to model: {}", resolved.model),
                                         }],
                                         model: None,
                                         stop_reason: None,
@@ -743,15 +746,11 @@ async fn run_tui(
                                         usage: None,
                                     };
                                     state_store_clone.push_message(sys_msg);
-                                    let _ = core_tx_clone
-                                        .send(CoreEvent::MessageComplete)
-                                        .await;
+                                    let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
                                 }
                                 Err(e) => {
                                     let _ = core_tx_clone
-                                        .send(CoreEvent::Error(format!(
-                                            "Cannot switch model: {e}"
-                                        )))
+                                        .send(CoreEvent::Error(format!("Cannot switch model: {e}")))
                                         .await;
                                 }
                             }

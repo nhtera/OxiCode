@@ -45,7 +45,11 @@ async fn test_file_read_tool() {
     });
 
     let result = reg.execute("file_read", input, &ctx).await.unwrap();
-    assert!(!result.is_error, "file_read should succeed: {}", result.content);
+    assert!(
+        !result.is_error,
+        "file_read should succeed: {}",
+        result.content
+    );
     assert!(
         result.content.contains("Hello from test!"),
         "Should contain file content, got: {}",
@@ -86,7 +90,11 @@ async fn test_file_write_tool() {
     });
 
     let result = reg.execute("file_write", input, &ctx).await.unwrap();
-    assert!(!result.is_error, "file_write should succeed: {}", result.content);
+    assert!(
+        !result.is_error,
+        "file_write should succeed: {}",
+        result.content
+    );
 
     // Verify file exists on disk.
     let on_disk = std::fs::read_to_string(&file_path).unwrap();
@@ -115,7 +123,11 @@ async fn test_file_edit_tool() {
     });
 
     let result = reg.execute("file_edit", input, &ctx).await.unwrap();
-    assert!(!result.is_error, "file_edit should succeed: {}", result.content);
+    assert!(
+        !result.is_error,
+        "file_edit should succeed: {}",
+        result.content
+    );
 
     let on_disk = std::fs::read_to_string(&file_path).unwrap();
     assert!(
@@ -170,7 +182,11 @@ async fn test_glob_tool() {
 #[tokio::test]
 async fn test_grep_tool() {
     let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("source.rs"), "fn main() {\n    println!(\"hello\");\n}\n").unwrap();
+    std::fs::write(
+        tmp.path().join("source.rs"),
+        "fn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .unwrap();
     std::fs::write(tmp.path().join("other.rs"), "fn other() {}\n").unwrap();
 
     let reg = core_registry();
@@ -203,7 +219,11 @@ async fn test_bash_tool_echo() {
     });
 
     let result = reg.execute("bash", input, &ctx).await.unwrap();
-    assert!(!result.is_error, "bash echo should succeed: {}", result.content);
+    assert!(
+        !result.is_error,
+        "bash echo should succeed: {}",
+        result.content
+    );
     assert!(
         result.content.contains("hello"),
         "Output should contain 'hello', got: {}",
@@ -222,10 +242,7 @@ async fn test_bash_tool_error_exit() {
     });
 
     let result = reg.execute("bash", input, &ctx).await.unwrap();
-    assert!(
-        result.is_error,
-        "bash `false` should return is_error=true"
-    );
+    assert!(result.is_error, "bash `false` should return is_error=true");
 }
 
 #[tokio::test]
@@ -326,7 +343,10 @@ async fn test_task_create_and_list() {
         "type": "bash",
         "command": "echo task_test"
     });
-    let create_result = reg.execute("task_create", create_input, &ctx).await.unwrap();
+    let create_result = reg
+        .execute("task_create", create_input, &ctx)
+        .await
+        .unwrap();
     assert!(
         !create_result.is_error,
         "task_create should succeed: {}",

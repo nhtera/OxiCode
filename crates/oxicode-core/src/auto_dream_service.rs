@@ -225,6 +225,8 @@ mod tests {
         assert!(!suggestions.is_empty());
         // Generic fallback should mention README or CI
         let titles: Vec<_> = suggestions.iter().map(|s| s.title.as_str()).collect();
-        assert!(titles.iter().any(|t| t.contains("README") || t.contains("CI")));
+        assert!(titles
+            .iter()
+            .any(|t| t.contains("README") || t.contains("CI")));
     }
 }

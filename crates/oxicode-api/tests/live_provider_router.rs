@@ -87,8 +87,8 @@ fn test_resolve_non_claude_model_passthrough() {
 #[test]
 fn test_router_has_anthropic_when_auth_token_set() {
     // If ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY is set, anthropic should be available.
-    let has_key = std::env::var("ANTHROPIC_API_KEY").is_ok()
-        || std::env::var("ANTHROPIC_AUTH_TOKEN").is_ok();
+    let has_key =
+        std::env::var("ANTHROPIC_API_KEY").is_ok() || std::env::var("ANTHROPIC_AUTH_TOKEN").is_ok();
 
     let router = ProviderRouter::from_env();
     let providers = router.available_providers();
@@ -122,8 +122,8 @@ fn test_router_explicit_provider_prefix() {
 #[ignore]
 async fn test_from_env_with_auth_token() {
     // Requires ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL env vars.
-    let token = std::env::var("ANTHROPIC_AUTH_TOKEN")
-        .expect("ANTHROPIC_AUTH_TOKEN required for this test");
+    let token =
+        std::env::var("ANTHROPIC_AUTH_TOKEN").expect("ANTHROPIC_AUTH_TOKEN required for this test");
     assert!(!token.is_empty(), "Token should not be empty");
 
     let router = ProviderRouter::from_env_with_oauth(None);

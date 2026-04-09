@@ -6,8 +6,8 @@
 use std::fmt;
 use std::time::{Duration, Instant};
 
-use rmcp::ServiceExt;
 use rmcp::transport::TokioChildProcess;
+use rmcp::ServiceExt;
 
 use crate::config::{McpConfig, McpServerConfig, McpTransportType};
 
@@ -118,8 +118,7 @@ async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResu
                 };
             };
 
-            let transport =
-                rmcp::transport::StreamableHttpClientTransport::from_uri(url.as_str());
+            let transport = rmcp::transport::StreamableHttpClientTransport::from_uri(url.as_str());
 
             match ().serve(transport).await {
                 Ok(client) => {

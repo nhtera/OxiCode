@@ -165,7 +165,9 @@ impl BridgeDebugLogger {
     // -- Internal --
 
     fn timestamp(&self) -> String {
-        chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+        chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string()
     }
 
     fn append_line(&self, line: &str) {
@@ -299,7 +301,13 @@ mod tests {
     #[test]
     fn test_rotated_path() {
         let base = PathBuf::from("/tmp/bridge-debug.log");
-        assert_eq!(rotated_path(&base, 1), PathBuf::from("/tmp/bridge-debug.log.1"));
-        assert_eq!(rotated_path(&base, 3), PathBuf::from("/tmp/bridge-debug.log.3"));
+        assert_eq!(
+            rotated_path(&base, 1),
+            PathBuf::from("/tmp/bridge-debug.log.1")
+        );
+        assert_eq!(
+            rotated_path(&base, 3),
+            PathBuf::from("/tmp/bridge-debug.log.3")
+        );
     }
 }

@@ -124,9 +124,7 @@ pub fn extract_to_memdir(
     }
 
     if saved_count > 0 {
-        tracing::info!(
-            "Extracted {saved_count} memories to memdir for session {session_id}"
-        );
+        tracing::info!("Extracted {saved_count} memories to memdir for session {session_id}");
     }
 
     ExtractionResult {
@@ -194,7 +192,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let extracted = memory::extract_memories_from_text(&conversation_text, "test-session");
-        assert!(!extracted.is_empty(), "Should extract at least one memory from marker patterns");
+        assert!(
+            !extracted.is_empty(),
+            "Should extract at least one memory from marker patterns"
+        );
         assert!(extracted.iter().all(|m| m.source == "auto"));
     }
 
@@ -299,11 +300,7 @@ mod tests {
         let files: Vec<_> = std::fs::read_dir(&mem_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .is_some_and(|ext| ext == "md")
-            })
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
             .collect();
         assert_eq!(files.len(), result.saved_count);
     }
