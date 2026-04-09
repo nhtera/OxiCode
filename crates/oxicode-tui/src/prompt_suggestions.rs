@@ -1,7 +1,7 @@
 //! Prompt suggestions — context-aware follow-up prompt suggestions.
 //!
-//! Analyzes the last assistant message, tool calls, and tool results to suggest
-//! relevant follow-up actions the user might want to take.
+//! Analyzes the last assistant message, tool calls, tool results, and
+//! conversation text to suggest relevant follow-up actions.
 
 use oxicode_common::{ContentBlock, Message, Role};
 
@@ -29,6 +29,16 @@ struct MessageContext {
     has_any_tool: bool,
     has_any_error: bool,
     user_turn_count: usize,
+    /// Assistant's last text asks a question or requests input.
+    assistant_asks_question: bool,
+    /// Assistant offered choices / options.
+    assistant_offers_choices: bool,
+    /// Assistant confirmed task completion.
+    assistant_task_done: bool,
+    /// Assistant's response text (lowercase, for pattern matching).
+    assistant_text_lower: String,
+    /// User's last message text (lowercase).
+    user_text_lower: String,
 }
 
 /// Analyze the last assistant message and surrounding tool results to build context.
@@ -43,17 +53,40 @@ fn analyze_context(messages: &[Message]) -> MessageContext {
         has_any_tool: false,
         has_any_error: false,
         user_turn_count: messages.iter().filter(|m| m.role == Role::User).count(),
+        assistant_asks_question: false,
+        assistant_offers_choices: false,
+        assistant_task_done: false,
+        assistant_text_lower: String::new(),
+        user_text_lower: String::new(),
     };
 
+    // Extract user's last text message.
+    for msg in messages.iter().rev() {
+        if msg.role == Role::User {
+            for block in &msg.content {
+                if let ContentBlock::Text { text } = block {
+                    ctx.user_text_lower = text.to_lowercase();
+                    break;
+                }
+            }
+            if !ctx.user_text_lower.is_empty() {
+                break;
+            }
+        }
+    }
+
     // Scan last assistant message + all tool results that follow it.
-    let last_assistant_idx = messages
-        .iter()
-        .rposition(|m| m.role == Role::Assistant);
+    let last_assistant_idx = messages.iter().rposition(|m| m.role == Role::Assistant);
     let scan_start = last_assistant_idx.unwrap_or(0);
 
     for msg in &messages[scan_start..] {
         for block in &msg.content {
             match block {
+                ContentBlock::Text { text } if msg.role == Role::Assistant => {
+                    let lower = text.to_lowercase();
+                    ctx.assistant_text_lower.push_str(&lower);
+                    ctx.assistant_text_lower.push(' ');
+                }
                 ContentBlock::ToolUse { name, .. } => {
                     ctx.has_any_tool = true;
                     let n = name.to_lowercase();
@@ -80,6 +113,37 @@ fn analyze_context(messages: &[Message]) -> MessageContext {
         }
     }
 
+    // Analyze assistant text patterns.
+    let at = &ctx.assistant_text_lower;
+    ctx.assistant_asks_question = at.contains('?')
+        || at.contains("what would you")
+        || at.contains("what do you")
+        || at.contains("would you like")
+        || at.contains("how can i help")
+        || at.contains("what can i")
+        || at.contains("let me know")
+        || at.contains("tell me more")
+        || at.contains("could you")
+        || at.contains("what should")
+        || at.contains("shall i");
+
+    ctx.assistant_offers_choices = at.contains("option")
+        || at.contains("approach")
+        || at.contains("choose")
+        || at.contains("alternative")
+        || at.contains("we could")
+        || at.contains("you could")
+        || at.contains("1.");
+
+    ctx.assistant_task_done = at.contains("done")
+        || at.contains("complete")
+        || at.contains("finished")
+        || at.contains("all set")
+        || at.contains("ready to")
+        || at.contains("successfully")
+        || at.contains("implemented")
+        || at.contains("fixed the");
+
     ctx
 }
 
@@ -87,23 +151,20 @@ fn analyze_context(messages: &[Message]) -> MessageContext {
 fn analyze_tool_result(ctx: &mut MessageContext, content: &str, is_error: bool) {
     let lower = content.to_lowercase();
 
-    // Bash error detection (tool marked as error + bash-like output).
-    if is_error && (lower.contains("error") || lower.contains("failed") || lower.contains("panicked")) {
+    if is_error
+        && (lower.contains("error") || lower.contains("failed") || lower.contains("panicked"))
+    {
         ctx.has_bash_error = true;
     }
 
-    // Test result detection — look for test runner output patterns.
     let looks_like_test = lower.contains("test result")
         || lower.contains("tests passed")
         || (lower.contains("test") && (lower.contains("passed") || lower.contains("failed")));
 
     if looks_like_test {
-        // Distinguish actual failures from "0 failed" in pass summaries.
-        // Rust test output: "test result: FAILED" or "X failed" where X > 0.
         let has_real_failure = (lower.contains("test result: failed")
             || lower.contains("test result: failure"))
-            || (lower.contains("failed")
-                && !lower.contains("0 failed"));
+            || (lower.contains("failed") && !lower.contains("0 failed"));
         if has_real_failure {
             ctx.has_test_failure = true;
         } else {
@@ -132,7 +193,6 @@ fn is_search_tool(name: &str) -> bool {
 
 /// Generate context-aware suggestions based on the conversation.
 pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
-    // No messages → first-time suggestions.
     let has_user_message = messages.iter().any(|m| m.role == Role::User);
     if !has_user_message {
         return first_time_suggestions();
@@ -146,9 +206,8 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
     let ctx = analyze_context(messages);
     let mut suggestions = Vec::new();
 
-    // Priority-ordered: most specific contexts first.
+    // --- Priority 1: Tool-based signals (most actionable) ---
 
-    // 1. Test failure → highest priority (actionable).
     if ctx.has_test_failure {
         suggestions.push(PromptSuggestion {
             label: "Fix failing tests".into(),
@@ -156,16 +215,17 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // 2. Bash/tool error.
     if ctx.has_bash_error {
         suggestions.push(PromptSuggestion {
             label: "Fix this error".into(),
             prompt: "Can you debug and fix this error?".into(),
         });
-        suggestions.push(PromptSuggestion {
-            label: "Show full output".into(),
-            prompt: "Show me the full error output and explain what went wrong.".into(),
-        });
+        if suggestions.len() < MAX_SUGGESTIONS {
+            suggestions.push(PromptSuggestion {
+                label: "Show full output".into(),
+                prompt: "Show me the full error output and explain what went wrong.".into(),
+            });
+        }
     } else if ctx.has_any_error {
         suggestions.push(PromptSuggestion {
             label: "Debug this".into(),
@@ -173,7 +233,6 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // 3. Test passed → suggest commit.
     if ctx.has_test_pass && !ctx.has_test_failure && suggestions.is_empty() {
         suggestions.push(PromptSuggestion {
             label: "Commit changes".into(),
@@ -181,9 +240,11 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // 4. File edits → testing/review follow-up.
     if ctx.has_file_edit && suggestions.len() < MAX_SUGGESTIONS {
-        if !suggestions.iter().any(|s| s.label.contains("test") || s.label.contains("Test")) {
+        if !suggestions
+            .iter()
+            .any(|s| s.label.contains("test") || s.label.contains("Test"))
+        {
             suggestions.push(PromptSuggestion {
                 label: "Run tests".into(),
                 prompt: "Run the tests to verify the changes.".into(),
@@ -197,7 +258,6 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         }
     }
 
-    // 5. Search results → explain/dig deeper.
     if ctx.has_search && suggestions.len() < MAX_SUGGESTIONS {
         suggestions.push(PromptSuggestion {
             label: "Explain results".into(),
@@ -205,7 +265,6 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // 6. Code read → explain/improve.
     if ctx.has_file_read && !ctx.has_file_edit && suggestions.len() < MAX_SUGGESTIONS {
         suggestions.push(PromptSuggestion {
             label: "Explain this code".into(),
@@ -213,7 +272,6 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // 7. Generic tool use with no errors → continue.
     if ctx.has_any_tool && suggestions.is_empty() {
         suggestions.push(PromptSuggestion {
             label: "Continue".into(),
@@ -221,7 +279,38 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // 8. Multi-turn conversation fallback (no tool use).
+    // --- Priority 2: Text-based signals (assistant asked/offered/completed) ---
+
+    if suggestions.is_empty() {
+        // Assistant completed a task → suggest follow-ups.
+        if ctx.assistant_task_done {
+            add_task_done_suggestions(&ctx, &mut suggestions);
+        }
+        // Assistant offered choices/approaches (check before generic question).
+        else if ctx.assistant_offers_choices {
+            suggestions.push(PromptSuggestion {
+                label: "Go with first".into(),
+                prompt: "Go with the first approach.".into(),
+            });
+            suggestions.push(PromptSuggestion {
+                label: "Compare options".into(),
+                prompt: "Compare the options and recommend the best one.".into(),
+            });
+        }
+        // Assistant asked a question or awaits input.
+        else if ctx.assistant_asks_question {
+            add_question_response_suggestions(&ctx, &mut suggestions);
+        }
+    }
+
+    // --- Priority 3: User intent signals ---
+
+    if suggestions.is_empty() {
+        add_user_intent_suggestions(&ctx, &mut suggestions);
+    }
+
+    // --- Priority 4: Multi-turn fallback ---
+
     if suggestions.is_empty() && ctx.user_turn_count > 4 {
         suggestions.push(PromptSuggestion {
             label: "Summarize progress".into(),
@@ -233,32 +322,279 @@ pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
         });
     }
 
-    // 9. Final fallback — conversational defaults.
+    // --- Priority 5: Conversation-aware fallback ---
+
     if suggestions.is_empty() {
-        suggestions.push(PromptSuggestion {
-            label: "Continue".into(),
-            prompt: "Continue with the next step.".into(),
-        });
-        suggestions.push(PromptSuggestion {
-            label: "Start new task".into(),
-            prompt: "Let's start working on something new.".into(),
-        });
+        add_conversation_fallback_suggestions(&ctx, &mut suggestions);
     }
 
     suggestions.truncate(MAX_SUGGESTIONS);
     suggestions
 }
 
+/// Suggestions after assistant says task is done.
+fn add_task_done_suggestions(ctx: &MessageContext, suggestions: &mut Vec<PromptSuggestion>) {
+    let at = &ctx.assistant_text_lower;
+
+    // Code-related completion.
+    if at.contains("implement")
+        || at.contains("code")
+        || at.contains("function")
+        || at.contains("fix")
+    {
+        suggestions.push(PromptSuggestion {
+            label: "Run tests".into(),
+            prompt: "Run the tests to verify everything works.".into(),
+        });
+        if suggestions.len() < MAX_SUGGESTIONS {
+            suggestions.push(PromptSuggestion {
+                label: "Commit changes".into(),
+                prompt: "Commit the current changes with a descriptive message.".into(),
+            });
+        }
+    } else {
+        suggestions.push(PromptSuggestion {
+            label: "What's next?".into(),
+            prompt: "What should we work on next?".into(),
+        });
+    }
+
+    if suggestions.len() < MAX_SUGGESTIONS {
+        suggestions.push(PromptSuggestion {
+            label: "Review changes".into(),
+            prompt: "Show me a summary of all changes made.".into(),
+        });
+    }
+}
+
+/// Suggestions when assistant asked a question.
+fn add_question_response_suggestions(
+    ctx: &MessageContext,
+    suggestions: &mut Vec<PromptSuggestion>,
+) {
+    let at = &ctx.assistant_text_lower;
+    let ut = &ctx.user_text_lower;
+
+    // "What would you like to work on?" / "What do you have in mind?"
+    if at.contains("work on") || at.contains("have in mind") || at.contains("get started") {
+        // Detect project type from user text or suggest common workflows.
+        if ut.contains("rust") || ut.contains("cargo") {
+            suggestions.push(PromptSuggestion {
+                label: "Run cargo check".into(),
+                prompt: "Run cargo check to see the current state.".into(),
+            });
+            suggestions.push(PromptSuggestion {
+                label: "Explore codebase".into(),
+                prompt: "Give me an overview of the codebase structure.".into(),
+            });
+        } else {
+            suggestions.push(PromptSuggestion {
+                label: "Explore codebase".into(),
+                prompt: "Give me an overview of the codebase structure.".into(),
+            });
+            suggestions.push(PromptSuggestion {
+                label: "Find bugs".into(),
+                prompt: "Look for potential bugs or issues in the code.".into(),
+            });
+        }
+        if suggestions.len() < MAX_SUGGESTIONS {
+            suggestions.push(PromptSuggestion {
+                label: "Run tests".into(),
+                prompt: "Run the test suite and report any failures.".into(),
+            });
+        }
+        return;
+    }
+
+    // "Shall I continue?" / "Want me to proceed?"
+    if at.contains("shall i")
+        || at.contains("want me to")
+        || at.contains("proceed")
+        || at.contains("go ahead")
+    {
+        suggestions.push(PromptSuggestion {
+            label: "Yes, go ahead".into(),
+            prompt: "Yes, go ahead.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Explain first".into(),
+            prompt: "Explain your approach before proceeding.".into(),
+        });
+        return;
+    }
+
+    // "How can I help?" / generic question.
+    if at.contains("how can i help") || at.contains("what can i") {
+        suggestions.push(PromptSuggestion {
+            label: "Explore codebase".into(),
+            prompt: "Give me an overview of the codebase structure.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Fix a bug".into(),
+            prompt: "Help me find and fix bugs in the code.".into(),
+        });
+        if suggestions.len() < MAX_SUGGESTIONS {
+            suggestions.push(PromptSuggestion {
+                label: "Add a feature".into(),
+                prompt: "I want to add a new feature. Let me describe it.".into(),
+            });
+        }
+        return;
+    }
+
+    // Generic question fallback.
+    suggestions.push(PromptSuggestion {
+        label: "Yes".into(),
+        prompt: "Yes.".into(),
+    });
+    suggestions.push(PromptSuggestion {
+        label: "Explain more".into(),
+        prompt: "Can you explain in more detail?".into(),
+    });
+}
+
+/// Suggestions based on what the user was talking about.
+fn add_user_intent_suggestions(ctx: &MessageContext, suggestions: &mut Vec<PromptSuggestion>) {
+    let ut = &ctx.user_text_lower;
+
+    // User talked about building/implementing.
+    if ut.contains("build")
+        || ut.contains("implement")
+        || ut.contains("create")
+        || ut.contains("add")
+    {
+        suggestions.push(PromptSuggestion {
+            label: "Start implementing".into(),
+            prompt: "Start implementing it. Show me the plan first.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Explore first".into(),
+            prompt: "First, explore the relevant code to understand the current state.".into(),
+        });
+        return;
+    }
+
+    // User talked about fixing/debugging.
+    if ut.contains("fix") || ut.contains("bug") || ut.contains("debug") || ut.contains("error") {
+        suggestions.push(PromptSuggestion {
+            label: "Show the error".into(),
+            prompt: "Let me show you the error output.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Find root cause".into(),
+            prompt: "Investigate and find the root cause.".into(),
+        });
+        return;
+    }
+
+    // User talked about testing.
+    if ut.contains("test") {
+        suggestions.push(PromptSuggestion {
+            label: "Run all tests".into(),
+            prompt: "Run the full test suite.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Fix failures".into(),
+            prompt: "Fix any failing tests.".into(),
+        });
+        return;
+    }
+
+    // User talked about reviewing/refactoring.
+    if ut.contains("review")
+        || ut.contains("refactor")
+        || ut.contains("improve")
+        || ut.contains("clean")
+    {
+        suggestions.push(PromptSuggestion {
+            label: "Show suggestions".into(),
+            prompt: "Show me specific improvement suggestions.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Apply changes".into(),
+            prompt: "Go ahead and apply the improvements.".into(),
+        });
+        return;
+    }
+}
+
+/// Fallback suggestions with some conversation awareness.
+fn add_conversation_fallback_suggestions(
+    ctx: &MessageContext,
+    suggestions: &mut Vec<PromptSuggestion>,
+) {
+    let at = &ctx.assistant_text_lower;
+
+    // If assistant mentioned code/files, suggest exploring.
+    if at.contains(".rs")
+        || at.contains(".ts")
+        || at.contains(".py")
+        || at.contains("function")
+        || at.contains("struct")
+    {
+        suggestions.push(PromptSuggestion {
+            label: "Explore codebase".into(),
+            prompt: "Give me an overview of the codebase structure and key files.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Run tests".into(),
+            prompt: "Run the tests to check the current state.".into(),
+        });
+        if suggestions.len() < MAX_SUGGESTIONS {
+            suggestions.push(PromptSuggestion {
+                label: "Find issues".into(),
+                prompt: "Look for potential bugs or code quality issues.".into(),
+            });
+        }
+        return;
+    }
+
+    // If assistant mentioned building/architecture.
+    if at.contains("crate")
+        || at.contains("workspace")
+        || at.contains("module")
+        || at.contains("architecture")
+    {
+        suggestions.push(PromptSuggestion {
+            label: "Show structure".into(),
+            prompt: "Show me the project structure and dependencies.".into(),
+        });
+        suggestions.push(PromptSuggestion {
+            label: "Run cargo check".into(),
+            prompt: "Run cargo check to verify the build.".into(),
+        });
+        return;
+    }
+
+    // True generic fallback — still useful.
+    suggestions.push(PromptSuggestion {
+        label: "Explore codebase".into(),
+        prompt: "Give me an overview of the codebase.".into(),
+    });
+    suggestions.push(PromptSuggestion {
+        label: "Run tests".into(),
+        prompt: "Run the test suite and report results.".into(),
+    });
+    suggestions.push(PromptSuggestion {
+        label: "Find issues".into(),
+        prompt: "Look for bugs or issues in the code.".into(),
+    });
+}
+
 /// Suggestions for the very first interaction (no user messages yet).
 fn first_time_suggestions() -> Vec<PromptSuggestion> {
     vec![
         PromptSuggestion {
-            label: "What can you do?".into(),
-            prompt: "What can you help me with?".into(),
+            label: "Explore codebase".into(),
+            prompt: "Give me an overview of this codebase.".into(),
         },
         PromptSuggestion {
-            label: "Explain codebase".into(),
-            prompt: "Give me an overview of this codebase.".into(),
+            label: "Run tests".into(),
+            prompt: "Run the test suite and report any issues.".into(),
+        },
+        PromptSuggestion {
+            label: "Find bugs".into(),
+            prompt: "Look for potential bugs or issues in the code.".into(),
         },
     ]
 }
@@ -271,6 +607,18 @@ mod tests {
         Message {
             id: "u".into(),
             role: Role::User,
+            content: vec![ContentBlock::Text { text: text.into() }],
+            model: None,
+            stop_reason: None,
+            created_at: chrono::Utc::now(),
+            usage: None,
+        }
+    }
+
+    fn make_assistant_msg(text: &str) -> Message {
+        Message {
+            id: "a".into(),
+            role: Role::Assistant,
             content: vec![ContentBlock::Text { text: text.into() }],
             model: None,
             stop_reason: None,
@@ -313,8 +661,8 @@ mod tests {
     #[test]
     fn test_first_time_suggestions() {
         let suggestions = suggest_prompts(&[]);
-        assert_eq!(suggestions.len(), 2);
-        assert_eq!(suggestions[0].label, "What can you do?");
+        assert_eq!(suggestions.len(), 3);
+        assert_eq!(suggestions[0].label, "Explore codebase");
     }
 
     #[test]
@@ -416,7 +764,6 @@ mod tests {
     #[test]
     fn test_max_suggestions_limit() {
         let mut msgs = vec![make_user_msg("fix it")];
-        // Bash error + file edit → many possible suggestions.
         msgs.push(Message {
             id: "a".into(),
             role: Role::Assistant,
@@ -463,44 +810,143 @@ mod tests {
 
     #[test]
     fn test_multi_turn_fallback() {
-        // >4 user messages with no tool use in last assistant message.
         let mut msgs: Vec<Message> = (0..5)
             .flat_map(|i| {
                 vec![
                     make_user_msg(&format!("question {i}")),
-                    Message {
-                        id: format!("a{i}"),
-                        role: Role::Assistant,
-                        content: vec![ContentBlock::Text {
-                            text: format!("answer {i}"),
-                        }],
-                        model: None,
-                        stop_reason: None,
-                        created_at: chrono::Utc::now(),
-                        usage: None,
-                    },
+                    make_assistant_msg(&format!("answer {i}")),
                 ]
             })
             .collect();
-        // Add one more user message to bring count > 4.
         msgs.push(make_user_msg("another question"));
-        msgs.push(Message {
-            id: "final".into(),
-            role: Role::Assistant,
-            content: vec![ContentBlock::Text {
-                text: "another answer".into(),
-            }],
-            model: None,
-            stop_reason: None,
-            created_at: chrono::Utc::now(),
-            usage: None,
-        });
+        msgs.push(make_assistant_msg("another answer"));
 
         let suggestions = suggest_prompts(&msgs);
         assert!(
             suggestions.iter().any(|s| s.label == "Summarize progress")
                 || suggestions.iter().any(|s| s.label == "What's next?"),
             "Multi-turn should suggest summary/next, got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+    }
+
+    // --- New text-analysis tests ---
+
+    #[test]
+    fn test_assistant_question_suggests_contextual_response() {
+        let msgs = vec![
+            make_user_msg("Let's start working on something new."),
+            make_assistant_msg("Sure! What do you have in mind?"),
+        ];
+        let suggestions = suggest_prompts(&msgs);
+        // Should NOT be generic "Continue" / "Start new task".
+        assert!(
+            !suggestions.iter().any(|s| s.label == "Continue"),
+            "Should not show generic 'Continue' when assistant asks question, got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+        assert!(
+            suggestions.iter().any(|s| s.label == "Explore codebase"
+                || s.label == "Find bugs"
+                || s.label == "Run tests"
+                || s.label == "Run cargo check"),
+            "Should show actionable suggestions, got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_assistant_task_done_suggests_followup() {
+        let msgs = vec![
+            make_user_msg("Fix the bug"),
+            make_assistant_msg("I've successfully fixed the bug in the authentication module."),
+        ];
+        let suggestions = suggest_prompts(&msgs);
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.label == "Run tests" || s.label == "Commit changes"),
+            "Should suggest tests or commit after task done, got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_assistant_offers_choices() {
+        let msgs = vec![
+            make_user_msg("How should we implement caching?"),
+            make_assistant_msg(
+                "We could use: 1. Redis 2. In-memory cache. Which approach would you prefer?",
+            ),
+        ];
+        let suggestions = suggest_prompts(&msgs);
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.label == "Go with first" || s.label == "Compare options"),
+            "Should suggest choosing option, got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_assistant_shall_i_continue() {
+        let msgs = vec![
+            make_user_msg("Refactor the module"),
+            make_assistant_msg("I've planned the refactoring. Shall I proceed with the changes?"),
+        ];
+        let suggestions = suggest_prompts(&msgs);
+        assert!(
+            suggestions.iter().any(|s| s.label == "Yes, go ahead"),
+            "Should suggest 'Yes, go ahead', got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_user_intent_build() {
+        let msgs = vec![
+            make_user_msg("I want to build a new authentication system"),
+            make_assistant_msg(
+                "That sounds like a great project. Here's what we need to consider...",
+            ),
+        ];
+        let suggestions = suggest_prompts(&msgs);
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.label == "Start implementing" || s.label == "Explore first"),
+            "Should suggest implementation actions, got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_conversation_with_code_mentions() {
+        let msgs = vec![
+            make_user_msg("Tell me about this project"),
+            make_assistant_msg("This is a Rust workspace with structs and functions in main.rs..."),
+        ];
+        let suggestions = suggest_prompts(&msgs);
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.label == "Explore codebase" || s.label == "Run tests"),
+            "Should suggest code-related actions, got: {:?}",
+            suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_how_can_i_help_suggestions() {
+        let msgs = vec![
+            make_user_msg("hi"),
+            make_assistant_msg("Hello! How can I help you today?"),
+        ];
+        let suggestions = suggest_prompts(&msgs);
+        assert!(
+            suggestions.iter().any(|s| s.label == "Explore codebase"),
+            "Should suggest exploring when assistant asks how to help, got: {:?}",
             suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
         );
     }
