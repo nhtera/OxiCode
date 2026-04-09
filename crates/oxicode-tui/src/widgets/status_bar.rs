@@ -248,17 +248,26 @@ impl Widget for StatusBar<'_> {
             )
         };
 
-        // Context window usage (color-coded).
+        // Context window usage — visual progress bar + percentage.
         let ctx_span = match self.context_pct {
             Some(pct) if pct > 0.0 => {
-                let color = if pct >= 80.0 {
+                let color = if pct >= 85.0 {
                     Color::Red
-                } else if pct >= 50.0 {
+                } else if pct >= 60.0 {
                     Color::Yellow
                 } else {
                     Color::Green
                 };
-                Span::styled(format!(" ctx:{pct:.0}%"), Style::default().fg(color))
+                // 10-char bar: filled = █, empty = ░
+                #[allow(clippy::cast_sign_loss)] // pct is always > 0.0 in this branch
+                let filled = ((pct / 100.0) * 10.0).round() as usize;
+                let filled = filled.min(10);
+                let empty = 10 - filled;
+                let bar: String = "\u{2588}".repeat(filled) + &"\u{2591}".repeat(empty);
+                Span::styled(
+                    format!(" {bar} {pct:.0}%"),
+                    Style::default().fg(color),
+                )
             }
             _ => Span::raw(""),
         };

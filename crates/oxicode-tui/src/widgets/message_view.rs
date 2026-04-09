@@ -209,9 +209,9 @@ impl<'a> MessageView<'a> {
                 .map_or(true, |r| r != Role::Assistant)
             {
                 lines.push(Line::from(Span::styled(
-                    "\u{25c0} OxiCode",
+                    "\u{25c6} Assistant", // ◆ Assistant
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
                 )));
             }
@@ -303,78 +303,55 @@ impl<'a> MessageView<'a> {
 
     /// Render the welcome screen shown when no messages exist.
     fn render_welcome_screen(&self, lines: &mut Vec<Line<'a>>) {
-        let cyan = Style::default().fg(Color::Cyan);
-        let bold_cyan = Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD);
         let dim = Style::default().fg(Color::DarkGray);
         let green = Style::default().fg(Color::Green);
-        let yellow = Style::default().fg(Color::Yellow);
 
-        // Blank line for spacing.
-        lines.push(Line::from(""));
-
-        // Title with decorative box.
-        lines.push(Line::from(vec![Span::styled(
-            "  \u{256d}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256e}",
-            dim,
-        )]));
-        lines.push(Line::from(vec![
-            Span::styled("  \u{2502} ", dim),
-            Span::styled("OxiCode v0.1.0", bold_cyan),
-            Span::styled(" \u{2502}", dim),
-        ]));
-        lines.push(Line::from(vec![Span::styled(
-            "  \u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}",
-            dim,
-        )]));
+        // ASCII art logo — alternate Cyan / Blue per row for gradient effect.
+        let logo_lines = [
+            "   \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2557}  \u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}",
+            "  \u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557}\u{255a}\u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}",
+            "  \u{2588}\u{2588}\u{2551}   \u{2588}\u{2588}\u{2551} \u{255a}\u{2588}\u{2588}\u{2588}\u{2554}\u{255d} \u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2551}     \u{2588}\u{2588}\u{2551}   \u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2551}  \u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}  ",
+            "  \u{2588}\u{2588}\u{2551}   \u{2588}\u{2588}\u{2551} \u{2588}\u{2588}\u{2554}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2551}     \u{2588}\u{2588}\u{2551}   \u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2551}  \u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{255d}  ",
+            "  \u{255a}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2554}\u{255d} \u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2551}\u{255a}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}\u{255a}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}",
+            "   \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{255d}  \u{255a}\u{2550}\u{255d}\u{255a}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}",
+        ];
+        // Gradient colors alternating Cyan / Blue per line.
+        let gradient = [Color::Cyan, Color::Blue, Color::Cyan, Color::Blue, Color::Cyan, Color::Blue];
 
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "  Rust-powered AI coding agent",
-            dim,
-        )));
+        for (logo_line, &color) in logo_lines.iter().zip(gradient.iter()) {
+            lines.push(Line::from(Span::styled(
+                (*logo_line).to_string(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            )));
+        }
         lines.push(Line::from(""));
 
-        // Model and project info.
+        // Version • model • cwd info line.
+        let mut info_spans: Vec<Span<'a>> = vec![Span::styled("  v0.1.0", dim)];
         if let Some(model) = self.model_name {
-            lines.push(Line::from(vec![
-                Span::styled("  Model: ", dim),
-                Span::styled(model.to_string(), green),
-            ]));
+            info_spans.push(Span::styled(" • ", dim));
+            info_spans.push(Span::styled(model.to_string(), Style::default().fg(Color::DarkGray)));
         }
         if let Some(cwd) = self.cwd {
-            lines.push(Line::from(vec![
-                Span::styled("  Project: ", dim),
-                Span::styled(cwd.to_string(), cyan),
-            ]));
+            info_spans.push(Span::styled(" • ", dim));
+            info_spans.push(Span::styled(cwd.to_string(), Style::default().fg(Color::DarkGray)));
         }
-
+        lines.push(Line::from(info_spans));
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("  Quick Start", yellow)));
-        lines.push(Line::from(Span::styled(
-            "  \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
-            dim,
-        )));
+
+        // Quick shortcuts.
         lines.push(Line::from(vec![
-            Span::styled("  Enter       ", green),
-            Span::styled("Send message", dim),
+            Span::styled("  Enter  ", green),
+            Span::styled("— send message    ", dim),
+            Span::styled("Ctrl+C  ", green),
+            Span::styled("— interrupt/quit", dim),
         ]));
         lines.push(Line::from(vec![
-            Span::styled("  Alt+Enter   ", green),
-            Span::styled("New line", dim),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled("  /help       ", green),
-            Span::styled("Show commands", dim),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled("  Ctrl+C      ", green),
-            Span::styled("Interrupt / Quit", dim),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled("  ?           ", green),
-            Span::styled("Keyboard shortcuts", dim),
+            Span::styled("  Tab    ", green),
+            Span::styled("— toggle panel    ", dim),
+            Span::styled("/help   ", green),
+            Span::styled("— commands", dim),
         ]));
         lines.push(Line::from(""));
     }
@@ -396,17 +373,17 @@ fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
     match msg.role {
         Role::User => {
             lines.push(Line::from(Span::styled(
-                "\u{25b6} You".to_string(),
+                "\u{276f} You".to_string(), // ❯ You
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::Blue)
                     .add_modifier(Modifier::BOLD),
             )));
         }
         Role::Assistant => {
             let mut spans = vec![Span::styled(
-                "\u{25c0} OxiCode".to_string(),
+                "\u{25c6} Assistant".to_string(), // ◆ Assistant
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             )];
             // Model badge (e.g. " claude-sonnet-4-20250514").

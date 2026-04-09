@@ -1,6 +1,6 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
@@ -49,16 +49,22 @@ impl<'a> CodeBlockWidget<'a> {
 
 impl Widget for CodeBlockWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        // Build language label in the top border: "─── rust ───────────────────────"
         let title = if self.language.is_empty() {
             " Code ".to_string()
         } else {
-            format!(" {} ", self.language)
+            format!(" \u{2500}\u{2500}\u{2500} {} ", self.language)
         };
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray))
-            .title(title);
+            .title(Span::styled(
+                title,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ));
 
         let lines = self.to_lines();
         let paragraph = Paragraph::new(lines).block(block);

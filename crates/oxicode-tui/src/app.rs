@@ -1579,6 +1579,9 @@ impl App {
                 self.streaming_committed_lines.clear();
                 self.active_tools.clear();
                 self.is_turn_active = false;
+                // Reset turn timer — otherwise the "thinking" indicator would
+                // keep displaying a stale elapsed duration after an API error.
+                self.turn_started_at = None;
             }
             CoreEvent::ToolUseStart { id, name, input } => {
                 let summary = summarize_input(&input);
@@ -1721,6 +1724,287 @@ mod tests {
         assert_eq!(char_to_byte_index(s, 1), 1); // emoji starts at byte 1
         assert_eq!(char_to_byte_index(s, 2), 5); // 'b' starts at byte 5
         assert_eq!(char_to_byte_index(s, 3), 6); // past end
+    }
+
+    #[test]
+    fn test_char_to_byte_index_empty_string() {
+        // Empty string: any char index returns 0 (the length).
+        assert_eq!(char_to_byte_index("", 0), 0);
+        assert_eq!(char_to_byte_index("", 5), 0);
+    }
+
+    #[test]
+    fn test_char_to_byte_index_cjk() {
+        // CJK characters are 3 bytes each in UTF-8.
+        let s = "中文";
+        assert_eq!(char_to_byte_index(s, 0), 0);
+        assert_eq!(char_to_byte_index(s, 1), 3);  // '文' starts at byte 3
+        assert_eq!(char_to_byte_index(s, 2), 6);  // past end
+    }
+
+    #[test]
+    fn test_char_to_byte_index_fire_emoji() {
+        // 🔥 is 4 bytes in UTF-8.
+        let s = "🔥x";
+        assert_eq!(char_to_byte_index(s, 0), 0);
+        assert_eq!(char_to_byte_index(s, 1), 4);  // 'x' starts at byte 4
+        assert_eq!(char_to_byte_index(s, 2), 5);  // past end = s.len()
+        // Index beyond string length clamps to s.len().
+        assert_eq!(char_to_byte_index(s, 99), 5);
+    }
+
+    #[test]
+    fn test_summarize_input_command() {
+        let v = serde_json::json!({"command": "echo hello"});
+        assert_eq!(summarize_input(&v), "echo hello");
+    }
+
+    #[test]
+    fn test_summarize_input_file_path() {
+        let v = serde_json::json!({"file_path": "/foo.rs"});
+        assert_eq!(summarize_input(&v), "/foo.rs");
+    }
+
+    #[test]
+    fn test_summarize_input_pattern() {
+        let v = serde_json::json!({"pattern": "test", "path": "src"});
+        assert_eq!(summarize_input(&v), "test in src");
+    }
+
+    #[test]
+    fn test_summarize_input_pattern_default_path() {
+        // When "path" is missing, defaults to "."
+        let v = serde_json::json!({"pattern": "fn main"});
+        assert_eq!(summarize_input(&v), "fn main in .");
+    }
+
+    #[test]
+    fn test_summarize_input_empty_object() {
+        let v = serde_json::json!({});
+        // Falls back to JSON serialization of empty object.
+        let result = summarize_input(&v);
+        assert_eq!(result, "{}");
+    }
+
+    #[test]
+    fn test_summarize_input_long_command_truncated() {
+        // Commands > 80 chars are truncated with "...".
+        let long_cmd = "a".repeat(100);
+        let v = serde_json::json!({"command": long_cmd});
+        let result = summarize_input(&v);
+        assert!(result.ends_with("..."), "long input should end with '...'");
+        // Truncated at char 80, so total visible prefix chars = 80.
+        let prefix: String = result.chars().take(80).collect();
+        assert_eq!(prefix, "a".repeat(80));
+    }
+
+    #[test]
+    fn test_detect_provider_anthropic() {
+        assert_eq!(detect_provider_from_model_name("claude-sonnet-4-20250514"), "anthropic");
+        assert_eq!(detect_provider_from_model_name("claude-opus-4"), "anthropic");
+        assert_eq!(detect_provider_from_model_name("anthropic/claude-3"), "anthropic");
+    }
+
+    #[test]
+    fn test_detect_provider_openai() {
+        assert_eq!(detect_provider_from_model_name("gpt-4"), "openai");
+        assert_eq!(detect_provider_from_model_name("gpt-3.5-turbo"), "openai");
+        assert_eq!(detect_provider_from_model_name("o1-mini"), "openai");
+        assert_eq!(detect_provider_from_model_name("o3-mini"), "openai");
+        assert_eq!(detect_provider_from_model_name("o4-preview"), "openai");
+    }
+
+    #[test]
+    fn test_detect_provider_deepseek() {
+        assert_eq!(detect_provider_from_model_name("deepseek-chat"), "deepseek");
+        assert_eq!(detect_provider_from_model_name("deepseek/coder"), "deepseek");
+    }
+
+    #[test]
+    fn test_detect_provider_ollama() {
+        // Ollama model names contain ':' without '/'
+        assert_eq!(detect_provider_from_model_name("llama:7b"), "ollama");
+        assert_eq!(detect_provider_from_model_name("mistral:latest"), "ollama");
+    }
+
+    #[test]
+    fn test_detect_provider_openrouter() {
+        // OpenRouter model names contain '/' but not known prefixes.
+        assert_eq!(detect_provider_from_model_name("meta-llama/Llama-3"), "openrouter");
+        assert_eq!(detect_provider_from_model_name("mistralai/mixtral-8x7b"), "openrouter");
+    }
+
+    #[test]
+    fn test_detect_provider_bedrock() {
+        assert_eq!(detect_provider_from_model_name("anthropic.claude-v2"), "bedrock");
+        assert_eq!(detect_provider_from_model_name("anthropic.claude-3-sonnet"), "bedrock");
+    }
+
+    #[test]
+    fn test_detect_provider_unknown() {
+        assert_eq!(detect_provider_from_model_name("some-unknown-model"), "");
+        assert_eq!(detect_provider_from_model_name(""), "");
+    }
+
+    #[test]
+    fn test_handle_core_event_stream_start_activates_turn() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        assert!(!app.is_turn_active, "should start inactive");
+        app.handle_core_event(CoreEvent::StreamStart);
+        assert!(app.is_turn_active, "StreamStart should activate turn");
+        assert!(app.turn_started_at.is_some(), "turn timer should start");
+    }
+
+    #[test]
+    fn test_handle_core_event_text_delta_updates_streaming_text() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::TextDelta("Hello".to_string()));
+        assert_eq!(app.streaming_text, "Hello");
+        app.handle_core_event(CoreEvent::TextDelta(" World".to_string()));
+        assert_eq!(app.streaming_text, "Hello World");
+    }
+
+    #[test]
+    fn test_handle_core_event_stream_end_clears_streaming_text() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::StreamStart);
+        app.handle_core_event(CoreEvent::TextDelta("some content".to_string()));
+        app.handle_core_event(CoreEvent::StreamEnd);
+        // Raw buffer is cleared; committed lines may contain finalized content.
+        assert!(app.streaming_text.is_empty(), "streaming_text cleared on StreamEnd");
+    }
+
+    #[test]
+    fn test_handle_core_event_message_complete_deactivates_turn() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::StreamStart);
+        assert!(app.is_turn_active);
+        app.handle_core_event(CoreEvent::MessageComplete);
+        assert!(!app.is_turn_active, "MessageComplete should deactivate turn");
+        assert!(app.turn_started_at.is_none(), "turn timer should reset");
+        assert!(app.streaming_text.is_empty());
+        assert!(app.active_tools.is_empty());
+    }
+
+    #[test]
+    fn test_handle_core_event_error_adds_notification_and_clears_state() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::StreamStart);
+        app.handle_core_event(CoreEvent::TextDelta("partial".to_string()));
+
+        let before_count = app.notifications.len();
+        app.handle_core_event(CoreEvent::Error("something went bad".to_string()));
+
+        assert_eq!(
+            app.notifications.len(),
+            before_count + 1,
+            "Error should add a notification"
+        );
+        assert!(!app.is_turn_active, "Error should deactivate turn");
+        assert!(app.streaming_text.is_empty(), "Error should clear streaming text");
+        assert!(app.active_tools.is_empty(), "Error should clear active tools");
+    }
+
+    /// Bug fix regression: Error must also reset turn_started_at so the thinking
+    /// indicator does not show a stale elapsed time after an API error.
+    #[test]
+    fn test_handle_core_event_error_resets_turn_timer() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::StreamStart);
+        assert!(app.turn_started_at.is_some(), "timer set on StreamStart");
+
+        app.handle_core_event(CoreEvent::Error("api error".to_string()));
+
+        assert!(
+            app.turn_started_at.is_none(),
+            "Error must reset turn_started_at to prevent stale thinking indicator"
+        );
+    }
+
+    #[test]
+    fn test_handle_core_event_tool_use_start_adds_entry() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        assert!(app.active_tools.is_empty());
+
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "tool-1".to_string(),
+            name: "bash".to_string(),
+            input: serde_json::json!({"command": "ls -la"}),
+        });
+
+        assert_eq!(app.active_tools.len(), 1, "ToolUseStart should add tool entry");
+        assert_eq!(app.active_tools[0].id, "tool-1");
+        assert_eq!(app.active_tools[0].name, "bash");
+        assert_eq!(app.active_tools[0].input_summary, "ls -la");
+        assert!(app.active_tools[0].result.is_none(), "result not set yet");
+    }
+
+    #[test]
+    fn test_handle_core_event_tool_result_sets_result_on_matching_tool() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "tool-abc".to_string(),
+            name: "file_read".to_string(),
+            input: serde_json::json!({"file_path": "/tmp/test.txt"}),
+        });
+        assert!(app.active_tools[0].result.is_none());
+
+        app.handle_core_event(CoreEvent::ToolResult {
+            tool_use_id: "tool-abc".to_string(),
+            content: "file contents here".to_string(),
+            is_error: false,
+        });
+
+        let result = app.active_tools[0]
+            .result
+            .as_ref()
+            .expect("result should be set after ToolResult");
+        assert_eq!(result.0, "file contents here");
+        assert!(!result.1, "is_error should be false");
+    }
+
+    #[test]
+    fn test_handle_core_event_tool_result_error_flag() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "tool-err".to_string(),
+            name: "bash".to_string(),
+            input: serde_json::json!({"command": "bad_cmd"}),
+        });
+
+        app.handle_core_event(CoreEvent::ToolResult {
+            tool_use_id: "tool-err".to_string(),
+            content: "command not found".to_string(),
+            is_error: true,
+        });
+
+        let result = app.active_tools[0]
+            .result
+            .as_ref()
+            .expect("result should be set");
+        assert!(result.1, "is_error should be true for error result");
+    }
+
+    #[test]
+    fn test_handle_core_event_tool_result_unmatched_id_noop() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "tool-x".to_string(),
+            name: "bash".to_string(),
+            input: serde_json::json!({"command": "echo"}),
+        });
+
+        // Send result for a different ID — should not panic or modify existing tools.
+        app.handle_core_event(CoreEvent::ToolResult {
+            tool_use_id: "tool-y".to_string(),
+            content: "output".to_string(),
+            is_error: false,
+        });
+
+        assert!(
+            app.active_tools[0].result.is_none(),
+            "unmatched tool_use_id should not set result"
+        );
     }
 
     fn make_test_app() -> (App, mpsc::Receiver<UiEvent>, mpsc::Sender<CoreEvent>) {
@@ -2273,6 +2557,368 @@ mod tests {
         assert!(
             rendered.contains("Thinking"),
             "Should show thinking indicator when streaming starts. Rendered:\n{rendered}"
+        );
+    }
+
+    /// Full lifecycle: stream long content → MessageComplete → scroll up → scroll down.
+    /// Full turn lifecycle: StreamStart → TextDelta* → StreamEnd → MessageComplete.
+    /// Verifies state at each step with no leaks between turns.
+    #[test]
+    fn test_full_turn_lifecycle_state_transitions() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+
+        // --- Turn 1 ---
+        assert!(!app.is_turn_active);
+        assert!(app.turn_started_at.is_none());
+
+        app.handle_core_event(CoreEvent::StreamStart);
+        assert!(app.is_turn_active, "StreamStart activates turn");
+        assert!(app.turn_started_at.is_some(), "timer starts on StreamStart");
+        assert!(app.streaming_text.is_empty(), "StreamStart clears streaming_text");
+        assert!(app.streaming_committed_lines.is_empty(), "StreamStart clears committed_lines");
+        assert!(app.active_tools.is_empty(), "StreamStart clears active_tools");
+
+        app.handle_core_event(CoreEvent::TextDelta("Hello".to_string()));
+        assert_eq!(app.streaming_text, "Hello");
+
+        app.handle_core_event(CoreEvent::TextDelta(", world!".to_string()));
+        assert_eq!(app.streaming_text, "Hello, world!");
+
+        app.handle_core_event(CoreEvent::StreamEnd);
+        // After StreamEnd: raw buffer cleared, committed lines may contain finalized content.
+        assert!(app.streaming_text.is_empty(), "StreamEnd clears raw buffer");
+        assert!(app.is_turn_active, "StreamEnd does NOT deactivate turn (tools may still run)");
+
+        app.handle_core_event(CoreEvent::MessageComplete);
+        assert!(!app.is_turn_active, "MessageComplete deactivates turn");
+        assert!(app.turn_started_at.is_none(), "MessageComplete resets timer");
+        assert!(app.streaming_text.is_empty());
+        assert!(app.streaming_committed_lines.is_empty(), "MessageComplete clears committed_lines");
+        assert!(app.active_tools.is_empty());
+
+        // --- Turn 2: verify StreamStart clears any lingering state ---
+        app.handle_core_event(CoreEvent::TextDelta("leftover".to_string()));
+        app.handle_core_event(CoreEvent::StreamStart);
+        assert!(app.streaming_text.is_empty(), "StreamStart clears stale text from prior turn");
+        assert!(app.streaming_committed_lines.is_empty(), "StreamStart clears stale lines");
+    }
+
+    /// Verify that a StreamEnd received after Error is idempotent — does not
+    /// re-activate the turn or corrupt state.
+    #[test]
+    fn test_stream_end_after_error_is_idempotent() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::StreamStart);
+        app.handle_core_event(CoreEvent::TextDelta("partial text".to_string()));
+        // abort_streaming() emits Error then TurnEnd (→ StreamEnd).
+        app.handle_core_event(CoreEvent::Error("API error".to_string()));
+        assert!(!app.is_turn_active);
+        assert!(app.streaming_text.is_empty());
+
+        // StreamEnd arrives after Error (from abort_streaming's TurnEnd).
+        app.handle_core_event(CoreEvent::StreamEnd);
+        // Must remain inactive and clean.
+        assert!(
+            !app.is_turn_active,
+            "StreamEnd after Error must not re-activate turn"
+        );
+        assert!(app.streaming_text.is_empty());
+    }
+
+    /// submit_input must block (show notification) when a turn is active.
+    #[tokio::test]
+    async fn test_submit_input_blocked_during_active_turn() {
+        let (mut app, mut ui_rx, _core_tx) = make_test_app();
+        app.is_turn_active = true;
+        app.input_text = "hello".to_string();
+
+        let notif_before = app.notifications.len();
+        app.submit_input().await;
+
+        assert_eq!(
+            app.notifications.len(),
+            notif_before + 1,
+            "submit while active should push a notification"
+        );
+        // No UiEvent should have been sent.
+        assert!(
+            ui_rx.try_recv().is_err(),
+            "no UiEvent sent while turn is active"
+        );
+        // Input text must be preserved (not consumed).
+        assert_eq!(app.input_text, "hello", "input not consumed on block");
+    }
+
+    /// History dedup: consecutive identical prompts stored only once.
+    #[tokio::test]
+    async fn test_submit_input_history_dedup() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+
+        app.input_text = "cargo build".to_string();
+        app.submit_input().await;
+
+        // Submit same text again — should not be pushed again.
+        app.input_text = "cargo build".to_string();
+        app.submit_input().await;
+
+        assert_eq!(app.history.len(), 1, "consecutive duplicates deduped");
+        assert_eq!(app.history[0], "cargo build");
+    }
+
+    /// /vim is handled inline — no UiEvent sent.
+    #[tokio::test]
+    async fn test_slash_vim_handled_inline_no_event() {
+        let (mut app, mut ui_rx, _core_tx) = make_test_app();
+        let was_vim = app.vim.enabled;
+
+        app.input_text = "/vim".to_string();
+        app.submit_input().await;
+
+        assert_eq!(app.vim.enabled, !was_vim, "/vim toggles vim mode");
+        assert!(
+            ui_rx.try_recv().is_err(),
+            "/vim must not send a UiEvent"
+        );
+    }
+
+    /// Non-/vim slash commands are forwarded as SlashCommand events.
+    #[tokio::test]
+    async fn test_slash_compact_forwarded_as_slash_command_event() {
+        let (mut app, mut ui_rx, _core_tx) = make_test_app();
+
+        app.input_text = "/compact".to_string();
+        app.submit_input().await;
+
+        match ui_rx.try_recv() {
+            Ok(UiEvent::SlashCommand { name, args }) => {
+                assert_eq!(name, "compact");
+                assert_eq!(args, "");
+            }
+            other => panic!("Expected SlashCommand event, got {other:?}"),
+        }
+    }
+
+    /// Unknown slash commands are forwarded (engine will produce an error).
+    #[tokio::test]
+    async fn test_slash_unknown_command_forwarded_not_swallowed() {
+        let (mut app, mut ui_rx, _core_tx) = make_test_app();
+
+        app.input_text = "/unknowncmd foo".to_string();
+        app.submit_input().await;
+
+        match ui_rx.try_recv() {
+            Ok(UiEvent::SlashCommand { name, args }) => {
+                assert_eq!(name, "unknowncmd");
+                assert_eq!(args, "foo");
+            }
+            other => panic!("Expected SlashCommand forwarded, got {other:?}"),
+        }
+    }
+
+    /// Permission dialog: 'y' hotkey sends AllowOnce and clears pending_permission.
+    #[tokio::test]
+    async fn test_permission_hotkey_y_sends_allow_once() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (reply_tx, mut reply_rx) = tokio::sync::oneshot::channel::<PermissionResponse>();
+
+        app.pending_permission = Some(PendingPermission {
+            tool_name: "bash".to_string(),
+            input_summary: "echo hi".to_string(),
+            prompt: "Allow?".to_string(),
+            selected: 0,
+            reply_tx,
+        });
+
+        app.handle_permission_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)).await;
+
+        assert!(app.pending_permission.is_none(), "'y' must clear pending_permission");
+        let response = reply_rx.try_recv().expect("response sent");
+        assert_eq!(response, PermissionResponse::AllowOnce);
+    }
+
+    /// Permission dialog: 'n' hotkey sends Deny.
+    #[tokio::test]
+    async fn test_permission_hotkey_n_sends_deny() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (reply_tx, mut reply_rx) = tokio::sync::oneshot::channel::<PermissionResponse>();
+
+        app.pending_permission = Some(PendingPermission {
+            tool_name: "bash".to_string(),
+            input_summary: "rm -rf /".to_string(),
+            prompt: "Allow?".to_string(),
+            selected: 2,
+            reply_tx,
+        });
+
+        app.handle_permission_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE)).await;
+
+        assert!(app.pending_permission.is_none());
+        let response = reply_rx.try_recv().expect("response sent");
+        assert_eq!(response, PermissionResponse::Deny);
+    }
+
+    /// Permission dialog: 'a' hotkey sends AlwaysAllow.
+    #[tokio::test]
+    async fn test_permission_hotkey_a_sends_always_allow() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (reply_tx, mut reply_rx) = tokio::sync::oneshot::channel::<PermissionResponse>();
+
+        app.pending_permission = Some(PendingPermission {
+            tool_name: "bash".to_string(),
+            input_summary: "make build".to_string(),
+            prompt: "Allow always?".to_string(),
+            selected: 0,
+            reply_tx,
+        });
+
+        app.handle_permission_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)).await;
+
+        assert!(app.pending_permission.is_none());
+        let response = reply_rx.try_recv().expect("response sent");
+        assert_eq!(response, PermissionResponse::AlwaysAllow);
+    }
+
+    /// Permission dialog: Esc sends Deny and clears dialog.
+    #[tokio::test]
+    async fn test_permission_esc_sends_deny() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (reply_tx, mut reply_rx) = tokio::sync::oneshot::channel::<PermissionResponse>();
+
+        app.pending_permission = Some(PendingPermission {
+            tool_name: "bash".to_string(),
+            input_summary: "curl http://...".to_string(),
+            prompt: "Network access?".to_string(),
+            selected: 0,
+            reply_tx,
+        });
+
+        app.handle_permission_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+
+        assert!(app.pending_permission.is_none(), "Esc clears pending_permission");
+        let response = reply_rx.try_recv().expect("response sent");
+        assert_eq!(response, PermissionResponse::Deny, "Esc sends Deny");
+    }
+
+    /// Permission dialog: Enter on option 0 (AllowOnce) sends AllowOnce.
+    #[tokio::test]
+    async fn test_permission_enter_option_0_allow_once() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (reply_tx, mut reply_rx) = tokio::sync::oneshot::channel::<PermissionResponse>();
+
+        app.pending_permission = Some(PendingPermission {
+            tool_name: "bash".to_string(),
+            input_summary: "echo".to_string(),
+            prompt: "Allow?".to_string(),
+            selected: 0,
+            reply_tx,
+        });
+
+        app.handle_permission_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+
+        let response = reply_rx.try_recv().expect("response sent");
+        assert_eq!(response, PermissionResponse::AllowOnce);
+    }
+
+    /// Permission dialog blocks normal input: handle_key should not forward chars
+    /// to input_text while a permission dialog is pending.
+    #[tokio::test]
+    async fn test_permission_dialog_blocks_normal_input() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (reply_tx, _reply_rx) = tokio::sync::oneshot::channel::<PermissionResponse>();
+
+        app.pending_permission = Some(PendingPermission {
+            tool_name: "bash".to_string(),
+            input_summary: "cmd".to_string(),
+            prompt: "Allow?".to_string(),
+            selected: 0,
+            reply_tx,
+        });
+
+        // Type a character — it should go to the permission handler, not input_text.
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
+            .await;
+
+        assert!(
+            app.input_text.is_empty(),
+            "input_text should not receive chars while permission dialog is open"
+        );
+    }
+
+    /// Multiple sequential tool calls accumulate correctly in active_tools.
+    #[test]
+    fn test_multiple_sequential_tool_calls_accumulate() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::StreamStart);
+
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "t1".to_string(),
+            name: "bash".to_string(),
+            input: serde_json::json!({"command": "echo 1"}),
+        });
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "t2".to_string(),
+            name: "file_read".to_string(),
+            input: serde_json::json!({"file_path": "/tmp/f.rs"}),
+        });
+
+        assert_eq!(app.active_tools.len(), 2);
+
+        app.handle_core_event(CoreEvent::ToolResult {
+            tool_use_id: "t1".to_string(),
+            content: "1".to_string(),
+            is_error: false,
+        });
+        app.handle_core_event(CoreEvent::ToolResult {
+            tool_use_id: "t2".to_string(),
+            content: "fn main() {}".to_string(),
+            is_error: false,
+        });
+
+        assert_eq!(app.active_tools[0].result.as_ref().unwrap().0, "1");
+        assert_eq!(
+            app.active_tools[1].result.as_ref().unwrap().0,
+            "fn main() {}"
+        );
+
+        // MessageComplete must clear all tools.
+        app.handle_core_event(CoreEvent::MessageComplete);
+        assert!(app.active_tools.is_empty(), "active_tools cleared after MessageComplete");
+    }
+
+    /// No state leaks between two full turns.
+    #[test]
+    fn test_no_state_leak_between_turns() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+
+        // Turn 1 with a tool call.
+        app.handle_core_event(CoreEvent::StreamStart);
+        app.handle_core_event(CoreEvent::TextDelta("First response".to_string()));
+        app.handle_core_event(CoreEvent::ToolUseStart {
+            id: "tid1".to_string(),
+            name: "bash".to_string(),
+            input: serde_json::json!({"command": "ls"}),
+        });
+        app.handle_core_event(CoreEvent::StreamEnd);
+        app.handle_core_event(CoreEvent::ToolResult {
+            tool_use_id: "tid1".to_string(),
+            content: "file.txt".to_string(),
+            is_error: false,
+        });
+        app.handle_core_event(CoreEvent::MessageComplete);
+
+        // At start of Turn 2, StreamStart must wipe previous turn's tools/text.
+        app.handle_core_event(CoreEvent::StreamStart);
+        assert!(
+            app.streaming_text.is_empty(),
+            "streaming_text must be empty at start of Turn 2"
+        );
+        assert!(
+            app.active_tools.is_empty(),
+            "active_tools must be empty at start of Turn 2 (cleared by StreamStart)"
+        );
+        assert!(
+            app.streaming_committed_lines.is_empty(),
+            "committed_lines cleared at start of Turn 2"
         );
     }
 

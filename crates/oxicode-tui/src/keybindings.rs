@@ -411,4 +411,85 @@ mod tests {
         // Should not panic, bindings unchanged.
         assert!(!reg.list_bindings().is_empty());
     }
+
+    #[test]
+    fn test_ctrl_k_maps_to_clear_line() {
+        let reg = KeybindingRegistry::with_defaults();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        assert_eq!(
+            reg.lookup(&key),
+            Some(&Action::ClearLine),
+            "Ctrl+K should map to ClearLine"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_f_not_mapped_by_default() {
+        let reg = KeybindingRegistry::with_defaults();
+        let key = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL);
+        assert_eq!(
+            reg.lookup(&key),
+            None,
+            "Ctrl+F is not mapped in defaults — OpenSearch requires explicit binding"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_r_maps_to_history_search() {
+        let reg = KeybindingRegistry::with_defaults();
+        let key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+        assert_eq!(
+            reg.lookup(&key),
+            Some(&Action::HistorySearch),
+            "Ctrl+R should map to HistorySearch"
+        );
+    }
+
+    #[test]
+    fn test_open_search_can_be_bound_dynamically() {
+        let mut reg = KeybindingRegistry::with_defaults();
+        reg.bind(
+            KeyCombo::new(KeyModifiers::CONTROL, KeyCode::Char('f')),
+            Action::OpenSearch,
+        );
+        let key = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL);
+        assert_eq!(
+            reg.lookup(&key),
+            Some(&Action::OpenSearch),
+            "After dynamic binding, Ctrl+F should map to OpenSearch"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_w_maps_to_delete_word_backward() {
+        let reg = KeybindingRegistry::with_defaults();
+        let key = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        assert_eq!(
+            reg.lookup(&key),
+            Some(&Action::DeleteWordBackward),
+            "Ctrl+W should map to DeleteWordBackward"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_u_maps_to_delete_to_line_start() {
+        let reg = KeybindingRegistry::with_defaults();
+        let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        assert_eq!(
+            reg.lookup(&key),
+            Some(&Action::DeleteToLineStart),
+            "Ctrl+U should map to DeleteToLineStart"
+        );
+    }
+
+    #[test]
+    fn test_shift_enter_maps_to_insert_newline() {
+        let reg = KeybindingRegistry::with_defaults();
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT);
+        assert_eq!(
+            reg.lookup(&key),
+            Some(&Action::InsertNewline),
+            "Shift+Enter should map to InsertNewline"
+        );
+    }
 }

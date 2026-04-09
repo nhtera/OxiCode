@@ -794,4 +794,80 @@ mod tests {
         let action = vim.handle_key(key(KeyCode::Char('x')), 10);
         assert_eq!(action, VimAction::DeleteChar);
     }
+
+    #[test]
+    fn test_disabled_default_state_is_normal() {
+        // When disabled, the mode field still holds Normal — but all keys are passed through.
+        let vim = VimState::new(false);
+        assert_eq!(vim.mode, Mode::Normal, "disabled vim still starts in Normal mode internally");
+        assert!(!vim.enabled);
+    }
+
+    #[test]
+    fn test_enabled_default_state_is_normal() {
+        let vim = VimState::new(true);
+        assert_eq!(vim.mode, Mode::Normal);
+        assert!(vim.enabled);
+    }
+
+    #[test]
+    fn test_p_paste_in_normal_mode() {
+        let mut vim = VimState::new(true);
+        let action = vim.handle_key(key(KeyCode::Char('p')), 10);
+        assert_eq!(action, VimAction::Paste);
+    }
+
+    #[test]
+    fn test_w_move_word_forward() {
+        let mut vim = VimState::new(true);
+        let action = vim.handle_key(key(KeyCode::Char('w')), 10);
+        assert_eq!(action, VimAction::MoveWordForward(1));
+    }
+
+    #[test]
+    fn test_b_move_word_backward() {
+        let mut vim = VimState::new(true);
+        let action = vim.handle_key(key(KeyCode::Char('b')), 10);
+        assert_eq!(action, VimAction::MoveWordBackward(1));
+    }
+
+    #[test]
+    fn test_set_enabled_resets_state() {
+        let mut vim = VimState::new(true);
+        vim.mode = Mode::Insert;
+        vim.set_enabled(false);
+        // After disabling, mode is not forced to Normal (no enum change when disabling).
+        assert!(!vim.enabled);
+        // Re-enabling sets to Normal.
+        vim.set_enabled(true);
+        assert_eq!(vim.mode, Mode::Normal);
+        assert!(vim.enabled);
+    }
+
+    #[test]
+    fn test_v_enters_visual_mode() {
+        let mut vim = VimState::new(true);
+        vim.handle_key(key(KeyCode::Char('v')), 10);
+        assert_eq!(vim.mode, Mode::Visual);
+    }
+
+    #[test]
+    fn test_esc_in_insert_returns_to_normal() {
+        let mut vim = VimState::new(true);
+        // Start in Insert.
+        vim.handle_key(key(KeyCode::Char('i')), 5);
+        assert_eq!(vim.mode, Mode::Insert);
+        // Esc returns to Normal.
+        vim.handle_key(key(KeyCode::Esc), 5);
+        assert_eq!(vim.mode, Mode::Normal);
+    }
+
+    #[test]
+    fn test_mode_badges_all_variants() {
+        assert_eq!(Mode::Normal.badge(), "N");
+        assert_eq!(Mode::Insert.badge(), "I");
+        assert_eq!(Mode::Visual.badge(), "V");
+        assert_eq!(Mode::VisualLine.badge(), "VL");
+        assert_eq!(Mode::Command.badge(), "C");
+    }
 }

@@ -4,10 +4,10 @@ expression: normalized_rendered_text(&terminal).as_str()
 ---
 " ○ Ready  anthropic  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  [ask]            "
 "┌ Conversation ────────────────────────────────────────────────────────────────┐"
-"│◀ OxiCode                                                                     │"
+"│◆ Assistant                                                                   │"
 "│  ⠋ Thinking... (0.0s)                                                        │"
-"│  ✓ bash (0.0s) — echo hello                                                  │"
-"│    hello                                                                     │"
+"│  ✓ bash — echo hello (0.0s)                                                  │"
+"│  │ hello                                                                     │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"

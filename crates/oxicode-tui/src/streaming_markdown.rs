@@ -241,4 +241,69 @@ mod tests {
         let total = l1.len() + l2.len() + l3.len();
         assert!(total > 0, "Code block across deltas should produce output");
     }
+
+    #[test]
+    fn test_two_newlines_in_one_push_commits_two_lines() {
+        let mut c = MarkdownStreamCollector::new();
+        c.push_delta("Hello\nWorld\n");
+        let lines = c.commit_complete_lines();
+        // Both "Hello" and "World" lines should be committed.
+        assert!(
+            lines.len() >= 2,
+            "Two newline-terminated lines should yield ≥2 committed lines, got {}",
+            lines.len()
+        );
+        assert!(c.trailing_fragment().is_none(), "No trailing fragment after final newline");
+    }
+
+    #[test]
+    fn test_partial_push_then_complete_commits_one_line() {
+        let mut c = MarkdownStreamCollector::new();
+        // Push without newline — nothing committed yet.
+        c.push_delta("Hello");
+        let first = c.commit_complete_lines();
+        assert!(first.is_empty(), "No newline → no committed lines yet");
+        assert_eq!(c.trailing_fragment(), Some("Hello"));
+
+        // Complete the line with a newline.
+        c.push_delta(" World\n");
+        let second = c.commit_complete_lines();
+        assert!(
+            !second.is_empty(),
+            "After completing the line, should commit ≥1 line"
+        );
+        assert!(c.trailing_fragment().is_none());
+    }
+
+    #[test]
+    fn test_trailing_fragment_no_newline() {
+        let mut c = MarkdownStreamCollector::new();
+        c.push_delta("Hello");
+        assert_eq!(
+            c.trailing_fragment(),
+            Some("Hello"),
+            "Buffer with no newline should return full buffer as fragment"
+        );
+    }
+
+    #[test]
+    fn test_finalize_returns_remaining_trailing_text() {
+        let mut c = MarkdownStreamCollector::new();
+        c.push_delta("trailing text");
+        let _ = c.commit_complete_lines(); // nothing committed yet
+        let final_lines = c.finalize();
+        assert!(
+            !final_lines.is_empty(),
+            "finalize() should emit the remaining trailing text as ≥1 line"
+        );
+    }
+
+    #[test]
+    fn test_empty_delta_no_crash_no_committed_lines() {
+        let mut c = MarkdownStreamCollector::new();
+        c.push_delta("");
+        let lines = c.commit_complete_lines();
+        assert!(lines.is_empty(), "Empty delta should produce no committed lines");
+        assert!(c.trailing_fragment().is_none(), "Empty buffer has no fragment");
+    }
 }

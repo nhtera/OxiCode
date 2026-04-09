@@ -126,7 +126,8 @@ impl QueryEngine {
             if let Some(flag) = cancel_flag {
                 if flag.load(Ordering::SeqCst) {
                     flag.store(false, Ordering::SeqCst);
-                    self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into())).await;
+                    self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into()))
+                        .await;
                     return Err(OxiError::Other("Interrupted by user".into()));
                 }
             }
@@ -173,17 +174,65 @@ impl QueryEngine {
 
             // Execute each tool and build a user message with tool results.
             let mut tool_results = Vec::new();
+            let mut interrupted = false;
             for (id, name, input) in &tool_uses {
                 // Check cancel flag before each tool execution.
                 if let Some(flag) = cancel_flag {
                     if flag.load(Ordering::SeqCst) {
                         flag.store(false, Ordering::SeqCst);
-                        self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into())).await;
+                        self.abort_streaming(
+                            event_tx,
+                            &OxiError::Other("Interrupted by user".into()),
+                        )
+                        .await;
                         return Err(OxiError::Other("Interrupted by user".into()));
                     }
                 }
-                let result = self.execute_tool(id, name, input, event_tx).await;
+
+                // Race tool execution against cancel flag so Ctrl+C interrupts
+                // long-running tools (e.g. bash). The bash child process has
+                // kill_on_drop(true), so dropping the future kills the process.
+                let result = if let Some(flag) = cancel_flag {
+                    let tool_fut = self.execute_tool(id, name, input, event_tx);
+                    tokio::pin!(tool_fut);
+
+                    loop {
+                        tokio::select! {
+                            result = &mut tool_fut => break result,
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                                if flag.load(Ordering::SeqCst) {
+                                    flag.store(false, Ordering::SeqCst);
+                                    // Drop tool_fut here kills the bash child process.
+                                    interrupted = true;
+                                    break ContentBlock::ToolResult {
+                                        tool_use_id: id.clone(),
+                                        content: "Interrupted by user".to_string(),
+                                        is_error: true,
+                                    };
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    self.execute_tool(id, name, input, event_tx).await
+                };
+
                 tool_results.push(result);
+                if interrupted {
+                    // Emit interrupted tool result event and abort.
+                    emit(
+                        event_tx,
+                        TurnEvent::ToolResult {
+                            tool_use_id: id.clone(),
+                            content: "Interrupted by user".to_string(),
+                            is_error: true,
+                        },
+                    )
+                    .await;
+                    self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into()))
+                        .await;
+                    return Err(OxiError::Other("Interrupted by user".into()));
+                }
             }
 
             // Add tool result message to conversation.

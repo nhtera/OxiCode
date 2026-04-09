@@ -50,16 +50,16 @@ pub fn running_tool_line(
     Line::from(vec![
         Span::styled(
             format!("  {frame} "),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(Color::Cyan),
         ),
         Span::styled(
             name.to_string(),
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!(" — {input_summary}"),
+            format!(" \u{2014} {input_summary}"),
             Style::default().fg(Color::DarkGray),
         ),
         Span::styled(
@@ -79,10 +79,10 @@ pub fn completed_tool_lines(
     max_result_lines: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let (icon, color) = if is_error {
-        ("✗", Color::Red)
+    let (icon, header_color) = if is_error {
+        ("\u{2717}", Color::Red) // ✗ red
     } else {
-        ("✓", Color::Green)
+        ("\u{2713}", Color::Green) // ✓ green
     };
 
     let elapsed_str = started_at.map_or(String::new(), |t| {
@@ -91,33 +91,35 @@ pub fn completed_tool_lines(
 
     // Header line.
     lines.push(Line::from(vec![
-        Span::styled(format!("  {icon} "), Style::default().fg(color)),
+        Span::styled(format!("  {icon} "), Style::default().fg(header_color)),
         Span::styled(
             name.to_string(),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(elapsed_str, Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!(" — {input_summary}"),
+            format!(" \u{2014} {input_summary}"),
             Style::default().fg(Color::DarkGray),
         ),
+        Span::styled(elapsed_str, Style::default().fg(Color::DarkGray)),
     ]));
 
-    // Result lines (truncated).
-    let result_style = Style::default().fg(Color::DarkGray);
+    // Result lines with │ prefix (truncated).
+    let result_fg = if is_error { Color::Red } else { Color::DarkGray };
+    let result_style = Style::default().fg(result_fg);
+    let pipe_style = Style::default().fg(Color::DarkGray);
     let total_lines = content.lines().count();
     for (i, line) in content.lines().enumerate() {
         if i >= max_result_lines {
             lines.push(Line::from(Span::styled(
-                format!("    ... ({} more lines)", total_lines - i),
-                result_style,
+                format!("  \u{2502} ... ({} more lines)", total_lines - i),
+                pipe_style,
             )));
             break;
         }
-        lines.push(Line::from(Span::styled(
-            format!("    {line}"),
-            result_style,
-        )));
+        lines.push(Line::from(vec![
+            Span::styled("  \u{2502} ".to_string(), pipe_style),
+            Span::styled(line.to_string(), result_style),
+        ]));
     }
 
     lines
