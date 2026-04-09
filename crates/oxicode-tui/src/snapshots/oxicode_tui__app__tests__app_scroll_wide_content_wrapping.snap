@@ -2,7 +2,7 @@
 source: crates/oxicode-tui/src/app.rs
 expression: rendered.as_str()
 ---
-" ○ Ready  claude-sonnet-4-20250514  ↑0 ↓"
+" ○ Ready  anthropic  claude-sonnet-4-202"
 "┌ Conversation ────────────────────────│"
 "│                                      │"
 "│ ─────────────────────────────────────│"

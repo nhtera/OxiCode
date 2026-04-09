@@ -6,7 +6,10 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget,
+    Widget, Wrap,
+};
 
 use super::markdown_view;
 use super::tool_display;
@@ -107,6 +110,10 @@ pub struct MessageView<'a> {
     /// Shared cell: render() writes the actual max scroll offset here so
     /// the owning App can read it after draw() returns.
     reported_max_scroll: Option<Rc<Cell<u16>>>,
+    /// Model name for welcome screen display.
+    model_name: Option<&'a str>,
+    /// Current working directory for welcome screen display.
+    cwd: Option<&'a str>,
 }
 
 impl<'a> MessageView<'a> {
@@ -130,6 +137,8 @@ impl<'a> MessageView<'a> {
             viewport_height: 50, // Default, overridden during render
             turn_started_at: None,
             reported_max_scroll: None,
+            model_name: None,
+            cwd: None,
         }
     }
 
@@ -151,8 +160,31 @@ impl<'a> MessageView<'a> {
         self
     }
 
+    /// Set model name for welcome screen display.
+    pub fn with_model_name(mut self, name: &'a str) -> Self {
+        self.model_name = Some(name);
+        self
+    }
+
+    /// Set CWD for welcome screen display.
+    pub fn with_cwd(mut self, cwd: &'a str) -> Self {
+        self.cwd = Some(cwd);
+        self
+    }
+
     fn format_messages(&self) -> Text<'a> {
         let mut lines: Vec<Line<'a>> = Vec::new();
+
+        // Welcome screen when no messages and not streaming.
+        let has_streaming =
+            self.streaming_lines.map_or(false, |l| !l.is_empty()) || self.streaming_tail.is_some();
+        let has_thinking =
+            !has_streaming && self.streaming_lines.is_some() && self.turn_started_at.is_some();
+
+        if self.message_count == 0 && !has_streaming && !has_thinking {
+            self.render_welcome_screen(&mut lines);
+            return Text::from(lines);
+        }
 
         // Render all cached messages. Paragraph::scroll() handles viewport
         // positioning — no manual viewport culling needed. This ensures the
@@ -167,23 +199,15 @@ impl<'a> MessageView<'a> {
         }
 
         // Streaming section.
-        // has_streaming: true when there's actual streaming text to render.
-        // has_turn_active: true when streaming_lines is Some (even empty) AND
-        //   we have a turn_started_at — this enables the thinking indicator.
-        let has_streaming = self
-            .streaming_lines
-            .map_or(false, |l| !l.is_empty())
-            || self.streaming_tail.is_some();
-        let has_thinking = !has_streaming
-            && self.streaming_lines.is_some()
-            && self.turn_started_at.is_some();
-
         if has_streaming || has_thinking {
             if self.message_count > 0 {
                 render_separator(&mut lines);
             }
             // Show assistant header if last message isn't already assistant.
-            if self.last_message_role.map_or(true, |r| r != Role::Assistant) {
+            if self
+                .last_message_role
+                .map_or(true, |r| r != Role::Assistant)
+            {
                 lines.push(Line::from(Span::styled(
                     "\u{25c0} OxiCode",
                     Style::default()
@@ -210,10 +234,7 @@ impl<'a> MessageView<'a> {
                 let frame = tool_display::spinner_frame(started);
                 let elapsed = tool_display::format_elapsed(started);
                 lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("  {frame} "),
-                        Style::default().fg(Color::Cyan),
-                    ),
+                    Span::styled(format!("  {frame} "), Style::default().fg(Color::Cyan)),
                     Span::styled(
                         format!("Thinking... ({elapsed})"),
                         Style::default()
@@ -245,10 +266,7 @@ impl<'a> MessageView<'a> {
             let elapsed = tool_display::format_elapsed(started);
             lines.push(Line::from(vec![
                 Span::styled("  \u{258d} ", Style::default().fg(Color::Cyan)),
-                Span::styled(
-                    elapsed,
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(elapsed, Style::default().fg(Color::DarkGray)),
             ]));
         } else {
             lines.push(Line::from(Span::styled(
@@ -282,6 +300,84 @@ impl<'a> MessageView<'a> {
             }
         }
     }
+
+    /// Render the welcome screen shown when no messages exist.
+    fn render_welcome_screen(&self, lines: &mut Vec<Line<'a>>) {
+        let cyan = Style::default().fg(Color::Cyan);
+        let bold_cyan = Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let dim = Style::default().fg(Color::DarkGray);
+        let green = Style::default().fg(Color::Green);
+        let yellow = Style::default().fg(Color::Yellow);
+
+        // Blank line for spacing.
+        lines.push(Line::from(""));
+
+        // Title with decorative box.
+        lines.push(Line::from(vec![Span::styled(
+            "  \u{256d}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256e}",
+            dim,
+        )]));
+        lines.push(Line::from(vec![
+            Span::styled("  \u{2502} ", dim),
+            Span::styled("OxiCode v0.1.0", bold_cyan),
+            Span::styled(" \u{2502}", dim),
+        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "  \u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}",
+            dim,
+        )]));
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Rust-powered AI coding agent",
+            dim,
+        )));
+        lines.push(Line::from(""));
+
+        // Model and project info.
+        if let Some(model) = self.model_name {
+            lines.push(Line::from(vec![
+                Span::styled("  Model: ", dim),
+                Span::styled(model.to_string(), green),
+            ]));
+        }
+        if let Some(cwd) = self.cwd {
+            lines.push(Line::from(vec![
+                Span::styled("  Project: ", dim),
+                Span::styled(cwd.to_string(), cyan),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled("  Quick Start", yellow)));
+        lines.push(Line::from(Span::styled(
+            "  \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+            dim,
+        )));
+        lines.push(Line::from(vec![
+            Span::styled("  Enter       ", green),
+            Span::styled("Send message", dim),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  Alt+Enter   ", green),
+            Span::styled("New line", dim),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  /help       ", green),
+            Span::styled("Show commands", dim),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  Ctrl+C      ", green),
+            Span::styled("Interrupt / Quit", dim),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  ?           ", green),
+            Span::styled("Keyboard shortcuts", dim),
+        ]));
+        lines.push(Line::from(""));
+    }
 }
 
 /// Render a horizontal separator line between messages.
@@ -297,22 +393,38 @@ fn render_separator(lines: &mut Vec<Line<'_>>) {
 
 /// Render a message header into owned lines (for caching).
 fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
-    let (prefix, style) = match msg.role {
-        Role::User => (
-            "\u{25b6} You",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Role::Assistant => (
-            "\u{25c0} OxiCode",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Role::System => ("\u{2699} System", Style::default().fg(Color::Yellow)),
-    };
-    lines.push(Line::from(Span::styled(prefix.to_string(), style)));
+    match msg.role {
+        Role::User => {
+            lines.push(Line::from(Span::styled(
+                "\u{25b6} You".to_string(),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
+        Role::Assistant => {
+            let mut spans = vec![Span::styled(
+                "\u{25c0} OxiCode".to_string(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )];
+            // Model badge (e.g. " claude-sonnet-4-20250514").
+            if let Some(ref model) = msg.model {
+                spans.push(Span::styled(
+                    format!(" ({model})"),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            lines.push(Line::from(spans));
+        }
+        Role::System => {
+            lines.push(Line::from(Span::styled(
+                "\u{2699} System".to_string(),
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+    }
 }
 
 /// Render content blocks into owned lines (for caching). All strings are owned.
@@ -541,10 +653,7 @@ mod tests {
 
     #[test]
     fn test_message_separator_between_messages() {
-        let messages = vec![
-            Message::user("hello"),
-            assistant_text_message("world"),
-        ];
+        let messages = vec![Message::user("hello"), assistant_text_message("world")];
         let mut cache = MessageRenderCache::new();
         cache.update(&messages, 80);
         let active_tools: &[ActiveToolInfo<'_>] = &[];
@@ -559,11 +668,10 @@ mod tests {
         );
         let text = view.format_messages();
         // Should contain separator character.
-        let has_separator = text.lines.iter().any(|line| {
-            line.spans
-                .iter()
-                .any(|s| s.content.contains('\u{2500}'))
-        });
+        let has_separator = text
+            .lines
+            .iter()
+            .any(|line| line.spans.iter().any(|s| s.content.contains('\u{2500}')));
         assert!(has_separator, "Should have separator between messages");
     }
 

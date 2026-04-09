@@ -274,33 +274,72 @@ impl App {
 
     #[allow(clippy::too_many_lines)]
     pub fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> io::Result<()> {
+        // Minimum terminal size guard — skip rendering if too small.
+        let term_size = terminal.size()?;
+        if term_size.width < 40 || term_size.height < 8 {
+            terminal.draw(|frame| {
+                let area = frame.area();
+                let msg = if area.width < 20 || area.height < 3 {
+                    "Too small"
+                } else {
+                    "Terminal too small (min 40x8)"
+                };
+                let text = ratatui::text::Text::from(msg);
+                frame.render_widget(
+                    ratatui::widgets::Paragraph::new(text)
+                        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Yellow)),
+                    area,
+                );
+            })?;
+            return Ok(());
+        }
+
         // Prune expired notifications to prevent unbounded growth.
         self.notifications.retain(Notification::is_active);
 
         // ── Read only what we need from state (NO deep clone) ──
         // Borrow the watch receiver briefly, extract lightweight fields only.
-        let (current_model, total_usage, is_streaming, auth_label, message_count, last_role,
-             agent_infos, task_infos, context_window_max, permission_mode, cwd) = {
+        let (
+            current_model,
+            total_usage,
+            is_streaming,
+            auth_label,
+            message_count,
+            last_role,
+            agent_infos,
+            task_infos,
+            context_window_max,
+            permission_mode,
+            cwd,
+        ) = {
             let state = self.state_rx.borrow();
             // Update render cache with new messages (incremental — only renders new ones).
             let term_width = terminal.size().map(|s| s.width).unwrap_or(80);
             self.message_cache.update(&state.messages, term_width);
             let msg_count = state.messages.len();
             let last_role = state.messages.last().map(|m| m.role);
-            let agents: Vec<AgentInfo> = state.active_agents.iter().map(|a| AgentInfo {
-                name: a.name.clone(),
-                status: a.status.clone(),
-                started_at: a.started_at.clone(),
-                duration: String::new(),
-                model: String::new(),
-                restricted_tools: Vec::new(),
-            }).collect();
-            let tasks: Vec<TaskInfo> = state.background_tasks.iter().map(|t| TaskInfo {
-                id: t.id.clone(),
-                task_type: t.task_type.clone(),
-                status: t.status.clone(),
-                command_preview: t.command_preview.clone(),
-            }).collect();
+            let agents: Vec<AgentInfo> = state
+                .active_agents
+                .iter()
+                .map(|a| AgentInfo {
+                    name: a.name.clone(),
+                    status: a.status.clone(),
+                    started_at: a.started_at.clone(),
+                    duration: String::new(),
+                    model: String::new(),
+                    restricted_tools: Vec::new(),
+                })
+                .collect();
+            let tasks: Vec<TaskInfo> = state
+                .background_tasks
+                .iter()
+                .map(|t| TaskInfo {
+                    id: t.id.clone(),
+                    task_type: t.task_type.clone(),
+                    status: t.status.clone(),
+                    command_preview: t.command_preview.clone(),
+                })
+                .collect();
             (
                 state.current_model.clone(),
                 state.total_usage.clone(),
@@ -347,11 +386,11 @@ impl App {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1),                        // Status bar
-                    Constraint::Min(5),                           // Message view
-                    Constraint::Length(autocomplete_height),      // Command autocomplete (0 when inactive)
-                    Constraint::Length(suggestion_height),        // Suggestion chips (0 or 1)
-                    Constraint::Length(input_height),             // Input box (+ search bar)
+                    Constraint::Length(1),                   // Status bar
+                    Constraint::Min(5),                      // Message view
+                    Constraint::Length(autocomplete_height), // Command autocomplete (0 when inactive)
+                    Constraint::Length(suggestion_height),   // Suggestion chips (0 or 1)
+                    Constraint::Length(input_height),        // Input box (+ search bar)
                 ])
                 .split(frame.area());
 
@@ -362,13 +401,14 @@ impl App {
             } else {
                 None
             };
-            let status_bar =
-                StatusBar::new(&current_model, &total_usage, is_streaming)
-                    .with_vim_badge(vim_badge)
-                    .with_auth_label(&auth_label)
-                    .with_context_pct(context_pct)
-                    .with_permission_mode(&permission_mode)
-                    .with_cwd(&cwd);
+            let provider_name = detect_provider_from_model_name(&current_model);
+            let status_bar = StatusBar::new(&current_model, &total_usage, is_streaming)
+                .with_provider(&provider_name)
+                .with_vim_badge(vim_badge)
+                .with_auth_label(&auth_label)
+                .with_context_pct(context_pct)
+                .with_permission_mode(&permission_mode)
+                .with_cwd(&cwd);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
@@ -380,8 +420,7 @@ impl App {
             // Message view (left pane, or full area when right pane is hidden)
             // Show streaming lines when turn is active OR when committed lines
             // exist (between StreamEnd and MessageComplete).
-            let streaming_lines = if !self.streaming_committed_lines.is_empty()
-            {
+            let streaming_lines = if !self.streaming_committed_lines.is_empty() {
                 Some(self.streaming_committed_lines.as_slice())
             } else if self.is_turn_active {
                 // Turn active but no lines yet — pass empty slice so thinking indicator shows.
@@ -432,7 +471,9 @@ impl App {
                 scroll_for_view,
             )
             .with_turn_started_at(self.turn_started_at)
-            .with_scroll_report(Rc::clone(&scroll_report));
+            .with_scroll_report(Rc::clone(&scroll_report))
+            .with_model_name(&current_model)
+            .with_cwd(&cwd);
             frame.render_widget(message_view, left_area);
 
             // Read back the actual max scroll offset computed during rendering.
@@ -495,10 +536,7 @@ impl App {
             if search_active {
                 let input_chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(base_input_height),
-                        Constraint::Length(2),
-                    ])
+                    .constraints([Constraint::Length(base_input_height), Constraint::Length(2)])
                     .split(chunks[4]);
 
                 let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
@@ -637,7 +675,7 @@ impl App {
                 self.input_cursor += 1;
                 self.update_ghost_text();
                 self.suggestions.clear(); // hide chips once user starts typing
-                // Activate autocomplete when typing '/' at start of input.
+                                          // Activate autocomplete when typing '/' at start of input.
                 if c == '/' && self.input_text == "/" {
                     self.activate_autocomplete();
                 }
@@ -1297,10 +1335,7 @@ impl App {
 
     /// Recompute ghost text completion based on current input.
     fn update_ghost_text(&mut self) {
-        self.ghost_text = crate::ghost_completion::complete(
-            &self.input_text,
-            &self.slash_commands,
-        );
+        self.ghost_text = crate::ghost_completion::complete(&self.input_text, &self.slash_commands);
     }
 
     /// Accept the current ghost text completion. Returns true if accepted.
@@ -1339,11 +1374,7 @@ impl App {
             }
             KeyCode::Enter | KeyCode::Tab => {
                 // Select the highlighted command — fill input, don't auto-submit.
-                if let Some(&cmd_idx) = self
-                    .autocomplete
-                    .filtered
-                    .get(self.autocomplete.selected)
-                {
+                if let Some(&cmd_idx) = self.autocomplete.filtered.get(self.autocomplete.selected) {
                     let cmd_name = &self.slash_commands[cmd_idx].name;
                     self.input_text = format!("/{cmd_name}");
                     self.input_cursor = self.input_text.chars().count();
@@ -1437,12 +1468,16 @@ impl App {
             // Hotkeys: y = allow once, a = always allow, n = deny, N = always deny
             (_, KeyCode::Char('y')) => {
                 if let Some(perm) = self.pending_permission.take() {
-                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::AllowOnce);
+                    let _ = perm
+                        .reply_tx
+                        .send(oxicode_common::PermissionResponse::AllowOnce);
                 }
             }
             (_, KeyCode::Char('a')) => {
                 if let Some(perm) = self.pending_permission.take() {
-                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::AlwaysAllow);
+                    let _ = perm
+                        .reply_tx
+                        .send(oxicode_common::PermissionResponse::AlwaysAllow);
                 }
             }
             (_, KeyCode::Char('n')) => {
@@ -1452,7 +1487,9 @@ impl App {
             }
             (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
                 if let Some(perm) = self.pending_permission.take() {
-                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::AlwaysDeny);
+                    let _ = perm
+                        .reply_tx
+                        .send(oxicode_common::PermissionResponse::AlwaysDeny);
                 }
             }
             (_, KeyCode::Esc) => {
@@ -1514,7 +1551,8 @@ impl App {
                 {
                     let state = self.state_rx.borrow();
                     // Use a reasonable width; draw() will recalculate with actual terminal width.
-                    self.message_cache.update(&state.messages, self.message_cache.cached_width());
+                    self.message_cache
+                        .update(&state.messages, self.message_cache.cached_width());
                 }
                 // Now safe to clear all transient streaming state.
                 self.streaming_text.clear();
@@ -1627,6 +1665,30 @@ fn summarize_input(input: &serde_json::Value) -> String {
 /// Convert a character index to a byte index in a UTF-8 string.
 fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
     s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i)
+}
+
+/// Detect provider name from model name for status bar display.
+fn detect_provider_from_model_name(model: &str) -> String {
+    let m = model.to_lowercase();
+    if m.starts_with("anthropic.claude") {
+        "bedrock".to_string()
+    } else if m.starts_with("claude-") || m.starts_with("anthropic/") {
+        "anthropic".to_string()
+    } else if m.starts_with("gpt-")
+        || m.starts_with("o1-")
+        || m.starts_with("o3-")
+        || m.starts_with("o4-")
+    {
+        "openai".to_string()
+    } else if m.starts_with("deepseek-") || m.starts_with("deepseek/") {
+        "deepseek".to_string()
+    } else if m.contains(':') && !m.contains('/') {
+        "ollama".to_string()
+    } else if m.contains('/') && !m.starts_with("anthropic/") && !m.starts_with("deepseek/") {
+        "openrouter".to_string()
+    } else {
+        String::new()
+    }
 }
 
 #[cfg(test)]
@@ -1915,8 +1977,11 @@ mod tests {
             row: 21,
             modifiers: KeyModifiers::NONE,
         });
-        assert!(app.scroll_offset > 90 && app.scroll_offset < 115,
-            "Expected ~103, got {}", app.scroll_offset);
+        assert!(
+            app.scroll_offset > 90 && app.scroll_offset < 115,
+            "Expected ~103, got {}",
+            app.scroll_offset
+        );
         assert!(!app.auto_scroll);
     }
 
@@ -1954,7 +2019,10 @@ mod tests {
             row: 1,
             modifiers: KeyModifiers::NONE,
         });
-        assert_eq!(app.scroll_offset, 50, "Click on top border should be ignored");
+        assert_eq!(
+            app.scroll_offset, 50,
+            "Click on top border should be ignored"
+        );
 
         // Click on bottom border row (row 40 = area.bottom()) — outside inner track.
         app.handle_mouse(MouseEvent {
@@ -1963,7 +2031,10 @@ mod tests {
             row: 40,
             modifiers: KeyModifiers::NONE,
         });
-        assert_eq!(app.scroll_offset, 50, "Click on bottom border should be ignored");
+        assert_eq!(
+            app.scroll_offset, 50,
+            "Click on bottom border should be ignored"
+        );
     }
 
     #[test]
@@ -1981,7 +2052,10 @@ mod tests {
             row: 20,
             modifiers: KeyModifiers::NONE,
         });
-        assert_eq!(app.scroll_offset, 50, "Click far from scrollbar should not change offset");
+        assert_eq!(
+            app.scroll_offset, 50,
+            "Click far from scrollbar should not change offset"
+        );
     }
 
     #[test]
@@ -2000,8 +2074,11 @@ mod tests {
             row: 12,
             modifiers: KeyModifiers::NONE,
         });
-        assert!(app.scroll_offset > 40 && app.scroll_offset < 70,
-            "Expected ~54, got {}", app.scroll_offset);
+        assert!(
+            app.scroll_offset > 40 && app.scroll_offset < 70,
+            "Expected ~54, got {}",
+            app.scroll_offset
+        );
     }
 
     #[test]
@@ -2252,9 +2329,9 @@ mod tests {
         // Push the assistant message to state store (simulates engine persisting).
         let full_text: String = chunks.iter().copied().collect();
         let mut assistant_msg = Message::assistant();
-        assistant_msg.content.push(oxicode_common::ContentBlock::Text {
-            text: full_text,
-        });
+        assistant_msg
+            .content
+            .push(oxicode_common::ContentBlock::Text { text: full_text });
         store.push_message(assistant_msg);
 
         app.handle_core_event(CoreEvent::MessageComplete);
@@ -2287,7 +2364,10 @@ mod tests {
 
         // Scroll back down to bottom.
         app.scroll_down_by(100); // large number to reach bottom
-        assert!(app.auto_scroll, "scrolling to bottom should re-enable auto_scroll");
+        assert!(
+            app.auto_scroll,
+            "scrolling to bottom should re-enable auto_scroll"
+        );
         app.draw(&mut terminal).expect("draw after scroll down");
         let after_scroll_down = normalized_rendered_text(&terminal);
         assert!(

@@ -120,10 +120,9 @@ impl Widget for InputBox<'_> {
         let mut lines: Vec<Line<'_>> = self.text.split('\n').map(Line::from).collect();
         if let Some(ghost) = self.ghost_text {
             if let Some(last_line) = lines.last_mut() {
-                last_line.spans.push(Span::styled(
-                    ghost,
-                    Style::default().fg(Color::DarkGray),
-                ));
+                last_line
+                    .spans
+                    .push(Span::styled(ghost, Style::default().fg(Color::DarkGray)));
             }
         }
         let paragraph = Paragraph::new(lines)
@@ -168,6 +167,119 @@ impl Widget for InputBox<'_> {
 fn cursor_row_col(text: &str, byte_cursor: usize) -> (usize, usize) {
     let before = &text[..byte_cursor.min(text.len())];
     let row = before.matches('\n').count();
-    let col = before.rfind('\n').map_or(before.len(), |pos| before.len() - pos - 1);
+    let col = before
+        .rfind('\n')
+        .map_or(before.len(), |pos| before.len() - pos - 1);
     (row, col)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn required_height_single_line() {
+        assert_eq!(InputBox::required_height("hello"), 3); // 1 line + 2 borders
+    }
+
+    #[test]
+    fn required_height_multiline() {
+        assert_eq!(InputBox::required_height("line1\nline2\nline3"), 5); // 3 lines + 2 borders
+    }
+
+    #[test]
+    fn required_height_empty() {
+        assert_eq!(InputBox::required_height(""), 3); // min 1 line + 2 borders
+    }
+
+    #[test]
+    fn required_height_caps_at_max() {
+        let long = (0..20).map(|_| "x").collect::<Vec<_>>().join("\n");
+        assert_eq!(InputBox::required_height(&long), MAX_INPUT_LINES + 2);
+    }
+
+    #[test]
+    fn cursor_row_col_at_start() {
+        assert_eq!(cursor_row_col("hello", 0), (0, 0));
+    }
+
+    #[test]
+    fn cursor_row_col_at_end() {
+        assert_eq!(cursor_row_col("hello", 5), (0, 5));
+    }
+
+    #[test]
+    fn cursor_row_col_multiline() {
+        assert_eq!(cursor_row_col("ab\ncd\nef", 4), (1, 1)); // at 'd'
+        assert_eq!(cursor_row_col("ab\ncd\nef", 6), (2, 0)); // at 'e'
+    }
+
+    #[test]
+    fn cursor_row_col_beyond_end() {
+        // Clamp to text length.
+        assert_eq!(cursor_row_col("hi", 100), (0, 2));
+    }
+
+    #[test]
+    fn cursor_row_col_utf8() {
+        // Emoji is 4 bytes.
+        let text = "hi\u{1f600}";
+        assert_eq!(cursor_row_col(text, 6), (0, 6)); // after emoji
+    }
+
+    #[test]
+    fn render_empty_focused_shows_placeholder() {
+        let area = Rect::new(0, 0, 40, 3);
+        let mut buf = Buffer::empty(area);
+        let widget = InputBox::new("", 0, true);
+        widget.render(area, &mut buf);
+        let content: String = (0..40)
+            .map(|x| buf.cell((x, 1)).unwrap().symbol().to_string())
+            .collect();
+        assert!(
+            content.contains("Type your message"),
+            "Should show placeholder: {content}"
+        );
+    }
+
+    #[test]
+    fn render_with_text_shows_text() {
+        let area = Rect::new(0, 0, 40, 3);
+        let mut buf = Buffer::empty(area);
+        let widget = InputBox::new("hello world", 5, true);
+        widget.render(area, &mut buf);
+        let content: String = (0..40)
+            .map(|x| buf.cell((x, 1)).unwrap().symbol().to_string())
+            .collect();
+        assert!(
+            content.contains("hello world"),
+            "Should show input text: {content}"
+        );
+    }
+
+    #[test]
+    fn render_does_not_panic_on_tiny_area() {
+        let area = Rect::new(0, 0, 2, 2);
+        let mut buf = Buffer::empty(area);
+        let widget = InputBox::new("test", 2, true);
+        // Should not panic.
+        widget.render(area, &mut buf);
+    }
+
+    #[test]
+    fn render_vim_badge_shows_in_title() {
+        let area = Rect::new(0, 0, 60, 3);
+        let mut buf = Buffer::empty(area);
+        let widget = InputBox::new("", 0, true).with_vim_badge("N");
+        widget.render(area, &mut buf);
+        let content: String = (0..60)
+            .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
+        assert!(
+            content.contains("[N]"),
+            "Should show vim badge in title: {content}"
+        );
+    }
 }

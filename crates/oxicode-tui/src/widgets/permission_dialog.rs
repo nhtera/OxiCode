@@ -37,9 +37,9 @@ const OPTIONS: [&str; 4] = [
 
 impl Widget for PermissionDialog<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Center the dialog — 60 wide, 16 tall.
+        // Center the dialog — 60 wide, 18 tall.
         let dialog_width = 60u16.min(area.width.saturating_sub(4));
-        let dialog_height = 16u16.min(area.height.saturating_sub(2));
+        let dialog_height = 18u16.min(area.height.saturating_sub(2));
         let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
         let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
         let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
@@ -51,7 +51,7 @@ impl Widget for PermissionDialog<'_> {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow))
             .title(Span::styled(
-                " ⚠ Permission Required ",
+                " \u{26a0} Permission Required ",
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -62,7 +62,9 @@ impl Widget for PermissionDialog<'_> {
 
         lines.push(Line::from(Span::styled(
             format!("Tool: {}", self.tool_name),
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )));
         lines.push(Line::from(""));
 
@@ -77,7 +79,10 @@ impl Widget for PermissionDialog<'_> {
         } else {
             self.input_summary.to_string()
         };
-        lines.push(Line::from(format!("Input: {summary}")));
+        lines.push(Line::from(vec![
+            Span::styled("Input: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(summary),
+        ]));
         lines.push(Line::from(""));
 
         // Risk description.
@@ -97,9 +102,24 @@ impl Widget for PermissionDialog<'_> {
             } else {
                 Style::default()
             };
-            let prefix = if i == self.selected { "▸ " } else { "  " };
+            let prefix = if i == self.selected {
+                "\u{25b8} "
+            } else {
+                "  "
+            };
             lines.push(Line::from(Span::styled(format!("{prefix}{option}"), style)));
         }
+
+        lines.push(Line::from(""));
+        // Hotkey hints at bottom.
+        lines.push(Line::from(vec![
+            Span::styled("  \u{2191}\u{2193}", Style::default().fg(Color::DarkGray)),
+            Span::styled(" navigate  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Enter", Style::default().fg(Color::Green)),
+            Span::styled(" confirm  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::styled(" deny", Style::default().fg(Color::DarkGray)),
+        ]));
 
         let paragraph = Paragraph::new(lines)
             .block(block)

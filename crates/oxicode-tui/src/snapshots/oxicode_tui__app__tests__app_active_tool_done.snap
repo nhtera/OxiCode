@@ -2,7 +2,7 @@
 source: crates/oxicode-tui/src/app.rs
 expression: normalized_rendered_text(&terminal).as_str()
 ---
-" ○ Ready  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  [ask]                       "
+" ○ Ready  anthropic  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  [ask]            "
 "┌ Conversation ────────────────────────────────────────────────────────────────┐"
 "│◀ OxiCode                                                                     │"
 "│  ⠋ Thinking... (0.0s)                                                        │"
