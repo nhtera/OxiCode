@@ -22,7 +22,7 @@ expression: after_complete.as_str()
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-"  1: What can you do?   2: Explain codebase                                     "
+"  1: Explore codebase   2: Run tests   3: Find bugs                             "
 "┌ Input (Enter to send, Alt+Enter for newline) ────────────────────────────────┐"
 "│Type your message...                                                          │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
