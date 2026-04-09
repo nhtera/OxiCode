@@ -1,6 +1,66 @@
 # OxiCode — Project Changelog
 
-**Last Updated:** 2026-04-09 | **Version:** 0.5.2
+**Last Updated:** 2026-04-09 | **Version:** 0.5.3
+
+---
+
+## [0.5.3] — TUI Core Stability & Full Working Workflow — 2026-04-09
+
+### Major Features & Improvements
+
+#### TUI Core Stability Initiative (6 Phases) — ✅ Complete
+Complete stabilization and polish of the OxiCode TUI for production-ready agentic workflow.
+
+**Phase 01: API Connectivity & Streaming**
+- Verified `ANTHROPIC_AUTH_TOKEN` env var maps to `x-api-key` header
+- Verified `ANTHROPIC_BASE_URL` overrides default endpoint
+- Real API streaming confirmed working with custom Anthropic proxy (ezaiapi.com)
+- SSE parsing, streaming cancel flow, error handling all verified
+
+**Phase 02: TUI Welcome & Layout Polish**
+- Added welcoming ASCII art screen on first launch (OxiCode branding, model info, CWD, keyboard tips)
+- Added provider badge to status bar (auto-detected from model name)
+- Added minimum terminal size guard (40x8 with graceful degradation)
+- Tested resize stability during streaming
+
+**Phase 03: Message View & Markdown Rendering**
+- Added model badge to assistant message headers (displays model name in parentheses)
+- Verified streaming, thinking indicator, scroll coordination all working
+- Cleaned up duplicate has_streaming computation in format_messages()
+- Tested with real Claude API responses
+
+**Phase 04: Tool Call Display & Permission Dialog**
+- Enhanced permission dialog: cyan tool name, labeled input, hotkey hints at bottom
+- Tool display verified: spinner, elapsed time, truncated results all operational
+- Dialog height increased to 18 for comprehensive hotkey hints
+- Tested with rapid tool calls and permission flows
+
+**Phase 05: Input System Stability**
+- Added 13 unit tests for input_box (cursor positioning, required height, rendering)
+- Verified UTF-8 handling (emoji, CJK, accented chars)
+- Tested multiline input and vim badge rendering
+- Added no-panic test for tiny terminal areas
+
+**Phase 06: Integration Testing & End-to-End**
+- 204 tests pass in oxicode-tui crate (was 191, +13 new input tests)
+- All snapshot tests updated and accepted
+- Real API test confirmed: "Say hello in exactly 3 words" → "Hello there, friend!"
+- `cargo check` clean, `cargo fmt` clean, all tests pass
+
+### Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total Test Suite | 204 tests in TUI (191 → 204) |
+| Compilation | ✅ All targets pass `cargo check --workspace` |
+| Linting | ✅ `cargo clippy` clean |
+| Formatting | ✅ `cargo fmt --check` clean |
+| Manual API Tests | ✅ 5/5 scenarios passed |
+| Terminal Size Tested | 40x8 minimum, resize stability verified |
+
+### Breaking Changes
+
+None.
 
 ---
 
