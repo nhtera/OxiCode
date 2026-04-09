@@ -132,11 +132,20 @@ fn translate_turn_event(te: TurnEvent) -> CoreEvent {
             max_retries,
             retry_in_secs,
         },
+        TurnEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => CoreEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        },
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// A. API Layer Tests
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -805,6 +814,7 @@ fn event_name(e: &CoreEvent) -> &'static str {
         CoreEvent::PermissionAsk { .. } => "PermissionAsk",
         CoreEvent::RateLimited { .. } => "RateLimited",
         CoreEvent::ThinkingDelta(_) => "ThinkingDelta",
+        CoreEvent::Retrying { .. } => "Retrying",
     }
 }
 

@@ -248,6 +248,12 @@ impl LlmProvider for AnthropicProvider {
                                 let delay = retry_policy.delay_for(retry_count);
                                 tracing::warn!("SSE error (retry {}/{}): {} — reconnecting in {:?}",
                                     retry_count, retry_policy.max_retries, e, delay);
+                                yield Ok(StreamEvent::Retrying {
+                                    message: format!("{e}"),
+                                    attempt: retry_count,
+                                    max_retries: retry_policy.max_retries,
+                                    retry_in_secs: delay.as_secs_f64(),
+                                });
                                 tokio::time::sleep(delay).await;
                                 continue 'retry;
                             }

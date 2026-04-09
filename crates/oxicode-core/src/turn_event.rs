@@ -38,6 +38,13 @@ pub enum TurnEvent {
     },
     /// Error during the turn.
     Error(String),
+    /// Non-rate-limit retry in progress (e.g., 502, connection error).
+    Retrying {
+        message: String,
+        attempt: u32,
+        max_retries: u32,
+        retry_in_secs: f64,
+    },
     /// Rate limited — provider returned 429, retry in progress.
     RateLimited {
         message: String,

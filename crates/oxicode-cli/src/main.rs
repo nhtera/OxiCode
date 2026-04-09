@@ -143,13 +143,29 @@ async fn main() -> Result<()> {
         onboarding::run_onboarding();
     }
 
-    // Setup tracing
+    // Setup tracing — write to log file, NOT stderr.
+    // stderr leaks into crossterm's alternate screen and corrupts TUI output.
+    let log_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("oxicode");
+    std::fs::create_dir_all(&log_dir).ok();
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("oxicode.log"))
+        .unwrap_or_else(|_| {
+            std::fs::File::options()
+                .write(true)
+                .open("/dev/null")
+                .expect("failed to open /dev/null")
+        });
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive("oxicode=info".parse()?),
         )
-        .with_writer(std::io::stderr)
+        .with_writer(std::sync::Mutex::new(log_file))
+        .with_ansi(false)
         .init();
 
     // Load config (env vars and TOML, no CLI secret)
@@ -520,6 +536,17 @@ fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
             max_retries,
             retry_in_secs,
         } => CoreEvent::RateLimited {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        },
+        TurnEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => CoreEvent::Retrying {
             message,
             attempt,
             max_retries,

@@ -53,6 +53,17 @@ fn translate_turn_event(te: TurnEvent) -> CoreEvent {
             max_retries,
             retry_in_secs,
         },
+        TurnEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => CoreEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        },
     }
 }
 

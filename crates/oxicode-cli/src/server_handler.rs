@@ -848,6 +848,28 @@ async fn forward_turn_event(
         TurnEvent::ThinkingDelta(_) => {
             // Thinking deltas not forwarded to IDE clients for now.
         }
+        TurnEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => {
+            tracing::warn!(
+                "Retrying ({attempt}/{max_retries}): {message} — retry in {retry_in_secs:.0}s"
+            );
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "stream.retrying",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "message": message,
+                        "attempt": attempt,
+                        "max_retries": max_retries,
+                        "retry_in_secs": retry_in_secs,
+                    }),
+                ))
+                .await;
+        }
     }
 }
 

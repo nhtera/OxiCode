@@ -125,6 +125,17 @@ fn translate(te: TurnEvent) -> CoreEvent {
             max_retries,
             retry_in_secs,
         },
+        TurnEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => CoreEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        },
     }
 }
 
@@ -175,6 +186,7 @@ enum CoreEventKind {
     MessageComplete,
     Error(String),
     RateLimited,
+    Retrying,
     ThinkingDelta,
     Timeout,
 }
@@ -193,6 +205,7 @@ fn classify_event(event: &CoreEvent) -> CoreEventKind {
         CoreEvent::Error(e) => CoreEventKind::Error(e.clone()),
         CoreEvent::RateLimited { .. } => CoreEventKind::RateLimited,
         CoreEvent::ThinkingDelta(_) => CoreEventKind::ThinkingDelta,
+        CoreEvent::Retrying { .. } => CoreEventKind::Retrying,
     }
 }
 

@@ -414,6 +414,23 @@ impl QueryEngine {
                     self.abort_streaming(event_tx, &err).await;
                     return Err(err);
                 }
+                StreamEvent::Retrying {
+                    message,
+                    attempt,
+                    max_retries,
+                    retry_in_secs,
+                } => {
+                    emit(
+                        event_tx,
+                        TurnEvent::Retrying {
+                            message,
+                            attempt,
+                            max_retries,
+                            retry_in_secs,
+                        },
+                    )
+                    .await;
+                }
                 StreamEvent::Ping => {}
                 StreamEvent::CacheBreakDetected(event) => {
                     tracing::warn!(

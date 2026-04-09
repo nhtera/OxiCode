@@ -1633,6 +1633,20 @@ impl App {
                     crate::widgets::notification::NotificationLevel::RateLimit,
                 ));
             }
+            CoreEvent::Retrying {
+                message,
+                attempt,
+                max_retries,
+                retry_in_secs,
+            } => {
+                let notif_msg = format!(
+                    "Retrying ({attempt}/{max_retries}) in {retry_in_secs:.0}s: {message}"
+                );
+                self.notifications.push(Notification::new(
+                    notif_msg,
+                    crate::widgets::notification::NotificationLevel::Warning,
+                ));
+            }
             CoreEvent::ThinkingDelta(_text) => {
                 // Thinking deltas are now properly accumulated by the core
                 // engine and included in the final message as ContentBlock::Thinking.

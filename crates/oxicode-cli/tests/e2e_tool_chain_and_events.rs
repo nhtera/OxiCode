@@ -135,6 +135,17 @@ fn translate(te: TurnEvent) -> CoreEvent {
             max_retries,
             retry_in_secs,
         },
+        TurnEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => CoreEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        },
     }
 }
 
@@ -594,5 +605,6 @@ fn event_tag(e: &CoreEvent) -> &'static str {
         CoreEvent::PermissionAsk { .. } => "PermissionAsk",
         CoreEvent::RateLimited { .. } => "RateLimited",
         CoreEvent::ThinkingDelta(_) => "ThinkingDelta",
+        CoreEvent::Retrying { .. } => "Retrying",
     }
 }

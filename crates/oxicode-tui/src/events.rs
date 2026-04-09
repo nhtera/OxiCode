@@ -57,6 +57,13 @@ pub enum CoreEvent {
         max_retries: u32,
         retry_in_secs: f64,
     },
+    /// Non-rate-limit retry in progress (e.g., 502, connection error).
+    Retrying {
+        message: String,
+        attempt: u32,
+        max_retries: u32,
+        retry_in_secs: f64,
+    },
     /// Thinking text delta from extended thinking / chain-of-thought.
     ThinkingDelta(String),
 }
