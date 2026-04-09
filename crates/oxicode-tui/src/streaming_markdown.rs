@@ -68,8 +68,7 @@ impl MarkdownStreamCollector {
         let new_content = &self.buffer[self.committed_byte_offset..=abs_last_nl];
 
         // Parse only the new slice, carrying code fence state.
-        let new_lines =
-            markdown_view::parse_incremental(new_content, &mut self.parser_state);
+        let new_lines = markdown_view::parse_incremental(new_content, &mut self.parser_state);
 
         self.committed_byte_offset = abs_last_nl + 1;
         self.committed_lines.extend(new_lines.iter().cloned());
@@ -90,8 +89,7 @@ impl MarkdownStreamCollector {
             return Vec::new();
         }
 
-        let new_lines =
-            markdown_view::parse_incremental(remaining, &mut self.parser_state);
+        let new_lines = markdown_view::parse_incremental(remaining, &mut self.parser_state);
 
         self.committed_byte_offset = self.buffer.len();
         self.committed_lines.extend(new_lines.iter().cloned());
@@ -147,7 +145,10 @@ mod tests {
         let mut c = MarkdownStreamCollector::new();
         c.push_delta("hello\n");
         let lines = c.commit_complete_lines();
-        assert!(!lines.is_empty(), "Should have committed lines after newline");
+        assert!(
+            !lines.is_empty(),
+            "Should have committed lines after newline"
+        );
         assert!(c.trailing_fragment().is_none());
     }
 
@@ -174,7 +175,10 @@ mod tests {
         let _ = c.commit_complete_lines();
 
         let final_lines = c.finalize();
-        assert!(!final_lines.is_empty(), "Finalize should emit remaining text");
+        assert!(
+            !final_lines.is_empty(),
+            "Finalize should emit remaining text"
+        );
     }
 
     #[test]
@@ -199,7 +203,10 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .map(|s| s.content.as_ref())
             .collect();
-        assert!(!raw.contains("**"), "Bold markers should be parsed, got: {raw}");
+        assert!(
+            !raw.contains("**"),
+            "Bold markers should be parsed, got: {raw}"
+        );
         assert!(raw.contains("bold text"));
     }
 
@@ -253,7 +260,10 @@ mod tests {
             "Two newline-terminated lines should yield ≥2 committed lines, got {}",
             lines.len()
         );
-        assert!(c.trailing_fragment().is_none(), "No trailing fragment after final newline");
+        assert!(
+            c.trailing_fragment().is_none(),
+            "No trailing fragment after final newline"
+        );
     }
 
     #[test]
@@ -303,7 +313,13 @@ mod tests {
         let mut c = MarkdownStreamCollector::new();
         c.push_delta("");
         let lines = c.commit_complete_lines();
-        assert!(lines.is_empty(), "Empty delta should produce no committed lines");
-        assert!(c.trailing_fragment().is_none(), "Empty buffer has no fragment");
+        assert!(
+            lines.is_empty(),
+            "Empty delta should produce no committed lines"
+        );
+        assert!(
+            c.trailing_fragment().is_none(),
+            "Empty buffer has no fragment"
+        );
     }
 }

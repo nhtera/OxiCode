@@ -1738,8 +1738,8 @@ mod tests {
         // CJK characters are 3 bytes each in UTF-8.
         let s = "中文";
         assert_eq!(char_to_byte_index(s, 0), 0);
-        assert_eq!(char_to_byte_index(s, 1), 3);  // '文' starts at byte 3
-        assert_eq!(char_to_byte_index(s, 2), 6);  // past end
+        assert_eq!(char_to_byte_index(s, 1), 3); // '文' starts at byte 3
+        assert_eq!(char_to_byte_index(s, 2), 6); // past end
     }
 
     #[test]
@@ -1747,9 +1747,9 @@ mod tests {
         // 🔥 is 4 bytes in UTF-8.
         let s = "🔥x";
         assert_eq!(char_to_byte_index(s, 0), 0);
-        assert_eq!(char_to_byte_index(s, 1), 4);  // 'x' starts at byte 4
-        assert_eq!(char_to_byte_index(s, 2), 5);  // past end = s.len()
-        // Index beyond string length clamps to s.len().
+        assert_eq!(char_to_byte_index(s, 1), 4); // 'x' starts at byte 4
+        assert_eq!(char_to_byte_index(s, 2), 5); // past end = s.len()
+                                                 // Index beyond string length clamps to s.len().
         assert_eq!(char_to_byte_index(s, 99), 5);
     }
 
@@ -1800,9 +1800,18 @@ mod tests {
 
     #[test]
     fn test_detect_provider_anthropic() {
-        assert_eq!(detect_provider_from_model_name("claude-sonnet-4-20250514"), "anthropic");
-        assert_eq!(detect_provider_from_model_name("claude-opus-4"), "anthropic");
-        assert_eq!(detect_provider_from_model_name("anthropic/claude-3"), "anthropic");
+        assert_eq!(
+            detect_provider_from_model_name("claude-sonnet-4-20250514"),
+            "anthropic"
+        );
+        assert_eq!(
+            detect_provider_from_model_name("claude-opus-4"),
+            "anthropic"
+        );
+        assert_eq!(
+            detect_provider_from_model_name("anthropic/claude-3"),
+            "anthropic"
+        );
     }
 
     #[test]
@@ -1817,7 +1826,10 @@ mod tests {
     #[test]
     fn test_detect_provider_deepseek() {
         assert_eq!(detect_provider_from_model_name("deepseek-chat"), "deepseek");
-        assert_eq!(detect_provider_from_model_name("deepseek/coder"), "deepseek");
+        assert_eq!(
+            detect_provider_from_model_name("deepseek/coder"),
+            "deepseek"
+        );
     }
 
     #[test]
@@ -1830,14 +1842,26 @@ mod tests {
     #[test]
     fn test_detect_provider_openrouter() {
         // OpenRouter model names contain '/' but not known prefixes.
-        assert_eq!(detect_provider_from_model_name("meta-llama/Llama-3"), "openrouter");
-        assert_eq!(detect_provider_from_model_name("mistralai/mixtral-8x7b"), "openrouter");
+        assert_eq!(
+            detect_provider_from_model_name("meta-llama/Llama-3"),
+            "openrouter"
+        );
+        assert_eq!(
+            detect_provider_from_model_name("mistralai/mixtral-8x7b"),
+            "openrouter"
+        );
     }
 
     #[test]
     fn test_detect_provider_bedrock() {
-        assert_eq!(detect_provider_from_model_name("anthropic.claude-v2"), "bedrock");
-        assert_eq!(detect_provider_from_model_name("anthropic.claude-3-sonnet"), "bedrock");
+        assert_eq!(
+            detect_provider_from_model_name("anthropic.claude-v2"),
+            "bedrock"
+        );
+        assert_eq!(
+            detect_provider_from_model_name("anthropic.claude-3-sonnet"),
+            "bedrock"
+        );
     }
 
     #[test]
@@ -1871,7 +1895,10 @@ mod tests {
         app.handle_core_event(CoreEvent::TextDelta("some content".to_string()));
         app.handle_core_event(CoreEvent::StreamEnd);
         // Raw buffer is cleared; committed lines may contain finalized content.
-        assert!(app.streaming_text.is_empty(), "streaming_text cleared on StreamEnd");
+        assert!(
+            app.streaming_text.is_empty(),
+            "streaming_text cleared on StreamEnd"
+        );
     }
 
     #[test]
@@ -1880,7 +1907,10 @@ mod tests {
         app.handle_core_event(CoreEvent::StreamStart);
         assert!(app.is_turn_active);
         app.handle_core_event(CoreEvent::MessageComplete);
-        assert!(!app.is_turn_active, "MessageComplete should deactivate turn");
+        assert!(
+            !app.is_turn_active,
+            "MessageComplete should deactivate turn"
+        );
         assert!(app.turn_started_at.is_none(), "turn timer should reset");
         assert!(app.streaming_text.is_empty());
         assert!(app.active_tools.is_empty());
@@ -1901,8 +1931,14 @@ mod tests {
             "Error should add a notification"
         );
         assert!(!app.is_turn_active, "Error should deactivate turn");
-        assert!(app.streaming_text.is_empty(), "Error should clear streaming text");
-        assert!(app.active_tools.is_empty(), "Error should clear active tools");
+        assert!(
+            app.streaming_text.is_empty(),
+            "Error should clear streaming text"
+        );
+        assert!(
+            app.active_tools.is_empty(),
+            "Error should clear active tools"
+        );
     }
 
     /// Bug fix regression: Error must also reset turn_started_at so the thinking
@@ -1932,7 +1968,11 @@ mod tests {
             input: serde_json::json!({"command": "ls -la"}),
         });
 
-        assert_eq!(app.active_tools.len(), 1, "ToolUseStart should add tool entry");
+        assert_eq!(
+            app.active_tools.len(),
+            1,
+            "ToolUseStart should add tool entry"
+        );
         assert_eq!(app.active_tools[0].id, "tool-1");
         assert_eq!(app.active_tools[0].name, "bash");
         assert_eq!(app.active_tools[0].input_summary, "ls -la");
@@ -2574,9 +2614,18 @@ mod tests {
         app.handle_core_event(CoreEvent::StreamStart);
         assert!(app.is_turn_active, "StreamStart activates turn");
         assert!(app.turn_started_at.is_some(), "timer starts on StreamStart");
-        assert!(app.streaming_text.is_empty(), "StreamStart clears streaming_text");
-        assert!(app.streaming_committed_lines.is_empty(), "StreamStart clears committed_lines");
-        assert!(app.active_tools.is_empty(), "StreamStart clears active_tools");
+        assert!(
+            app.streaming_text.is_empty(),
+            "StreamStart clears streaming_text"
+        );
+        assert!(
+            app.streaming_committed_lines.is_empty(),
+            "StreamStart clears committed_lines"
+        );
+        assert!(
+            app.active_tools.is_empty(),
+            "StreamStart clears active_tools"
+        );
 
         app.handle_core_event(CoreEvent::TextDelta("Hello".to_string()));
         assert_eq!(app.streaming_text, "Hello");
@@ -2587,20 +2636,35 @@ mod tests {
         app.handle_core_event(CoreEvent::StreamEnd);
         // After StreamEnd: raw buffer cleared, committed lines may contain finalized content.
         assert!(app.streaming_text.is_empty(), "StreamEnd clears raw buffer");
-        assert!(app.is_turn_active, "StreamEnd does NOT deactivate turn (tools may still run)");
+        assert!(
+            app.is_turn_active,
+            "StreamEnd does NOT deactivate turn (tools may still run)"
+        );
 
         app.handle_core_event(CoreEvent::MessageComplete);
         assert!(!app.is_turn_active, "MessageComplete deactivates turn");
-        assert!(app.turn_started_at.is_none(), "MessageComplete resets timer");
+        assert!(
+            app.turn_started_at.is_none(),
+            "MessageComplete resets timer"
+        );
         assert!(app.streaming_text.is_empty());
-        assert!(app.streaming_committed_lines.is_empty(), "MessageComplete clears committed_lines");
+        assert!(
+            app.streaming_committed_lines.is_empty(),
+            "MessageComplete clears committed_lines"
+        );
         assert!(app.active_tools.is_empty());
 
         // --- Turn 2: verify StreamStart clears any lingering state ---
         app.handle_core_event(CoreEvent::TextDelta("leftover".to_string()));
         app.handle_core_event(CoreEvent::StreamStart);
-        assert!(app.streaming_text.is_empty(), "StreamStart clears stale text from prior turn");
-        assert!(app.streaming_committed_lines.is_empty(), "StreamStart clears stale lines");
+        assert!(
+            app.streaming_text.is_empty(),
+            "StreamStart clears stale text from prior turn"
+        );
+        assert!(
+            app.streaming_committed_lines.is_empty(),
+            "StreamStart clears stale lines"
+        );
     }
 
     /// Verify that a StreamEnd received after Error is idempotent — does not
@@ -2675,10 +2739,7 @@ mod tests {
         app.submit_input().await;
 
         assert_eq!(app.vim.enabled, !was_vim, "/vim toggles vim mode");
-        assert!(
-            ui_rx.try_recv().is_err(),
-            "/vim must not send a UiEvent"
-        );
+        assert!(ui_rx.try_recv().is_err(), "/vim must not send a UiEvent");
     }
 
     /// Non-/vim slash commands are forwarded as SlashCommand events.
@@ -2729,9 +2790,13 @@ mod tests {
             reply_tx,
         });
 
-        app.handle_permission_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)).await;
+        app.handle_permission_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE))
+            .await;
 
-        assert!(app.pending_permission.is_none(), "'y' must clear pending_permission");
+        assert!(
+            app.pending_permission.is_none(),
+            "'y' must clear pending_permission"
+        );
         let response = reply_rx.try_recv().expect("response sent");
         assert_eq!(response, PermissionResponse::AllowOnce);
     }
@@ -2750,7 +2815,8 @@ mod tests {
             reply_tx,
         });
 
-        app.handle_permission_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE)).await;
+        app.handle_permission_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE))
+            .await;
 
         assert!(app.pending_permission.is_none());
         let response = reply_rx.try_recv().expect("response sent");
@@ -2771,7 +2837,8 @@ mod tests {
             reply_tx,
         });
 
-        app.handle_permission_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)).await;
+        app.handle_permission_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE))
+            .await;
 
         assert!(app.pending_permission.is_none());
         let response = reply_rx.try_recv().expect("response sent");
@@ -2792,9 +2859,13 @@ mod tests {
             reply_tx,
         });
 
-        app.handle_permission_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+        app.handle_permission_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
 
-        assert!(app.pending_permission.is_none(), "Esc clears pending_permission");
+        assert!(
+            app.pending_permission.is_none(),
+            "Esc clears pending_permission"
+        );
         let response = reply_rx.try_recv().expect("response sent");
         assert_eq!(response, PermissionResponse::Deny, "Esc sends Deny");
     }
@@ -2813,7 +2884,8 @@ mod tests {
             reply_tx,
         });
 
-        app.handle_permission_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        app.handle_permission_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
 
         let response = reply_rx.try_recv().expect("response sent");
         assert_eq!(response, PermissionResponse::AllowOnce);
@@ -2882,7 +2954,10 @@ mod tests {
 
         // MessageComplete must clear all tools.
         app.handle_core_event(CoreEvent::MessageComplete);
-        assert!(app.active_tools.is_empty(), "active_tools cleared after MessageComplete");
+        assert!(
+            app.active_tools.is_empty(),
+            "active_tools cleared after MessageComplete"
+        );
     }
 
     /// No state leaks between two full turns.

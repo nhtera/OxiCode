@@ -59,16 +59,40 @@ mod tests {
 
     fn sample_commands() -> Vec<SlashCommandMeta> {
         vec![
-            SlashCommandMeta { name: "clear".into(), description: "Clear conversation".into(), arg_candidates: vec![] },
-            SlashCommandMeta { name: "compact".into(), description: "Compact context".into(), arg_candidates: vec![] },
-            SlashCommandMeta { name: "help".into(), description: "Show help".into(), arg_candidates: vec![] },
-            SlashCommandMeta { name: "model".into(), description: "Switch model".into(), arg_candidates: vec![
-                "claude-sonnet-4-20250514".into(),
-                "claude-opus-4-20250514".into(),
-                "claude-haiku-4-5-20251001".into(),
-            ] },
-            SlashCommandMeta { name: "session".into(), description: "Session management".into(), arg_candidates: vec![] },
-            SlashCommandMeta { name: "vim".into(), description: "Toggle vim mode".into(), arg_candidates: vec![] },
+            SlashCommandMeta {
+                name: "clear".into(),
+                description: "Clear conversation".into(),
+                arg_candidates: vec![],
+            },
+            SlashCommandMeta {
+                name: "compact".into(),
+                description: "Compact context".into(),
+                arg_candidates: vec![],
+            },
+            SlashCommandMeta {
+                name: "help".into(),
+                description: "Show help".into(),
+                arg_candidates: vec![],
+            },
+            SlashCommandMeta {
+                name: "model".into(),
+                description: "Switch model".into(),
+                arg_candidates: vec![
+                    "claude-sonnet-4-20250514".into(),
+                    "claude-opus-4-20250514".into(),
+                    "claude-haiku-4-5-20251001".into(),
+                ],
+            },
+            SlashCommandMeta {
+                name: "session".into(),
+                description: "Session management".into(),
+                arg_candidates: vec![],
+            },
+            SlashCommandMeta {
+                name: "vim".into(),
+                description: "Toggle vim mode".into(),
+                arg_candidates: vec![],
+            },
         ]
     }
 
@@ -105,8 +129,14 @@ mod tests {
     fn command_with_args_completes_argument() {
         let cmds = sample_commands();
         // Arg completion for /model with a matching prefix.
-        assert_eq!(complete("/model cl", &cmds), Some("aude-sonnet-4-20250514".to_string()));
-        assert_eq!(complete("/model claude-o", &cmds), Some("pus-4-20250514".to_string()));
+        assert_eq!(
+            complete("/model cl", &cmds),
+            Some("aude-sonnet-4-20250514".to_string())
+        );
+        assert_eq!(
+            complete("/model claude-o", &cmds),
+            Some("pus-4-20250514".to_string())
+        );
     }
 
     #[test]

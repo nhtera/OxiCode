@@ -799,7 +799,11 @@ mod tests {
     fn test_disabled_default_state_is_normal() {
         // When disabled, the mode field still holds Normal — but all keys are passed through.
         let vim = VimState::new(false);
-        assert_eq!(vim.mode, Mode::Normal, "disabled vim still starts in Normal mode internally");
+        assert_eq!(
+            vim.mode,
+            Mode::Normal,
+            "disabled vim still starts in Normal mode internally"
+        );
         assert!(!vim.enabled);
     }
 
