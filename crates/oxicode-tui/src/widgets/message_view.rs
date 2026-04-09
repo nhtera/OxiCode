@@ -316,7 +316,14 @@ impl<'a> MessageView<'a> {
             "   \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{255d}  \u{255a}\u{2550}\u{255d}\u{255a}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}",
         ];
         // Gradient colors alternating Cyan / Blue per line.
-        let gradient = [Color::Cyan, Color::Blue, Color::Cyan, Color::Blue, Color::Cyan, Color::Blue];
+        let gradient = [
+            Color::Cyan,
+            Color::Blue,
+            Color::Cyan,
+            Color::Blue,
+            Color::Cyan,
+            Color::Blue,
+        ];
 
         lines.push(Line::from(""));
         for (logo_line, &color) in logo_lines.iter().zip(gradient.iter()) {
@@ -331,11 +338,17 @@ impl<'a> MessageView<'a> {
         let mut info_spans: Vec<Span<'a>> = vec![Span::styled("  v0.1.0", dim)];
         if let Some(model) = self.model_name {
             info_spans.push(Span::styled(" • ", dim));
-            info_spans.push(Span::styled(model.to_string(), Style::default().fg(Color::DarkGray)));
+            info_spans.push(Span::styled(
+                model.to_string(),
+                Style::default().fg(Color::DarkGray),
+            ));
         }
         if let Some(cwd) = self.cwd {
             info_spans.push(Span::styled(" • ", dim));
-            info_spans.push(Span::styled(cwd.to_string(), Style::default().fg(Color::DarkGray)));
+            info_spans.push(Span::styled(
+                cwd.to_string(),
+                Style::default().fg(Color::DarkGray),
+            ));
         }
         lines.push(Line::from(info_spans));
         lines.push(Line::from(""));

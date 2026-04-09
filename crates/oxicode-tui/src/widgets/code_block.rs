@@ -21,8 +21,7 @@ impl<'a> CodeBlockWidget<'a> {
     }
 
     fn to_lines(&self) -> Vec<Line<'static>> {
-        highlight::highlight_code(self.code, self.language)
-            .unwrap_or_else(|| self.plain_lines())
+        highlight::highlight_code(self.code, self.language).unwrap_or_else(|| self.plain_lines())
     }
 
     /// Plain fallback: white text on dark background with line numbers.

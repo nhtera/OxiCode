@@ -55,10 +55,8 @@ impl<'a> MarkdownView<'a> {
                         style_stack.push(base.fg(Color::Blue).add_modifier(Modifier::UNDERLINED));
                     }
                     Tag::Item => {
-                        current_spans.push(Span::styled(
-                            "• ",
-                            Style::default().fg(Color::DarkGray),
-                        ));
+                        current_spans
+                            .push(Span::styled("• ", Style::default().fg(Color::DarkGray)));
                     }
                     _ => {}
                 },
@@ -306,10 +304,7 @@ pub struct StreamParserState {
 /// This handles the cross-line code fence construct — all other markdown
 /// elements (bold, italic, headings, lists) are line-local in LLM output and
 /// parse correctly per-slice.
-pub fn parse_incremental(
-    source: &str,
-    state: &mut StreamParserState,
-) -> Vec<Line<'static>> {
+pub fn parse_incremental(source: &str, state: &mut StreamParserState) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     for raw_line in source.lines() {
@@ -320,18 +315,13 @@ pub fn parse_incremental(
             if state.in_code_block {
                 // Closing fence — render accumulated code.
                 let code = state.code_lines.join("\n");
-                if let Some(highlighted) =
-                    highlight::highlight_code_inline(&code, &state.code_lang)
+                if let Some(highlighted) = highlight::highlight_code_inline(&code, &state.code_lang)
                 {
                     lines.extend(highlighted);
                 } else {
-                    let code_style =
-                        Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
+                    let code_style = Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
                     for cl in &state.code_lines {
-                        lines.push(Line::from(Span::styled(
-                            format!("  {cl}"),
-                            code_style,
-                        )));
+                        lines.push(Line::from(Span::styled(format!("  {cl}"), code_style)));
                     }
                 }
                 lines.push(Line::from(""));
@@ -467,7 +457,10 @@ mod tests {
         let v = MarkdownView::new(source);
         let lines = v.to_lines();
         let raw = text_of(&lines);
-        assert!(raw.contains("fn main()"), "Code block content should render");
+        assert!(
+            raw.contains("fn main()"),
+            "Code block content should render"
+        );
 
         // Code should have dark background.
         let bg_spans: Vec<_> = lines
@@ -475,7 +468,10 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .filter(|s| matches!(s.style.bg, Some(Color::Rgb(40, 40, 40))))
             .collect();
-        assert!(!bg_spans.is_empty(), "Code block should have background color");
+        assert!(
+            !bg_spans.is_empty(),
+            "Code block should have background color"
+        );
     }
 
     #[test]
@@ -520,7 +516,11 @@ mod tests {
     fn parse_to_owned_lines_works() {
         let lines = parse_to_owned_lines("**hello** world\n");
         assert!(!lines.is_empty());
-        let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        let raw: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(raw.contains("hello"));
         assert!(raw.contains("world"));
     }

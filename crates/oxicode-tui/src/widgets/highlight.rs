@@ -11,9 +11,7 @@ use std::sync::OnceLock;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{
-    Color as SyntectColor, FontStyle, Theme, ThemeSet,
-};
+use syntect::highlighting::{Color as SyntectColor, FontStyle, Theme, ThemeSet};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 

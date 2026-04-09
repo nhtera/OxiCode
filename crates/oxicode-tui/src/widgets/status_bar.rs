@@ -264,10 +264,7 @@ impl Widget for StatusBar<'_> {
                 let filled = filled.min(10);
                 let empty = 10 - filled;
                 let bar: String = "\u{2588}".repeat(filled) + &"\u{2591}".repeat(empty);
-                Span::styled(
-                    format!(" {bar} {pct:.0}%"),
-                    Style::default().fg(color),
-                )
+                Span::styled(format!(" {bar} {pct:.0}%"), Style::default().fg(color))
             }
             _ => Span::raw(""),
         };

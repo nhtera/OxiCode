@@ -61,7 +61,9 @@ mod tests {
         let mut buf = Buffer::empty(area);
         SuggestionChips::new(&[]).render(area, &mut buf);
         // All cells should be empty/space.
-        let content: String = (0..60).map(|x| buf.cell((x, 0)).unwrap().symbol().to_string()).collect();
+        let content: String = (0..60)
+            .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
         assert!(content.trim().is_empty());
     }
 
@@ -80,7 +82,9 @@ mod tests {
         let area = Rect::new(0, 0, 60, 1);
         let mut buf = Buffer::empty(area);
         SuggestionChips::new(&suggestions).render(area, &mut buf);
-        let content: String = (0..60).map(|x| buf.cell((x, 0)).unwrap().symbol().to_string()).collect();
+        let content: String = (0..60)
+            .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
         assert!(content.contains("Run tests"));
         assert!(content.contains("Review"));
     }

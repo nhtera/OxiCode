@@ -152,19 +152,13 @@ impl Widget for CommandAutocomplete<'_> {
                         .fg(Color::Cyan)
                         .bg(Color::Rgb(30, 40, 60))
                         .add_modifier(Modifier::BOLD),
-                    Style::default()
-                        .fg(Color::White)
-                        .bg(Color::Rgb(30, 40, 60)),
+                    Style::default().fg(Color::White).bg(Color::Rgb(30, 40, 60)),
                     Color::Rgb(30, 40, 60),
                 )
             } else {
                 (
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .bg(Color::Rgb(20, 20, 30)),
-                    Style::default()
-                        .fg(Color::Gray)
-                        .bg(Color::Rgb(20, 20, 30)),
+                    Style::default().fg(Color::Cyan).bg(Color::Rgb(20, 20, 30)),
+                    Style::default().fg(Color::Gray).bg(Color::Rgb(20, 20, 30)),
                     Color::Rgb(20, 20, 30),
                 )
             };

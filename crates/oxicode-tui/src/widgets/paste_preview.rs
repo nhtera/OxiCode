@@ -86,9 +86,7 @@ impl Widget for PastePreview<'_> {
             Span::raw(" to paste | "),
             Span::styled(
                 "Esc",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
             Span::raw(" to cancel"),
         ]));
@@ -114,13 +112,19 @@ mod tests {
 
     #[test]
     fn large_paste_above_threshold() {
-        let text = (0..10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let text = (0..10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.lines().count() >= PASTE_PREVIEW_THRESHOLD);
     }
 
     #[test]
     fn preview_renders_without_panic() {
-        let text = (0..25).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let text = (0..25)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let area = Rect::new(0, 0, 60, 20);
         let mut buf = Buffer::empty(area);
         PastePreview::new(&text).render(area, &mut buf);
@@ -131,6 +135,9 @@ mod tests {
                 all_text.push_str(buf.cell((x, y)).unwrap().symbol());
             }
         }
-        assert!(all_text.contains("25 lines"), "Title should show line count");
+        assert!(
+            all_text.contains("25 lines"),
+            "Title should show line count"
+        );
     }
 }

@@ -121,7 +121,14 @@ mod tests {
         let mut s = String::new();
         for y in 0..height {
             for x in 0..width {
-                s.push(buf.cell((x, y)).unwrap().symbol().chars().next().unwrap_or(' '));
+                s.push(
+                    buf.cell((x, y))
+                        .unwrap()
+                        .symbol()
+                        .chars()
+                        .next()
+                        .unwrap_or(' '),
+                );
             }
             s.push('\n');
         }
@@ -175,7 +182,10 @@ mod tests {
         let rendered = render_to_string(w, 60, 4);
         assert!(rendered.contains("▶"), "Collapsed should show ▶");
         // Output should be hidden when collapsed.
-        assert!(!rendered.contains("file1.txt"), "Output hidden when collapsed");
+        assert!(
+            !rendered.contains("file1.txt"),
+            "Output hidden when collapsed"
+        );
     }
 
     #[test]
@@ -197,6 +207,9 @@ mod tests {
         let long_input = "a".repeat(100);
         let w = ToolCallWidget::new("bash", &long_input, None, ToolCallStatus::Running, false);
         let rendered = render_to_string(w, 90, 4);
-        assert!(rendered.contains("..."), "Long input should be truncated with ...");
+        assert!(
+            rendered.contains("..."),
+            "Long input should be truncated with ..."
+        );
     }
 }

@@ -20,8 +20,8 @@ pub mod tool_call;
 pub mod tool_display;
 
 pub use agent_panel::{AgentInfo, AgentPanel};
-pub use command_autocomplete::{AutocompleteState, CommandAutocomplete, SlashCommandMeta};
 pub use code_block::CodeBlockWidget;
+pub use command_autocomplete::{AutocompleteState, CommandAutocomplete, SlashCommandMeta};
 pub use diff_view::DiffView;
 pub use input_box::InputBox;
 pub use markdown_view::MarkdownView;

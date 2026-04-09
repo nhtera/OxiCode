@@ -153,7 +153,10 @@ mod tests {
             .collect();
 
         assert!(!red_lines.is_empty(), "Should have red (removal) lines");
-        assert!(!green_lines.is_empty(), "Should have green (addition) lines");
+        assert!(
+            !green_lines.is_empty(),
+            "Should have green (addition) lines"
+        );
     }
 
     #[test]

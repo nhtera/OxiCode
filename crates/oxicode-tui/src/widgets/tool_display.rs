@@ -40,18 +40,11 @@ pub fn format_elapsed(started_at: Instant) -> String {
 }
 
 /// Build a styled line for a running tool call.
-pub fn running_tool_line(
-    name: &str,
-    input_summary: &str,
-    started_at: Instant,
-) -> Line<'static> {
+pub fn running_tool_line(name: &str, input_summary: &str, started_at: Instant) -> Line<'static> {
     let frame = spinner_frame(started_at);
     let elapsed = format_elapsed(started_at);
     Line::from(vec![
-        Span::styled(
-            format!("  {frame} "),
-            Style::default().fg(Color::Cyan),
-        ),
+        Span::styled(format!("  {frame} "), Style::default().fg(Color::Cyan)),
         Span::styled(
             name.to_string(),
             Style::default()
@@ -85,16 +78,16 @@ pub fn completed_tool_lines(
         ("\u{2713}", Color::Green) // ✓ green
     };
 
-    let elapsed_str = started_at.map_or(String::new(), |t| {
-        format!(" ({})", format_elapsed(t))
-    });
+    let elapsed_str = started_at.map_or(String::new(), |t| format!(" ({})", format_elapsed(t)));
 
     // Header line.
     lines.push(Line::from(vec![
         Span::styled(format!("  {icon} "), Style::default().fg(header_color)),
         Span::styled(
             name.to_string(),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" \u{2014} {input_summary}"),
@@ -104,7 +97,11 @@ pub fn completed_tool_lines(
     ]));
 
     // Result lines with │ prefix (truncated).
-    let result_fg = if is_error { Color::Red } else { Color::DarkGray };
+    let result_fg = if is_error {
+        Color::Red
+    } else {
+        Color::DarkGray
+    };
     let result_style = Style::default().fg(result_fg);
     let pipe_style = Style::default().fg(Color::DarkGray);
     let total_lines = content.lines().count();
@@ -177,14 +174,7 @@ mod tests {
 
     #[test]
     fn completed_tool_lines_error() {
-        let lines = completed_tool_lines(
-            "bash",
-            "rm -rf /",
-            "Permission denied",
-            true,
-            None,
-            5,
-        );
+        let lines = completed_tool_lines("bash", "rm -rf /", "Permission denied", true, None, 5);
         let raw: String = lines
             .iter()
             .flat_map(|l| l.spans.iter())
@@ -205,6 +195,9 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .map(|s| s.content.as_ref())
             .collect();
-        assert!(raw.contains("more lines"), "Should show truncation indicator");
+        assert!(
+            raw.contains("more lines"),
+            "Should show truncation indicator"
+        );
     }
 }
