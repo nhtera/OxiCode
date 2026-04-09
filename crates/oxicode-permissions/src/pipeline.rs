@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::sync::Mutex;
+
 use crate::command_security::CommandSecurityChecker;
 use crate::dangerous::DangerousPatternDetector;
 use crate::rules::{PermissionRule, RuleMatcher};
@@ -44,13 +47,17 @@ pub enum ToolPermissionLevel {
     System,
 }
 
-/// 6-layer permission pipeline.
+/// 6-layer permission pipeline with session-scoped allow/deny tracking.
 pub struct PermissionPipeline {
     mode: PermissionMode,
     rule_matcher: RuleMatcher,
     dangerous_detector: DangerousPatternDetector,
     command_security: CommandSecurityChecker,
     tracker: DenialTracker,
+    /// Session-scoped tool names that user chose "Always allow" for.
+    session_allowlist: Mutex<HashSet<String>>,
+    /// Session-scoped tool names that user chose "Always deny" for.
+    session_denylist: Mutex<HashSet<String>>,
 }
 
 impl PermissionPipeline {
@@ -61,6 +68,8 @@ impl PermissionPipeline {
             dangerous_detector: DangerousPatternDetector::new(),
             command_security: CommandSecurityChecker::new(),
             tracker: DenialTracker::new(),
+            session_allowlist: Mutex::new(HashSet::new()),
+            session_denylist: Mutex::new(HashSet::new()),
         }
     }
 
@@ -93,6 +102,18 @@ impl PermissionPipeline {
             return PermissionDecision::Ask(reason);
         }
 
+        // Layer 3.5: Session-level allow/deny (from "Always allow"/"Always deny" dialog).
+        // Checked AFTER dangerous patterns (security gates remain active) but BEFORE
+        // mode branching so session decisions skip further checks.
+        if self.session_allowlist.lock().unwrap().contains(tool_name) {
+            return PermissionDecision::Allow;
+        }
+        if self.session_denylist.lock().unwrap().contains(tool_name) {
+            return PermissionDecision::Deny(format!(
+                "Denied for session: {tool_name}"
+            ));
+        }
+
         // Layer 4: Permission mode (only reached after security checks pass).
         match self.mode {
             PermissionMode::Bypass => return PermissionDecision::Allow,
@@ -121,6 +142,24 @@ impl PermissionPipeline {
     /// Get denial history.
     pub fn denial_history(&self) -> Vec<(String, String, chrono::DateTime<chrono::Utc>)> {
         self.tracker.history()
+    }
+
+    /// Record an "Always allow" decision for this session.
+    /// Next calls to the same tool will auto-allow (unless dangerous/security-blocked).
+    pub fn add_session_allow(&self, tool_name: &str) {
+        self.session_allowlist
+            .lock()
+            .unwrap()
+            .insert(tool_name.to_string());
+    }
+
+    /// Record an "Always deny" decision for this session.
+    /// Next calls to the same tool will auto-deny.
+    pub fn add_session_deny(&self, tool_name: &str) {
+        self.session_denylist
+            .lock()
+            .unwrap()
+            .insert(tool_name.to_string());
     }
 }
 
@@ -245,5 +284,86 @@ mod tests {
             &serde_json::json!({"command": "echo hello"}),
         );
         assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    // -- Session allowlist/denylist tests --
+
+    #[test]
+    fn test_session_allowlist_bypasses_ask() {
+        let pipeline = PermissionPipeline::new(PermissionMode::Default, vec![]);
+        // Without session allow, bash should Ask.
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "cargo test"}),
+        );
+        assert!(matches!(decision, PermissionDecision::Ask(_)));
+
+        // After "Always allow", bash should Allow.
+        pipeline.add_session_allow("bash");
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "cargo test"}),
+        );
+        assert_eq!(decision, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn test_session_denylist_bypasses_ask() {
+        let pipeline = PermissionPipeline::new(PermissionMode::Default, vec![]);
+        // After "Always deny", bash should Deny.
+        pipeline.add_session_deny("bash");
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "cargo test"}),
+        );
+        assert!(matches!(decision, PermissionDecision::Deny(_)));
+    }
+
+    #[test]
+    fn test_session_allowlist_does_not_bypass_dangerous() {
+        let pipeline = PermissionPipeline::new(PermissionMode::Default, vec![]);
+        pipeline.add_session_allow("bash");
+        // Dangerous patterns MUST still trigger Ask even if session-allowed.
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "rm -rf /"}),
+        );
+        assert!(
+            matches!(decision, PermissionDecision::Ask(_)),
+            "Dangerous commands must still Ask even with session allow"
+        );
+    }
+
+    #[test]
+    fn test_session_allowlist_does_not_bypass_command_security() {
+        let pipeline = PermissionPipeline::new(PermissionMode::Default, vec![]);
+        pipeline.add_session_allow("bash");
+        // Hard deny MUST still block even if session-allowed.
+        let decision = pipeline.check(
+            "bash",
+            ToolPermissionLevel::ShellExec,
+            &serde_json::json!({"command": "export LD_PRELOAD=/evil.so && ./app"}),
+        );
+        assert!(
+            matches!(decision, PermissionDecision::Deny(_)),
+            "Command security hard-deny must block even with session allow"
+        );
+    }
+
+    #[test]
+    fn test_session_allow_only_affects_matching_tool() {
+        let pipeline = PermissionPipeline::new(PermissionMode::Default, vec![]);
+        pipeline.add_session_allow("bash");
+        // file_write should still Ask — session allow is per-tool.
+        let decision = pipeline.check(
+            "file_write",
+            ToolPermissionLevel::FileWrite,
+            &serde_json::json!({"file_path": "/tmp/test"}),
+        );
+        assert!(matches!(decision, PermissionDecision::Ask(_)));
     }
 }

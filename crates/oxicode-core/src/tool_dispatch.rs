@@ -200,10 +200,23 @@ impl QueryEngine {
 
         // Wait with 30s timeout to prevent hanging on abandoned session.
         match tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx).await {
-            Ok(Ok(PermissionResponse::AllowOnce | PermissionResponse::AlwaysAllow)) => {
+            Ok(Ok(PermissionResponse::AllowOnce)) => {
                 self.run_tool(tool_use_id, tool_name, input).await
             }
-            Ok(Ok(PermissionResponse::Deny | PermissionResponse::AlwaysDeny)) => {
+            Ok(Ok(PermissionResponse::AlwaysAllow)) => {
+                self.permission_pipeline.add_session_allow(tool_name);
+                self.run_tool(tool_use_id, tool_name, input).await
+            }
+            Ok(Ok(PermissionResponse::Deny)) => {
+                self.permission_pipeline.record_denial(tool_name, prompt);
+                ContentBlock::ToolResult {
+                    tool_use_id: tool_use_id.to_string(),
+                    content: format!("Permission denied by user: {prompt}"),
+                    is_error: true,
+                }
+            }
+            Ok(Ok(PermissionResponse::AlwaysDeny)) => {
+                self.permission_pipeline.add_session_deny(tool_name);
                 self.permission_pipeline.record_denial(tool_name, prompt);
                 ContentBlock::ToolResult {
                     tool_use_id: tool_use_id.to_string(),
