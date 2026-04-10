@@ -26,7 +26,7 @@ use crate::vim_text_objects;
 use crate::widgets::{
     permission_dialog::RiskLevel, ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState,
     CommandAutocomplete, InputBox, MessageRenderCache, MessageView, Notification,
-    NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel,
+    NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay,
     ShortcutsState, SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
     PASTE_PREVIEW_THRESHOLD,
 };
@@ -113,6 +113,10 @@ pub struct App {
     turn_started_at: Option<Instant>,
     /// Slash command metadata for autocomplete dropdown.
     slash_commands: Vec<SlashCommandMeta>,
+    /// Pre-built (name, description, category) tuples for help overlay right column.
+    help_commands: Vec<(String, String, String)>,
+    /// Pre-built keyboard shortcut entries for help overlay left column.
+    help_shortcuts: Vec<crate::widgets::shortcuts_overlay::ShortcutEntry>,
     /// Autocomplete dropdown state (active when typing `/...`).
     autocomplete: AutocompleteState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
@@ -136,6 +140,13 @@ impl App {
         slash_commands: Vec<SlashCommandMeta>,
     ) -> Self {
         let keybindings = KeybindingRegistry::with_defaults();
+
+        // Build help overlay data from slash_commands.
+        let help_commands: Vec<(String, String, String)> = slash_commands
+            .iter()
+            .map(|c| (c.name.clone(), c.description.clone(), c.category.clone()))
+            .collect();
+        let help_shortcuts = crate::widgets::shortcuts_overlay::default_shortcut_entries();
 
         Self {
             state_rx: state_store.subscribe(),
@@ -169,6 +180,8 @@ impl App {
             suggestions: Vec::new(),
             turn_started_at: None,
             slash_commands,
+            help_commands,
+            help_shortcuts,
             autocomplete: AutocompleteState::new(),
             message_area: Rect::default(),
             frame_count: 0,
@@ -526,9 +539,14 @@ impl App {
                 frame.render_widget(notif_widget, content_area);
             }
 
-            // Shortcuts panel overlay (drawn on top of content area).
+            // Help overlay (drawn on top of content area).
             if shortcuts_visible {
-                frame.render_widget(ShortcutsPanel, content_area);
+                let help = crate::widgets::HelpOverlay::new(
+                    &self.shortcuts,
+                    &self.help_shortcuts,
+                    &self.help_commands,
+                );
+                frame.render_widget(help, content_area);
             }
 
             // Permission dialog overlay (drawn on top of everything).
@@ -616,9 +634,16 @@ impl App {
             return;
         }
 
-        // Shortcuts panel: any key hides it.
+        // Help overlay captures keys when visible: filter input, scroll, close.
         if self.shortcuts.is_visible() {
-            self.shortcuts.hide();
+            match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => self.shortcuts.hide(),
+                (_, KeyCode::Up) => self.shortcuts.scroll_up(),
+                (_, KeyCode::Down) => self.shortcuts.scroll_down(100),
+                (_, KeyCode::Char(c)) => self.shortcuts.push_filter_char(c),
+                (_, KeyCode::Backspace) => self.shortcuts.pop_filter_char(),
+                _ => {}
+            }
             return;
         }
 
@@ -694,6 +719,10 @@ impl App {
                     self.suggestions.clear();
                     self.submit_input().await;
                 }
+            }
+            // `?` toggles help overlay when input is empty (no conflict with typing).
+            (_, KeyCode::Char('?')) if self.input_text.is_empty() => {
+                self.shortcuts.toggle();
             }
             // H3 FIX: cursor operates on char count, insert at byte offset
             (_, KeyCode::Char(c)) => {
@@ -1073,19 +1102,46 @@ impl App {
                 // Close search, keep results.
                 self.search.deactivate();
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('n')) => {
+            (KeyModifiers::CONTROL, KeyCode::Char('n')) | (_, KeyCode::Down) => {
                 self.search.next_match();
+                self.scroll_to_current_match();
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
+            (KeyModifiers::CONTROL, KeyCode::Char('p')) | (_, KeyCode::Up) => {
                 self.search.prev_match();
+                self.scroll_to_current_match();
             }
             (_, KeyCode::Char(c)) => {
                 self.search.push_char(c);
+                self.update_search_matches();
             }
             (_, KeyCode::Backspace) => {
                 self.search.pop_char();
+                self.update_search_matches();
             }
             _ => {}
+        }
+    }
+
+    /// Scan the message render cache for search matches and update overlay state.
+    fn update_search_matches(&mut self) {
+        let state = self.state_rx.borrow();
+        let msg_count = state.messages.len();
+        drop(state);
+        let cached = self.message_cache.lines(msg_count);
+        let positions = crate::widgets::find_matches_in_cache(cached, self.search.query());
+        self.search.set_match_positions(positions);
+        // Auto-scroll to first match.
+        self.scroll_to_current_match();
+    }
+
+    /// Scroll the message view so the current search match is visible.
+    fn scroll_to_current_match(&mut self) {
+        if let Some(line_idx) = self.search.current_match_line() {
+            // Convert flattened line index to scroll offset.
+            // Account for message view inner height (approx).
+            let target = line_idx as u16;
+            self.scroll_offset = target.saturating_sub(3); // show a few lines above match
+            self.auto_scroll = false;
         }
     }
 

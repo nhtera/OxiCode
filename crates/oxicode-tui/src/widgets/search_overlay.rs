@@ -1,4 +1,4 @@
-//! Search overlay widget: triggered by `/` key, highlights matches in message view.
+//! Search overlay widget: triggered by Ctrl+F, highlights matches in message view.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
@@ -16,6 +16,8 @@ pub struct SearchOverlay {
     current_match: usize,
     /// Whether the search is active.
     active: bool,
+    /// Flattened line indices where matches occur (for scroll navigation).
+    match_positions: Vec<usize>,
 }
 
 impl SearchOverlay {
@@ -25,6 +27,7 @@ impl SearchOverlay {
             match_count: 0,
             current_match: 0,
             active: false,
+            match_positions: Vec::new(),
         }
     }
 
@@ -33,6 +36,7 @@ impl SearchOverlay {
         self.query.clear();
         self.match_count = 0;
         self.current_match = 0;
+        self.match_positions.clear();
     }
 
     pub fn deactivate(&mut self) {
@@ -62,6 +66,15 @@ impl SearchOverlay {
         }
     }
 
+    /// Update match positions from a scan of rendered lines.
+    pub fn set_match_positions(&mut self, positions: Vec<usize>) {
+        self.match_count = positions.len();
+        self.match_positions = positions;
+        if self.match_count > 0 && self.current_match >= self.match_count {
+            self.current_match = 0;
+        }
+    }
+
     pub fn next_match(&mut self) {
         if self.match_count > 0 {
             self.current_match = (self.current_match + 1) % self.match_count;
@@ -80,12 +93,46 @@ impl SearchOverlay {
     pub fn current_match_index(&self) -> usize {
         self.current_match
     }
+
+    /// Get the flattened line index of the current match (for scroll-to).
+    pub fn current_match_line(&self) -> Option<usize> {
+        self.match_positions.get(self.current_match).copied()
+    }
+
+    pub fn match_count(&self) -> usize {
+        self.match_count
+    }
 }
 
 impl Default for SearchOverlay {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Scan rendered message cache lines for matches against the query.
+/// Returns a `Vec<usize>` of flattened line indices where matches occur.
+pub fn find_matches_in_cache(
+    cached_lines: &[Vec<Line<'_>>],
+    query: &str,
+) -> Vec<usize> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let query_lower = query.to_lowercase();
+    let mut positions = Vec::new();
+    let mut flat_idx = 0;
+    for msg_lines in cached_lines {
+        for line in msg_lines {
+            // Extract plain text from all spans in this line.
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            if text.to_lowercase().contains(&query_lower) {
+                positions.push(flat_idx);
+            }
+            flat_idx += 1;
+        }
+    }
+    positions
 }
 
 /// Render the search bar at the bottom of the screen.
@@ -116,6 +163,14 @@ impl Widget for SearchBar<'_> {
             " no matches ".to_string()
         };
 
+        let status_style = if self.overlay.match_count > 0 {
+            Style::default().fg(Color::Green)
+        } else if self.overlay.query.is_empty() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Red)
+        };
+
         let line = Line::from(vec![
             Span::styled("Search: ", Style::default().fg(Color::Yellow)),
             Span::styled(
@@ -124,8 +179,12 @@ impl Widget for SearchBar<'_> {
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("_", Style::default().fg(Color::Gray)),
-            Span::styled(status, Style::default().fg(Color::DarkGray)),
+            Span::styled("\u{2588}", Style::default().fg(Color::Gray)),
+            Span::styled(status, status_style),
+            Span::styled(
+                " (Ctrl+N/P: next/prev, Esc: close)",
+                Style::default().fg(Color::DarkGray),
+            ),
         ]);
 
         let block = Block::default()
@@ -194,5 +253,42 @@ mod tests {
         assert!(line_matches("Hello World", "WORLD"));
         assert!(!line_matches("Hello World", "xyz"));
         assert!(!line_matches("Hello World", ""));
+    }
+
+    #[test]
+    fn test_match_positions() {
+        let mut s = SearchOverlay::new();
+        s.set_match_positions(vec![5, 12, 30]);
+        assert_eq!(s.match_count(), 3);
+        assert_eq!(s.current_match_line(), Some(5));
+        s.next_match();
+        assert_eq!(s.current_match_line(), Some(12));
+        s.next_match();
+        assert_eq!(s.current_match_line(), Some(30));
+        s.next_match(); // wraps
+        assert_eq!(s.current_match_line(), Some(5));
+    }
+
+    #[test]
+    fn test_find_matches_in_cache() {
+        let lines = vec![
+            vec![
+                Line::from("Hello world"),
+                Line::from("foo bar"),
+            ],
+            vec![
+                Line::from("world peace"),
+                Line::from("baz qux"),
+            ],
+        ];
+        let positions = find_matches_in_cache(&lines, "world");
+        assert_eq!(positions, vec![0, 2]); // line 0 and line 2
+    }
+
+    #[test]
+    fn test_find_matches_empty_query() {
+        let lines = vec![vec![Line::from("Hello")]];
+        let positions = find_matches_in_cache(&lines, "");
+        assert!(positions.is_empty());
     }
 }

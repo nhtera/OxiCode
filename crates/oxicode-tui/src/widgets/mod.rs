@@ -6,6 +6,7 @@ pub mod highlight;
 pub mod input_box;
 pub mod markdown_view;
 pub mod message_view;
+pub mod modal_helpers;
 pub mod notification;
 pub mod pager;
 pub mod paste_preview;
@@ -30,8 +31,10 @@ pub use notification::{Notification, NotificationLevel, NotificationWidget};
 pub use pager::{Pager, PagerView};
 pub use paste_preview::{PastePreview, PASTE_PREVIEW_THRESHOLD};
 pub use permission_dialog::PermissionDialog;
-pub use search_overlay::{SearchBar, SearchOverlay};
-pub use shortcuts_overlay::{ShortcutsPanel, ShortcutsState};
+pub use search_overlay::{find_matches_in_cache, SearchBar, SearchOverlay};
+pub use shortcuts_overlay::{
+    default_shortcut_entries, HelpOverlay, HelpOverlayState, ShortcutsPanel, ShortcutsState,
+};
 pub use split_pane::SplitPane;
 pub use status_bar::StatusBar;
 pub use suggestion_chips::SuggestionChips;

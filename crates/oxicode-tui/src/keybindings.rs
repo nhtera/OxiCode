@@ -216,6 +216,12 @@ impl KeybindingRegistry {
             Action::ToggleThinking,
         );
 
+        // Search messages.
+        bindings.insert(
+            KeyCombo::new(KeyModifiers::CONTROL, KeyCode::Char('f')),
+            Action::OpenSearch,
+        );
+
         Self { bindings }
     }
 
@@ -433,13 +439,13 @@ mod tests {
     }
 
     #[test]
-    fn test_ctrl_f_not_mapped_by_default() {
+    fn test_ctrl_f_maps_to_open_search() {
         let reg = KeybindingRegistry::with_defaults();
         let key = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL);
         assert_eq!(
             reg.lookup(&key),
-            None,
-            "Ctrl+F is not mapped in defaults — OpenSearch requires explicit binding"
+            Some(&Action::OpenSearch),
+            "Ctrl+F should map to OpenSearch by default"
         );
     }
 
