@@ -1,11 +1,12 @@
 ---
 source: crates/oxicode-tui/src/app.rs
+assertion_line: 2625
 expression: rendered.as_str()
 ---
 " ○ Ready  anthropic  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  [ask]            "
 "┌ Conversation ────────────────────────────────────────────────────────────────┐"
 "│◆ Assistant                                                                   │"
-"│  ⠋ Thinking... (0.0s)                                                        │"
+"│  ✢ Thinking... (0.0s)                                                        │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"

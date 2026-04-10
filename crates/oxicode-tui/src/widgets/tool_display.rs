@@ -1,6 +1,6 @@
 //! Enhanced tool call display helpers.
 //!
-//! Provides animated Braille spinner frames, elapsed time formatting, and
+//! Provides animated spinner frames, elapsed time formatting, and
 //! tool-specific styled line builders for the TUI message view.
 
 use std::time::Instant;
@@ -9,9 +9,10 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 /// Braille spinner frames (10-frame cycle at 100ms = 1s period).
+/// Used as a fallback for time-based spinner when frame_count is unavailable.
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-/// Get the current spinner frame based on time.
+/// Get the current spinner frame based on time (fallback, for backward compat).
 pub fn spinner_frame(started_at: Instant) -> &'static str {
     let elapsed_ms = started_at.elapsed().as_millis() as usize;
     let idx = (elapsed_ms / 100) % SPINNER_FRAMES.len();
@@ -39,12 +40,44 @@ pub fn format_elapsed(started_at: Instant) -> String {
     }
 }
 
-/// Build a styled line for a running tool call.
+/// Build a styled line for a running tool call (uses time-based Braille spinner).
 pub fn running_tool_line(name: &str, input_summary: &str, started_at: Instant) -> Line<'static> {
     let frame = spinner_frame(started_at);
     let elapsed = format_elapsed(started_at);
     Line::from(vec![
         Span::styled(format!("  {frame} "), Style::default().fg(Color::Cyan)),
+        Span::styled(
+            name.to_string(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" \u{2014} {input_summary}"),
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(
+            format!(" ({elapsed})"),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ])
+}
+
+/// Build a styled line for a running tool call with animated Unicode spinner.
+///
+/// Uses the 12-frame spinner from `render.rs` and stall detection coloring.
+pub fn running_tool_line_animated(
+    name: &str,
+    input_summary: &str,
+    started_at: Instant,
+    frame_count: u64,
+    stall_start: Option<Instant>,
+) -> Line<'static> {
+    let spinner = crate::render::spinner_char(frame_count);
+    let color = crate::render::spinner_color(stall_start);
+    let elapsed = format_elapsed(started_at);
+    Line::from(vec![
+        Span::styled(format!("  {spinner} "), Style::default().fg(color)),
         Span::styled(
             name.to_string(),
             Style::default()

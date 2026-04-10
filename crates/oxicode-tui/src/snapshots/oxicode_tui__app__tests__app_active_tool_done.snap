@@ -1,12 +1,13 @@
 ---
 source: crates/oxicode-tui/src/app.rs
+assertion_line: 2249
 expression: normalized_rendered_text(&terminal).as_str()
 ---
 " ○ Ready  anthropic  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  [ask]            "
 "┌ Conversation ────────────────────────────────────────────────────────────────┐"
 "│◆ Assistant                                                                   │"
-"│  ⠋ Thinking... (0.0s)                                                        │"
-"│  ✓ bash — echo hello (0.0s)                                                  │"
+"│  ✳ Thinking... (0.1s)                                                        │"
+"│  ✓ bash — echo hello (0.1s)                                                  │"
 "│  │ hello                                                                     │"
 "│                                                                              │"
 "│                                                                              │"

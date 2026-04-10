@@ -114,6 +114,10 @@ pub struct MessageView<'a> {
     model_name: Option<&'a str>,
     /// Current working directory for welcome screen display.
     cwd: Option<&'a str>,
+    /// Frame counter for animated spinner (from App).
+    frame_count: u64,
+    /// Stall detection start time (spinner turns red when stalled).
+    stall_start: Option<std::time::Instant>,
 }
 
 impl<'a> MessageView<'a> {
@@ -139,6 +143,8 @@ impl<'a> MessageView<'a> {
             reported_max_scroll: None,
             model_name: None,
             cwd: None,
+            frame_count: 0,
+            stall_start: None,
         }
     }
 
@@ -169,6 +175,18 @@ impl<'a> MessageView<'a> {
     /// Set CWD for welcome screen display.
     pub fn with_cwd(mut self, cwd: &'a str) -> Self {
         self.cwd = Some(cwd);
+        self
+    }
+
+    /// Set frame counter for animated spinner.
+    pub fn with_frame_count(mut self, count: u64) -> Self {
+        self.frame_count = count;
+        self
+    }
+
+    /// Set stall detection start time (spinner turns red when stalled).
+    pub fn with_stall_start(mut self, start: Option<std::time::Instant>) -> Self {
+        self.stall_start = start;
         self
     }
 
@@ -228,13 +246,14 @@ impl<'a> MessageView<'a> {
         let has_committed = self.streaming_lines.map_or(false, |l| !l.is_empty());
         let has_tail = self.streaming_tail.map_or(false, |t| !t.is_empty());
 
-        // No content yet — show thinking indicator with spinner.
+        // No content yet — show thinking indicator with animated spinner.
         if !has_committed && !has_tail {
             if let Some(started) = self.turn_started_at {
-                let frame = tool_display::spinner_frame(started);
+                let spinner = crate::render::spinner_char(self.frame_count);
+                let color = crate::render::spinner_color(self.stall_start);
                 let elapsed = tool_display::format_elapsed(started);
                 lines.push(Line::from(vec![
-                    Span::styled(format!("  {frame} "), Style::default().fg(Color::Cyan)),
+                    Span::styled(format!("  {spinner} "), Style::default().fg(color)),
                     Span::styled(
                         format!("Thinking... ({elapsed})"),
                         Style::default()
@@ -261,17 +280,19 @@ impl<'a> MessageView<'a> {
                 lines.push(Line::from(format!("  {tail}")));
             }
         }
-        // Blinking cursor with elapsed time.
+        // Animated cursor with spinner and elapsed time.
+        let spinner = crate::render::spinner_char(self.frame_count);
+        let color = crate::render::spinner_color(self.stall_start);
         if let Some(started) = self.turn_started_at {
             let elapsed = tool_display::format_elapsed(started);
             lines.push(Line::from(vec![
-                Span::styled("  \u{258d} ", Style::default().fg(Color::Cyan)),
+                Span::styled(format!("  {spinner} "), Style::default().fg(color)),
                 Span::styled(elapsed, Style::default().fg(Color::DarkGray)),
             ]));
         } else {
             lines.push(Line::from(Span::styled(
-                "  \u{258d}",
-                Style::default().fg(Color::Cyan),
+                format!("  {spinner}"),
+                Style::default().fg(color),
             )));
         }
     }
@@ -280,10 +301,12 @@ impl<'a> MessageView<'a> {
         for tool in self.active_tools {
             match tool.result {
                 None => {
-                    lines.push(tool_display::running_tool_line(
+                    lines.push(tool_display::running_tool_line_animated(
                         tool.name,
                         tool.input_summary,
                         tool.started_at,
+                        self.frame_count,
+                        self.stall_start,
                     ));
                 }
                 Some((content, is_error)) => {

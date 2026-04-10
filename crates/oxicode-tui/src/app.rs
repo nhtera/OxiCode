@@ -112,6 +112,11 @@ pub struct App {
     autocomplete: AutocompleteState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     message_area: Rect,
+    /// Frame counter — incremented each draw call, drives spinner animation.
+    frame_count: u64,
+    /// Set when streaming starts, reset on each delta. If >3s since last delta,
+    /// spinner turns red (stall detection, claurst pattern).
+    stall_start: Option<Instant>,
 }
 
 impl App {
@@ -157,6 +162,8 @@ impl App {
             slash_commands,
             autocomplete: AutocompleteState::new(),
             message_area: Rect::default(),
+            frame_count: 0,
+            stall_start: None,
         }
     }
 
@@ -274,6 +281,8 @@ impl App {
 
     #[allow(clippy::too_many_lines)]
     pub fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> io::Result<()> {
+        // Advance frame counter (drives spinner animation).
+        self.frame_count = self.frame_count.wrapping_add(1);
         // Minimum terminal size guard — skip rendering if too small.
         let term_size = terminal.size()?;
         if term_size.width < 40 || term_size.height < 8 {
@@ -472,6 +481,8 @@ impl App {
             )
             .with_turn_started_at(self.turn_started_at)
             .with_scroll_report(Rc::clone(&scroll_report))
+            .with_frame_count(self.frame_count)
+            .with_stall_start(self.stall_start)
             .with_model_name(&current_model)
             .with_cwd(&cwd);
             frame.render_widget(message_view, left_area);
@@ -1524,10 +1535,13 @@ impl App {
                 let new_lines = self.streaming_collector.commit_complete_lines();
                 self.streaming_committed_lines.extend(new_lines);
                 self.auto_scroll = true;
+                // Reset stall timer on each delta (data is flowing).
+                self.stall_start = Some(Instant::now());
             }
             CoreEvent::StreamStart => {
                 self.is_turn_active = true;
                 self.turn_started_at = Some(Instant::now());
+                self.stall_start = Some(Instant::now());
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
@@ -1561,6 +1575,7 @@ impl App {
                 self.active_tools.clear();
                 self.is_turn_active = false;
                 self.turn_started_at = None;
+                self.stall_start = None;
                 self.auto_scroll = true;
                 // Compute context-aware suggestions from latest messages.
                 let state = self.state_rx.borrow();
@@ -1582,6 +1597,7 @@ impl App {
                 // Reset turn timer — otherwise the "thinking" indicator would
                 // keep displaying a stale elapsed duration after an API error.
                 self.turn_started_at = None;
+                self.stall_start = None;
             }
             CoreEvent::ToolUseStart { id, name, input } => {
                 let summary = summarize_input(&input);
