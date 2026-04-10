@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
@@ -205,7 +206,6 @@ pub async fn download_session_files(
         let mut total: u64 = 0;
         let mut stream = file_resp.bytes_stream();
 
-        use futures::StreamExt;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(FilesApiError::Request)?;
             total += chunk.len() as u64;
@@ -280,10 +280,7 @@ fn parse_single_spec(spec: &str) -> FileSpec {
 fn validate_no_traversal(path: &Path) -> Result<(), FilesApiError> {
     for component in path.components() {
         match component {
-            std::path::Component::ParentDir => {
-                return Err(FilesApiError::PathTraversal(path.display().to_string()));
-            }
-            std::path::Component::RootDir => {
+            std::path::Component::ParentDir | std::path::Component::RootDir => {
                 return Err(FilesApiError::PathTraversal(path.display().to_string()));
             }
             _ => {}

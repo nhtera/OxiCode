@@ -261,7 +261,6 @@ impl App {
                         Event::Key(key) => self.handle_key(key).await,
                         Event::Mouse(mouse) => self.handle_mouse(mouse),
                         Event::Paste(text) => self.handle_paste(&text),
-                        Event::Resize(_, _) => {}
                         _ => {}
                     }
                     self.draw(terminal)?;
@@ -396,7 +395,7 @@ impl App {
             } else {
                 base_input_height
             };
-            let suggestion_height: u16 = if show_suggestions { 1 } else { 0 };
+            let suggestion_height: u16 = u16::from(show_suggestions);
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -411,6 +410,7 @@ impl App {
             // Status bar with vim badge and auth status.
             let context_pct = if context_window_max > 0 {
                 let used = total_usage.input_tokens + total_usage.output_tokens;
+                #[allow(clippy::cast_precision_loss)]
                 Some(used as f32 / context_window_max as f32 * 100.0)
             } else {
                 None
@@ -446,7 +446,7 @@ impl App {
             let streaming_tail_owned: Option<String> = if self.is_turn_active {
                 self.streaming_collector
                     .trailing_fragment()
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
             } else {
                 None
             };
@@ -588,6 +588,7 @@ impl App {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn handle_key(&mut self, key: KeyEvent) {
         // Paste preview modal takes highest priority.
         if self.pending_paste.is_some() {
@@ -680,7 +681,7 @@ impl App {
             {
                 let idx = (c as usize) - ('1' as usize);
                 if let Some(suggestion) = self.suggestions.get(idx) {
-                    self.input_text = suggestion.prompt.clone();
+                    self.input_text.clone_from(&suggestion.prompt);
                     self.input_cursor = self.input_text.chars().count();
                     self.suggestions.clear();
                     self.submit_input().await;
@@ -749,7 +750,7 @@ impl App {
                     if self.input_text.is_empty() && !self.suggestions.is_empty() {
                         // Select the first suggestion chip.
                         if let Some(suggestion) = self.suggestions.first() {
-                            self.input_text = suggestion.prompt.clone();
+                            self.input_text.clone_from(&suggestion.prompt);
                             self.input_cursor = self.input_text.chars().count();
                             self.suggestions.clear();
                             self.submit_input().await;
@@ -1118,6 +1119,7 @@ impl App {
         let relative_y = row - track_top;
         let track_height = track_bottom.saturating_sub(track_top).max(1);
         let ratio = f32::from(relative_y) / f32::from((track_height.saturating_sub(1)).max(1));
+        #[allow(clippy::cast_sign_loss)]
         let new_offset = (ratio * f32::from(self.max_scroll_offset)).round() as u16;
 
         self.scroll_offset = new_offset.min(self.max_scroll_offset);
@@ -1498,7 +1500,7 @@ impl App {
                         .send(oxicode_common::PermissionResponse::AlwaysAllow);
                 }
             }
-            (_, KeyCode::Char('n')) => {
+            (_, KeyCode::Char('n') | KeyCode::Esc) => {
                 if let Some(perm) = self.pending_permission.take() {
                     let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
                 }
@@ -1508,11 +1510,6 @@ impl App {
                     let _ = perm
                         .reply_tx
                         .send(oxicode_common::PermissionResponse::AlwaysDeny);
-                }
-            }
-            (_, KeyCode::Esc) => {
-                if let Some(perm) = self.pending_permission.take() {
-                    let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
@@ -1534,6 +1531,7 @@ impl App {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_core_event(&mut self, event: CoreEvent) {
         match event {
             CoreEvent::TextDelta(text) => {

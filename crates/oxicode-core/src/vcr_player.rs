@@ -27,6 +27,7 @@ impl VcrPlayer {
     }
 
     /// Return the next entry and advance the position, or `None` if exhausted.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<&VcrEntry> {
         let entry = self.entries.get(self.position)?;
         self.position += 1;

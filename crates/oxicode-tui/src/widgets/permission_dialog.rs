@@ -48,6 +48,7 @@ const OPTIONS: [&str; 4] = [
 const HOTKEYS: [&str; 4] = ["y", "a", "n", "N"];
 
 impl Widget for PermissionDialog<'_> {
+    #[allow(clippy::too_many_lines)]
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Responsive width: prefer 40..70 but never exceed terminal.
         let dialog_width = 70u16
@@ -88,10 +89,8 @@ impl Widget for PermissionDialog<'_> {
         let inner_width = (dialog_width as usize).saturating_sub(6);
         let preview_label = match self.tool_name.to_lowercase().as_str() {
             "bash" => "Command:",
-            "file_read" | "read" => "File:",
-            "file_write" | "write" | "file_edit" | "edit" => "File:",
-            "glob" => "Pattern:",
-            "grep" => "Pattern:",
+            "file_read" | "read" | "file_write" | "write" | "file_edit" | "edit" => "File:",
+            "glob" | "grep" => "Pattern:",
             _ => "Input:",
         };
 

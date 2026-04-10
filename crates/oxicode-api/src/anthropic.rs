@@ -154,6 +154,7 @@ impl AnthropicProvider {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[async_trait::async_trait]
 impl LlmProvider for AnthropicProvider {
     async fn stream_message(&self, request: MessageRequest) -> OxiResult<EventStream> {

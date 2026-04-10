@@ -246,7 +246,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
 
     flush_owned_spans(&mut current_spans, &mut lines);
     // Remove trailing empty line if present.
-    if lines.last().map_or(false, |l| l.spans.is_empty()) {
+    if lines.last().is_some_and(|l| l.spans.is_empty()) {
         lines.pop();
     }
     lines
@@ -396,6 +396,7 @@ mod tests {
             .join("")
     }
 
+    #[allow(dead_code)]
     fn span_texts(lines: &[Line]) -> Vec<String> {
         lines
             .iter()

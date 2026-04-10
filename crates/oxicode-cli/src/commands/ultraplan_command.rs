@@ -67,6 +67,7 @@ struct Phase {
 ///
 /// Uses keyword heuristics to tailor the phases; falls back to a generic
 /// five-phase template for unrecognised goals.
+#[allow(clippy::too_many_lines)]
 fn derive_phases(goal: &str) -> Vec<Phase> {
     let lower = goal.to_ascii_lowercase();
 

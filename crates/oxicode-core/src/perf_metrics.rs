@@ -59,7 +59,7 @@ impl PerfMetrics {
                 sorted.sort_unstable();
 
                 let call_count = sorted.len();
-                let total_nanos: u128 = sorted.iter().map(|d| d.as_nanos()).sum();
+                let total_nanos: u128 = sorted.iter().map(std::time::Duration::as_nanos).sum();
                 let avg = Duration::from_nanos((total_nanos / call_count as u128) as u64);
                 let p50 = percentile(&sorted, 50);
                 let p95 = percentile(&sorted, 95);

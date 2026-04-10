@@ -52,6 +52,7 @@ pub fn spinner_color(stall_start: Option<std::time::Instant>) -> Color {
 ///
 /// Used by input handlers to decide whether to process keys or defer
 /// to the active modal.
+#[allow(clippy::fn_params_excessive_bools)]
 pub fn is_modal_open(
     has_pending_permission: bool,
     has_pending_paste: bool,

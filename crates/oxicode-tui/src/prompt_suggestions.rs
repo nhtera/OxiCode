@@ -192,6 +192,7 @@ fn is_search_tool(name: &str) -> bool {
 }
 
 /// Generate context-aware suggestions based on the conversation.
+#[allow(clippy::too_many_lines)]
 pub fn suggest_prompts(messages: &[Message]) -> Vec<PromptSuggestion> {
     let has_user_message = messages.iter().any(|m| m.role == Role::User);
     if !has_user_message {
@@ -514,7 +515,6 @@ fn add_user_intent_suggestions(ctx: &MessageContext, suggestions: &mut Vec<Promp
             label: "Apply changes".into(),
             prompt: "Go ahead and apply the improvements.".into(),
         });
-        return;
     }
 }
 

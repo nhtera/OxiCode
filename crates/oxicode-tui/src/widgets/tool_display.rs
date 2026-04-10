@@ -30,12 +30,16 @@ pub fn format_elapsed(started_at: Instant) -> String {
     if secs < 60.0 {
         format!("{secs:.1}s")
     } else if secs < 3600.0 {
-        let mins = (secs / 60.0) as u64;
-        let rem = secs as u64 % 60;
+        #[allow(clippy::cast_sign_loss)]
+        let total = secs as u64;
+        let mins = total / 60;
+        let rem = total % 60;
         format!("{mins}m {rem}s")
     } else {
-        let hours = (secs / 3600.0) as u64;
-        let mins = (secs as u64 % 3600) / 60;
+        #[allow(clippy::cast_sign_loss)]
+        let total = secs as u64;
+        let hours = total / 3600;
+        let mins = (total % 3600) / 60;
         format!("{hours}h {mins}m")
     }
 }

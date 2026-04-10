@@ -37,7 +37,7 @@ pub fn extract_and_save(
     // Collect all user and assistant text.
     let conversation_text = messages
         .iter()
-        .map(|m| m.text())
+        .map(oxicode_common::Message::text)
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -87,7 +87,7 @@ pub fn extract_to_memdir(
 ) -> ExtractionResult {
     let conversation_text = messages
         .iter()
-        .map(|m| m.text())
+        .map(oxicode_common::Message::text)
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -152,11 +152,12 @@ fn infer_memory_type(content: &str) -> MemoryType {
 
 /// Simple content similarity check (Jaccard on word sets, case-insensitive).
 /// Returns a value between 0.0 (no overlap) and 1.0 (identical).
+#[allow(clippy::cast_precision_loss)]
 fn content_similarity(a: &str, b: &str) -> f64 {
     let words_a: std::collections::HashSet<String> =
-        a.split_whitespace().map(|w| w.to_lowercase()).collect();
+        a.split_whitespace().map(str::to_lowercase).collect();
     let words_b: std::collections::HashSet<String> =
-        b.split_whitespace().map(|w| w.to_lowercase()).collect();
+        b.split_whitespace().map(str::to_lowercase).collect();
 
     if words_a.is_empty() && words_b.is_empty() {
         return 1.0;

@@ -361,9 +361,9 @@ fn shorten_cwd(path: &str) -> String {
 /// - `1500000` → `"1.5M"`
 fn format_tokens(n: u32) -> String {
     if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
+        format!("{:.1}M", f64::from(n) / 1_000_000.0)
     } else if n >= 1_000 {
-        format!("{:.1}K", n as f64 / 1_000.0)
+        format!("{:.1}K", f64::from(n) / 1_000.0)
     } else {
         n.to_string()
     }

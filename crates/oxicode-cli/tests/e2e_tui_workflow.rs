@@ -176,6 +176,7 @@ async fn collect_events_auto_approve(
 
 /// Simplified event classification for assertions.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum CoreEventKind {
     StreamStart,
     TextDelta(String),

@@ -30,6 +30,12 @@ pub struct MessageRenderCache {
     cached_width: u16,
 }
 
+impl Default for MessageRenderCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MessageRenderCache {
     pub fn new() -> Self {
         Self {
@@ -71,7 +77,7 @@ impl MessageRenderCache {
 
     /// Total cached line count.
     pub fn total_lines(&self) -> usize {
-        self.entries.iter().map(|e| e.len()).sum()
+        self.entries.iter().map(Vec::len).sum()
     }
 
     /// The terminal width this cache was built for (for external scroll estimation).
@@ -202,7 +208,7 @@ impl<'a> MessageView<'a> {
 
         // Welcome screen when no messages and not streaming.
         let has_streaming =
-            self.streaming_lines.map_or(false, |l| !l.is_empty()) || self.streaming_tail.is_some();
+            self.streaming_lines.is_some_and(|l| !l.is_empty()) || self.streaming_tail.is_some();
         let has_thinking =
             !has_streaming && self.streaming_lines.is_some() && self.turn_started_at.is_some();
 
@@ -230,8 +236,7 @@ impl<'a> MessageView<'a> {
             }
             // Show assistant header if last message isn't already assistant.
             if self
-                .last_message_role
-                .map_or(true, |r| r != Role::Assistant)
+                .last_message_role != Some(Role::Assistant)
             {
                 lines.push(Line::from(Span::styled(
                     "\u{25c6} Assistant", // ◆ Assistant
@@ -250,8 +255,8 @@ impl<'a> MessageView<'a> {
 
     fn render_streaming(&self, lines: &mut Vec<Line<'a>>) {
         // Check if we have any content to show.
-        let has_committed = self.streaming_lines.map_or(false, |l| !l.is_empty());
-        let has_tail = self.streaming_tail.map_or(false, |t| !t.is_empty());
+        let has_committed = self.streaming_lines.is_some_and(|l| !l.is_empty());
+        let has_tail = self.streaming_tail.is_some_and(|t| !t.is_empty());
 
         // No content yet — show thinking indicator with animated spinner.
         if !has_committed && !has_tail {
@@ -510,7 +515,7 @@ fn render_content_blocks_static(blocks: &[ContentBlock], lines: &mut Vec<Line<'s
                 lines.push(Line::from(vec![
                     Span::styled("  \u{27f3} ", Style::default().fg(Color::Yellow)),
                     Span::styled(
-                        name.to_string(),
+                        name.clone(),
                         Style::default()
                             .fg(Color::Yellow)
                             .add_modifier(Modifier::BOLD),

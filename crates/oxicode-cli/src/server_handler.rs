@@ -753,7 +753,7 @@ async fn forward_turn_event(
                 ))
                 .await;
         }
-        TurnEvent::TurnStart | TurnEvent::TurnEnd => {
+        TurnEvent::TurnStart | TurnEvent::TurnEnd | TurnEvent::ThinkingDelta(_) => {
             // No-op for IDE — stream.text covers deltas, response signals completion.
         }
         TurnEvent::ToolUseStart { id, name, input } => {
@@ -844,9 +844,6 @@ async fn forward_turn_event(
                     }),
                 ))
                 .await;
-        }
-        TurnEvent::ThinkingDelta(_) => {
-            // Thinking deltas not forwarded to IDE clients for now.
         }
         TurnEvent::Retrying {
             message,

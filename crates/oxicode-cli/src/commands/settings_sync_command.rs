@@ -117,8 +117,7 @@ fn sync_status(_ctx: &CommandContext) -> CommandOutput {
 
     let file_status = settings_path
         .as_ref()
-        .map(|p| if p.exists() { "found" } else { "not found" })
-        .unwrap_or("unknown");
+        .map_or("unknown", |p| if p.exists() { "found" } else { "not found" });
 
     CommandOutput::Message(format!(
         "Settings sync status:\n\

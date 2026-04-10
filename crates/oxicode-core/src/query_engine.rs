@@ -107,6 +107,7 @@ impl QueryEngine {
     /// When `cancel_flag` is `Some`, the engine checks the flag between stream
     /// events and before each tool execution. When set, the turn is aborted
     /// and an `Interrupted` error is returned.
+    #[allow(clippy::too_many_lines)]
     pub async fn execute_turn_with_cancel(
         &self,
         conversation: &mut Conversation,
@@ -199,7 +200,7 @@ impl QueryEngine {
                     loop {
                         tokio::select! {
                             result = &mut tool_fut => break result,
-                            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                            () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
                                 if flag.load(Ordering::SeqCst) {
                                     flag.store(false, Ordering::SeqCst);
                                     // Drop tool_fut here kills the bash child process.

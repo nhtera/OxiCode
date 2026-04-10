@@ -160,7 +160,7 @@ impl ProviderRouter {
             {
                 return Ok(ResolvedProvider {
                     provider: Arc::clone(provider),
-                    model: model.to_string(),
+                    model: model.clone(),
                 });
             }
         }
@@ -169,7 +169,7 @@ impl ProviderRouter {
         if let Some((_, provider)) = self.providers.first() {
             return Ok(ResolvedProvider {
                 provider: Arc::clone(provider),
-                model: model.to_string(),
+                model: model.clone(),
             });
         }
 
