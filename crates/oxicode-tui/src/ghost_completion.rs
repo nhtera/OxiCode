@@ -62,21 +62,25 @@ mod tests {
             SlashCommandMeta {
                 name: "clear".into(),
                 description: "Clear conversation".into(),
+                category: "Session".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "compact".into(),
                 description: "Compact context".into(),
+                category: "Session".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "help".into(),
                 description: "Show help".into(),
+                category: "Session".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "model".into(),
                 description: "Switch model".into(),
+                category: "Model".into(),
                 arg_candidates: vec![
                     "claude-sonnet-4-20250514".into(),
                     "claude-opus-4-20250514".into(),
@@ -86,11 +90,13 @@ mod tests {
             SlashCommandMeta {
                 name: "session".into(),
                 description: "Session management".into(),
+                category: "Session".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "vim".into(),
                 description: "Toggle vim mode".into(),
+                category: "Display".into(),
                 arg_candidates: vec![],
             },
         ]

@@ -15,13 +15,15 @@ const MAX_VISIBLE: usize = 8;
 /// Column width reserved for the command name (left-aligned).
 const NAME_COL_WIDTH: usize = 20;
 
-/// Metadata for a slash command (name + description + argument completions).
+/// Metadata for a slash command (name + description + category + argument completions).
 #[derive(Debug, Clone)]
 pub struct SlashCommandMeta {
     /// Command name without leading `/` (e.g., `"clear"`).
     pub name: String,
     /// Short description (e.g., `"Clear conversation history"`).
     pub description: String,
+    /// Category for grouping in autocomplete (e.g., `"Session"`, `"Model"`).
+    pub category: String,
     /// Pre-computed argument completion candidates (e.g., model names for `/model`).
     pub arg_candidates: Vec<String>,
 }
@@ -145,6 +147,16 @@ impl Widget for CommandAutocomplete<'_> {
             let is_selected = start + row_idx == self.state.selected;
             let cmd = &self.commands[cmd_idx];
 
+            // Show category header if category changed from previous visible item.
+            let prev_category = if row_idx > 0 {
+                let prev_idx = self.state.filtered[start + row_idx - 1];
+                Some(self.commands[prev_idx].category.as_str())
+            } else {
+                None
+            };
+            let show_category = !cmd.category.is_empty()
+                && prev_category.map_or(true, |prev| prev != cmd.category);
+
             // Styling
             let (name_style, desc_style, bg) = if is_selected {
                 (
@@ -171,7 +183,8 @@ impl Widget for CommandAutocomplete<'_> {
                 }
             }
 
-            // Build row: "  /name           description"
+            // Build row: "  /name           description" with optional category prefix.
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
             let name_display = format!("/{}", cmd.name);
             // Pad name to fixed width for alignment.
             let padded_name = if name_display.len() < NAME_COL_WIDTH {
@@ -188,14 +201,23 @@ impl Widget for CommandAutocomplete<'_> {
                 cmd.description.clone()
             };
 
-            let line = Line::from(vec![
-                Span::styled("  ", desc_style),
+            let mut spans = vec![
+                Span::styled(prefix.to_string(), desc_style),
                 Span::styled(padded_name, name_style),
                 Span::styled("  ", desc_style),
                 Span::styled(desc, desc_style),
-            ]);
+            ];
 
-            buf.set_line(area.x, y, &line, area.width);
+            // Category badge at the right edge for the first item in a new category.
+            if show_category {
+                let cat_label = format!("  [{cat}]", cat = cmd.category);
+                spans.push(Span::styled(
+                    cat_label,
+                    Style::default().fg(Color::DarkGray).bg(bg),
+                ));
+            }
+
+            buf.set_line(area.x, y, &Line::from(spans), area.width);
         }
     }
 }
@@ -209,26 +231,31 @@ mod tests {
             SlashCommandMeta {
                 name: "clear".into(),
                 description: "Clear conversation".into(),
+                category: "Session".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "compact".into(),
                 description: "Compact context".into(),
+                category: "Session".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "help".into(),
                 description: "Show help".into(),
+                category: "Session".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "model".into(),
                 description: "Switch model".into(),
+                category: "Model".into(),
                 arg_candidates: vec![],
             },
             SlashCommandMeta {
                 name: "color".into(),
                 description: "Color settings".into(),
+                category: "Display".into(),
                 arg_candidates: vec![],
             },
         ]

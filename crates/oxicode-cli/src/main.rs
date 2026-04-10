@@ -585,6 +585,7 @@ async fn run_tui(
             |(name, desc, arg_candidates)| oxicode_tui::SlashCommandMeta {
                 name: name.to_string(),
                 description: desc.to_string(),
+                category: String::new(),
                 arg_candidates,
             },
         )
