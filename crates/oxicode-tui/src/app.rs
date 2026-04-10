@@ -47,6 +47,8 @@ struct PendingPermission {
     input_summary: String,
     prompt: String,
     selected: usize,
+    /// Whether the requested operation is dangerous (rm -rf, sudo, etc.).
+    is_dangerous: bool,
     reply_tx: tokio::sync::oneshot::Sender<oxicode_common::PermissionResponse>,
 }
 
@@ -521,7 +523,8 @@ impl App {
             if let Some(ref perm) = self.pending_permission {
                 let dialog =
                     PermissionDialog::new(&perm.tool_name, &perm.input_summary, &perm.prompt)
-                        .with_selected(perm.selected);
+                        .with_selected(perm.selected)
+                        .with_dangerous(perm.is_dangerous);
                 frame.render_widget(dialog, content_area);
             }
 
@@ -1626,11 +1629,13 @@ impl App {
                 prompt,
                 reply_tx,
             } => {
+                let is_dangerous = is_dangerous_operation(&tool_name, &input_summary);
                 self.pending_permission = Some(PendingPermission {
                     tool_name,
                     input_summary,
                     prompt,
                     selected: 0,
+                    is_dangerous,
                     reply_tx,
                 });
             }
@@ -1722,6 +1727,30 @@ fn detect_provider_from_model_name(model: &str) -> String {
     } else {
         String::new()
     }
+}
+
+/// Dangerous command patterns for permission dialog warning.
+const DANGEROUS_PATTERNS: &[&str] = &[
+    "rm -rf", "rm -r", "rmdir", "sudo ", "chmod 777", "chmod -R",
+    "> /dev/", "mkfs", "dd if=", ":(){ :|:", "shutdown", "reboot",
+    "kill -9", "pkill", "git push --force", "git reset --hard",
+    "DROP TABLE", "DROP DATABASE", "TRUNCATE", "DELETE FROM",
+];
+
+/// Check if a tool operation is potentially dangerous.
+fn is_dangerous_operation(tool_name: &str, input_summary: &str) -> bool {
+    if tool_name == "bash" || tool_name == "Bash" {
+        let lower = input_summary.to_lowercase();
+        return DANGEROUS_PATTERNS
+            .iter()
+            .any(|p| lower.contains(&p.to_lowercase()));
+    }
+    // File write/edit to sensitive paths.
+    if tool_name == "file_write" || tool_name == "file_edit" || tool_name == "Write" || tool_name == "Edit" {
+        let sensitive = ["/etc/", "/usr/", "/bin/", "/sbin/", ".env", "credentials", ".ssh/"];
+        return sensitive.iter().any(|s| input_summary.contains(s));
+    }
+    false
 }
 
 #[cfg(test)]
@@ -2194,12 +2223,12 @@ mod tests {
         let rendered = normalized_rendered_text(&terminal);
         assert_snapshot!("app_permission_dialog_overlay", rendered.as_str());
         assert!(
-            rendered.contains("Permission Required"),
+            rendered.contains("Allow bash"),
             "permission dialog title should render"
         );
         assert!(
-            rendered.contains("Tool: bash"),
-            "permission dialog should include tool name"
+            rendered.contains("echo hello"),
+            "permission dialog should include command preview"
         );
 
         // Ctrl+C while the dialog is open should deny the permission and request app quit.
@@ -2817,6 +2846,7 @@ mod tests {
             input_summary: "echo hi".to_string(),
             prompt: "Allow?".to_string(),
             selected: 0,
+            is_dangerous: false,
             reply_tx,
         });
 
@@ -2842,6 +2872,7 @@ mod tests {
             input_summary: "rm -rf /".to_string(),
             prompt: "Allow?".to_string(),
             selected: 2,
+            is_dangerous: false,
             reply_tx,
         });
 
@@ -2864,6 +2895,7 @@ mod tests {
             input_summary: "make build".to_string(),
             prompt: "Allow always?".to_string(),
             selected: 0,
+            is_dangerous: false,
             reply_tx,
         });
 
@@ -2886,6 +2918,7 @@ mod tests {
             input_summary: "curl http://...".to_string(),
             prompt: "Network access?".to_string(),
             selected: 0,
+            is_dangerous: false,
             reply_tx,
         });
 
@@ -2911,6 +2944,7 @@ mod tests {
             input_summary: "echo".to_string(),
             prompt: "Allow?".to_string(),
             selected: 0,
+            is_dangerous: false,
             reply_tx,
         });
 
@@ -2933,6 +2967,7 @@ mod tests {
             input_summary: "cmd".to_string(),
             prompt: "Allow?".to_string(),
             selected: 0,
+            is_dangerous: false,
             reply_tx,
         });
 
