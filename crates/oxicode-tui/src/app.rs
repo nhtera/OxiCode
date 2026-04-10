@@ -25,7 +25,7 @@ use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
     permission_dialog::RiskLevel, ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState,
-    CommandAutocomplete, InputBox, MessageRenderCache, MessageView, Notification,
+    CommandAutocomplete, InputBox, MessageRenderCache, MessageView, ModelPickerState, Notification,
     NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay,
     ShortcutsState, SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
     PASTE_PREVIEW_THRESHOLD,
@@ -119,6 +119,8 @@ pub struct App {
     help_shortcuts: Vec<crate::widgets::shortcuts_overlay::ShortcutEntry>,
     /// Autocomplete dropdown state (active when typing `/...`).
     autocomplete: AutocompleteState,
+    /// Model picker overlay state.
+    model_picker: ModelPickerState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     message_area: Rect,
     /// Frame counter — incremented each draw call, drives spinner animation.
@@ -183,6 +185,7 @@ impl App {
             help_commands,
             help_shortcuts,
             autocomplete: AutocompleteState::new(),
+            model_picker: ModelPickerState::new(),
             message_area: Rect::default(),
             frame_count: 0,
             session_start: Instant::now(),
@@ -549,6 +552,12 @@ impl App {
                 frame.render_widget(help, content_area);
             }
 
+            // Model picker overlay (drawn on top of content area).
+            if self.model_picker.is_visible() {
+                let picker = crate::widgets::ModelPicker::new(&self.model_picker);
+                frame.render_widget(picker, content_area);
+            }
+
             // Permission dialog overlay (drawn on top of everything).
             if let Some(ref perm) = self.pending_permission {
                 let dialog =
@@ -644,6 +653,12 @@ impl App {
                 (_, KeyCode::Backspace) => self.shortcuts.pop_filter_char(),
                 _ => {}
             }
+            return;
+        }
+
+        // Model picker captures keys when visible: navigate, filter, select, close.
+        if self.model_picker.is_visible() {
+            self.handle_model_picker_key(key).await;
             return;
         }
 
@@ -1230,6 +1245,36 @@ impl App {
         }
     }
 
+    /// Handle key events when the model picker overlay is active.
+    async fn handle_model_picker_key(&mut self, key: KeyEvent) {
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) => self.model_picker.close(),
+            (_, KeyCode::Up) => self.model_picker.select_prev(),
+            (_, KeyCode::Down) => self.model_picker.select_next(),
+            (_, KeyCode::Left) => self.model_picker.effort_prev(),
+            (_, KeyCode::Right) => self.model_picker.effort_next(),
+            (_, KeyCode::Enter) => {
+                if let Some((model_id, _effort)) = self.model_picker.confirm() {
+                    // Send model change as slash command to core.
+                    let _ = self
+                        .ui_tx
+                        .send(UiEvent::SlashCommand {
+                            name: "model".to_string(),
+                            args: model_id.clone(),
+                        })
+                        .await;
+                    self.notifications.push(Notification::new(
+                        format!("Switching to {model_id}"),
+                        crate::widgets::notification::NotificationLevel::Info,
+                    ));
+                }
+            }
+            (_, KeyCode::Char(c)) => self.model_picker.push_filter_char(c),
+            (_, KeyCode::Backspace) => self.model_picker.pop_filter_char(),
+            _ => {}
+        }
+    }
+
     fn scroll_up_by(&mut self, lines: u16) {
         if lines == 0 {
             return;
@@ -1360,6 +1405,12 @@ impl App {
             Action::HistorySearch => {
                 // Future: Ctrl+R search overlay. For now, just navigate history.
                 self.history_prev();
+            }
+            Action::OpenModelPicker => {
+                let state = self.state_rx.borrow();
+                let current_model = state.current_model.clone();
+                drop(state);
+                self.model_picker.open(&current_model);
             }
         }
     }

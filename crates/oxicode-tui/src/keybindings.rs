@@ -59,6 +59,8 @@ pub enum Action {
     HistoryNext,
     /// History search (Ctrl+R).
     HistorySearch,
+    /// Open model picker overlay.
+    OpenModelPicker,
 }
 
 /// A key combination (modifier flags + key code).
@@ -222,6 +224,12 @@ impl KeybindingRegistry {
             Action::OpenSearch,
         );
 
+        // Model picker (F2).
+        bindings.insert(
+            KeyCombo::new(KeyModifiers::NONE, KeyCode::F(2)),
+            Action::OpenModelPicker,
+        );
+
         Self { bindings }
     }
 
@@ -345,6 +353,7 @@ fn parse_action(s: &str) -> Option<Action> {
         "history_prev" => Some(Action::HistoryPrev),
         "history_next" => Some(Action::HistoryNext),
         "history_search" => Some(Action::HistorySearch),
+        "open_model_picker" => Some(Action::OpenModelPicker),
         _ => None,
     }
 }
