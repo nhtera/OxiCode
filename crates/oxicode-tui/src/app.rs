@@ -115,7 +115,7 @@ pub struct App {
     /// Frame counter — incremented each draw call, drives spinner animation.
     frame_count: u64,
     /// Set when streaming starts, reset on each delta. If >3s since last delta,
-    /// spinner turns red (stall detection, claurst pattern).
+    /// spinner turns red (stall detection).
     stall_start: Option<Instant>,
 }
 

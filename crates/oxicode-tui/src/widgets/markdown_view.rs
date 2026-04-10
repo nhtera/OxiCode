@@ -7,6 +7,9 @@ use ratatui::widgets::Widget;
 
 use super::highlight;
 
+/// Default width for box-drawing code block borders.
+const CODE_BLOCK_WIDTH: usize = 60;
+
 /// Renders markdown text as styled Ratatui lines.
 pub struct MarkdownView<'a> {
     source: &'a str,
@@ -71,22 +74,7 @@ impl<'a> MarkdownView<'a> {
                     }
                     TagEnd::CodeBlock => {
                         in_code_block = false;
-                        let code = code_block_lines.join("\n");
-                        if let Some(highlighted) =
-                            highlight::highlight_code_inline(&code, &code_block_lang)
-                        {
-                            lines.extend(highlighted);
-                        } else {
-                            // Fallback: plain white on dark bg.
-                            let code_style =
-                                Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
-                            for code_line in &code_block_lines {
-                                lines.push(Line::from(Span::styled(
-                                    format!("  {code_line}"),
-                                    code_style,
-                                )));
-                            }
-                        }
+                        render_code_block_boxed(&code_block_lines, &code_block_lang, &mut lines);
                         lines.push(Line::from(""));
                         code_block_lines.clear();
                     }
@@ -220,21 +208,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                 }
                 TagEnd::CodeBlock => {
                     in_code_block = false;
-                    let code = code_block_lines.join("\n");
-                    if let Some(highlighted) =
-                        highlight::highlight_code_inline(&code, &code_block_lang)
-                    {
-                        lines.extend(highlighted);
-                    } else {
-                        let code_style =
-                            Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
-                        for code_line in &code_block_lines {
-                            lines.push(Line::from(Span::styled(
-                                format!("  {code_line}"),
-                                code_style,
-                            )));
-                        }
-                    }
+                    render_code_block_boxed(&code_block_lines, &code_block_lang, &mut lines);
                     lines.push(Line::from(""));
                     code_block_lines.clear();
                 }
@@ -285,6 +259,59 @@ fn flush_owned_spans(spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'stati
     }
 }
 
+/// Render a code block with box-drawing borders and optional language label.
+///
+/// Output format:
+/// ```text
+///   ┌─ rust ──────────────────────┐
+///   │ fn main() {}                │
+///   └─────────────────────────────┘
+/// ```
+fn render_code_block_boxed(
+    code_lines: &[String],
+    lang: &str,
+    output: &mut Vec<Line<'static>>,
+) {
+    let border_style = Style::default().fg(Color::DarkGray);
+    let label_style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+    let code_bg = Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
+
+    // Top border: ┌─ lang ──...──┐
+    let label = if lang.is_empty() { String::new() } else { format!(" {lang} ") };
+    let used = 4 + label.len(); // "  ┌─" + label
+    let fill = CODE_BLOCK_WIDTH.saturating_sub(used);
+    output.push(Line::from(vec![
+        Span::styled("  \u{250c}\u{2500}".to_string(), border_style), // ┌─
+        Span::styled(label, label_style),
+        Span::styled("\u{2500}".repeat(fill) + "\u{2510}", border_style), // ─...─┐
+    ]));
+
+    // Highlighted or plain code lines with │ prefix and │ suffix.
+    let code = code_lines.join("\n");
+    if let Some(highlighted) = highlight::highlight_code_inline(&code, lang) {
+        for hl_line in highlighted {
+            let mut spans = Vec::with_capacity(hl_line.spans.len() + 2);
+            spans.push(Span::styled("  \u{2502} ".to_string(), border_style)); // │
+            spans.extend(hl_line.spans);
+            output.push(Line::from(spans));
+        }
+    } else {
+        for cl in code_lines {
+            output.push(Line::from(vec![
+                Span::styled("  \u{2502} ".to_string(), border_style),
+                Span::styled(cl.clone(), code_bg),
+            ]));
+        }
+    }
+
+    // Bottom border: └──...──┘
+    let bottom_fill = CODE_BLOCK_WIDTH.saturating_sub(3); // "  └" prefix
+    output.push(Line::from(Span::styled(
+        format!("  \u{2514}{}\u{2518}", "\u{2500}".repeat(bottom_fill)),
+        border_style,
+    )));
+}
+
 /// Persistent state for incremental streaming markdown parsing.
 ///
 /// Tracks whether we are inside a fenced code block so that partial code
@@ -313,17 +340,8 @@ pub fn parse_incremental(source: &str, state: &mut StreamParserState) -> Vec<Lin
         // Check for code fence toggle (``` with optional language).
         if trimmed.starts_with("```") {
             if state.in_code_block {
-                // Closing fence — render accumulated code.
-                let code = state.code_lines.join("\n");
-                if let Some(highlighted) = highlight::highlight_code_inline(&code, &state.code_lang)
-                {
-                    lines.extend(highlighted);
-                } else {
-                    let code_style = Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
-                    for cl in &state.code_lines {
-                        lines.push(Line::from(Span::styled(format!("  {cl}"), code_style)));
-                    }
-                }
+                // Closing fence — render accumulated code with box-drawing borders.
+                render_code_block_boxed(&state.code_lines, &state.code_lang, &mut lines);
                 lines.push(Line::from(""));
                 state.in_code_block = false;
                 state.code_lang.clear();

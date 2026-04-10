@@ -1,15 +1,12 @@
 //! Render helpers — spinner animation, stall detection, color constants.
 //!
-//! Ported from claurst's render.rs pattern. These pure functions are used by
-//! widgets and the main App draw loop. The full render-frame extraction will
-//! follow in a later phase once all widgets are stabilized.
+//! Used by widgets and the main App draw loop.
 
 use ratatui::style::Color;
 
 // ── Spinner ─────────────────────────────────────────────────────────
 
-/// 12-frame Unicode spinner matching claurst's `SpinnerGlyph` pattern.
-/// Forward + reverse mirrored for smooth pulse effect.
+/// 12-frame Unicode spinner with forward + reverse mirrored pulse effect.
 #[cfg(not(target_os = "windows"))]
 pub const SPINNER_FRAMES: &[char] = &[
     '·', '✢', '✳', '✶', '✻', '✽', '✽', '✻', '✶', '✳', '✢', '·',
@@ -19,8 +16,19 @@ pub const SPINNER_FRAMES: &[char] = &[
     '·', '✢', '*', '✶', '✻', '✽', '✽', '✻', '✶', '*', '✢', '·',
 ];
 
-/// Claude brand color (matches claurst `CLAUDE_ORANGE`).
+/// Claude brand color.
 pub const CLAUDE_ORANGE: Color = Color::Rgb(233, 30, 99);
+
+// ── Transcript colors ──────────────────────────────────────────────
+
+/// Dark background for user message blocks.
+pub const TRANSCRIPT_USER_BG: Color = Color::Rgb(23, 23, 31);
+
+/// Primary text color for transcript content.
+pub const TRANSCRIPT_TEXT: Color = Color::Rgb(236, 236, 241);
+
+/// Muted text color for metadata, timestamps, and secondary info.
+pub const TRANSCRIPT_MUTED: Color = Color::Rgb(139, 139, 153);
 
 /// Stall detection threshold — spinner turns red after this duration.
 pub const STALL_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(3);

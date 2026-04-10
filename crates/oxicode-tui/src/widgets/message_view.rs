@@ -15,7 +15,7 @@ use super::markdown_view;
 use super::tool_display;
 
 /// Maximum lines of tool result output shown inline.
-const MAX_RESULT_LINES: usize = 5;
+const MAX_RESULT_LINES: usize = 30;
 
 /// Per-message render cache — avoids re-parsing markdown for unchanged messages.
 ///
@@ -53,6 +53,13 @@ impl MessageRenderCache {
             let mut lines = Vec::new();
             render_message_header_static(msg, &mut lines);
             render_content_blocks_static(&msg.content, &mut lines);
+            // Apply user block style: orange left border + dark background.
+            if msg.role == Role::User {
+                lines = lines
+                    .into_iter()
+                    .map(|line| apply_user_block_style(line, terminal_width))
+                    .collect();
+            }
             self.entries.push(lines);
         }
     }
@@ -404,14 +411,38 @@ fn render_separator(lines: &mut Vec<Line<'_>>) {
     lines.push(Line::from(""));
 }
 
+/// Apply user block style: orange `▏` left border + dark background.
+///
+/// Makes user messages visually distinct from assistant replies.
+fn apply_user_block_style(line: Line<'static>, _width: u16) -> Line<'static> {
+    let mut spans = Vec::with_capacity(line.spans.len() + 1);
+    // Orange left border character.
+    spans.push(Span::styled(
+        "\u{258f} ".to_string(), // ▏ (left 1/8 block)
+        Style::default()
+            .fg(crate::render::CLAUDE_ORANGE)
+            .bg(crate::render::TRANSCRIPT_USER_BG),
+    ));
+    // Re-style existing spans with dark background.
+    for span in line.spans {
+        spans.push(Span::styled(
+            span.content.to_string(),
+            span.style.bg(crate::render::TRANSCRIPT_USER_BG),
+        ));
+    }
+    Line::from(spans)
+}
+
 /// Render a message header into owned lines (for caching).
 fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
+    let muted = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
     match msg.role {
         Role::User => {
+            // User header with orange accent.
             lines.push(Line::from(Span::styled(
                 "\u{276f} You".to_string(), // ❯ You
                 Style::default()
-                    .fg(Color::Blue)
+                    .fg(crate::render::CLAUDE_ORANGE)
                     .add_modifier(Modifier::BOLD),
             )));
         }
@@ -422,11 +453,18 @@ fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             )];
-            // Model badge (e.g. " claude-sonnet-4-20250514").
+            // Shortened model name (e.g. "claude-sonnet-4-20250514" → "sonnet-4").
             if let Some(ref model) = msg.model {
                 spans.push(Span::styled(
-                    format!(" ({model})"),
-                    Style::default().fg(Color::DarkGray),
+                    format!(" ({})", shorten_model_name(model)),
+                    muted,
+                ));
+            }
+            // Token usage badge.
+            if let Some(ref usage) = msg.usage {
+                spans.push(Span::styled(
+                    format!(" · {}↓ {}↑", usage.input_tokens, usage.output_tokens),
+                    muted,
                 ));
             }
             lines.push(Line::from(spans));
@@ -438,6 +476,20 @@ fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
             )));
         }
     }
+}
+
+/// Shorten a model name for display (e.g. "claude-sonnet-4-20250514" → "sonnet-4").
+fn shorten_model_name(model: &str) -> String {
+    // Strip "claude-" prefix and date suffix.
+    let name = model.strip_prefix("claude-").unwrap_or(model);
+    // Remove trailing date pattern (-YYYYMMDD).
+    if name.len() > 9 {
+        let maybe_date = &name[name.len() - 9..];
+        if maybe_date.starts_with('-') && maybe_date[1..].chars().all(|c| c.is_ascii_digit()) {
+            return name[..name.len() - 9].to_string();
+        }
+    }
+    name.to_string()
 }
 
 /// Render content blocks into owned lines (for caching). All strings are owned.
@@ -473,29 +525,35 @@ fn render_content_blocks_static(blocks: &[ContentBlock], lines: &mut Vec<Line<'s
                 content, is_error, ..
             } => {
                 let (icon, color) = if *is_error {
-                    ("\u{2717}", Color::Red)
+                    ("\u{2717}", Color::Red) // ✗
                 } else {
-                    ("\u{2713}", Color::Green)
+                    ("\u{2713}", Color::Green) // ✓
                 };
                 let tag = if *is_error { "error" } else { "result" };
                 lines.push(Line::from(Span::styled(
                     format!("  {icon} [{tag}]"),
                     Style::default().fg(color),
                 )));
-                let result_style = Style::default().fg(Color::DarkGray);
+                let result_fg = if *is_error {
+                    Color::Red
+                } else {
+                    Color::DarkGray
+                };
+                let result_style = Style::default().fg(result_fg);
+                let pipe_style = Style::default().fg(Color::DarkGray);
                 let total_lines = content.lines().count();
                 for (i, line) in content.lines().enumerate() {
                     if i >= MAX_RESULT_LINES {
                         lines.push(Line::from(Span::styled(
-                            format!("    ... ({} more lines)", total_lines - i),
-                            result_style,
+                            format!("  \u{2502} ... ({} more lines)", total_lines - i),
+                            pipe_style,
                         )));
                         break;
                     }
-                    lines.push(Line::from(Span::styled(
-                        format!("    {line}"),
-                        result_style,
-                    )));
+                    lines.push(Line::from(vec![
+                        Span::styled("  \u{2502} ".to_string(), pipe_style),
+                        Span::styled(line.to_string(), result_style),
+                    ]));
                 }
             }
             ContentBlock::Thinking { thinking } => {
