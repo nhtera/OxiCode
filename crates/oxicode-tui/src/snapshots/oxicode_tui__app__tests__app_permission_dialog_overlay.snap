@@ -1,6 +1,5 @@
 ---
 source: crates/oxicode-tui/src/app.rs
-assertion_line: 2228
 expression: rendered.as_str()
 ---
 " ○ Ready  anthropic  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  0s [ask]         "
@@ -12,14 +11,14 @@ expression: rendered.as_str()
 "│  ██│  │ echo hello                                                      │    │"
 "│  ╚█│  └──────────────────────────────────────────────────────────────┘  │    │"
 "│   ╚│                                                                    │    │"
+"│    │  ⚠ This command can modify files                                   │    │"
+"│  v0│                                                                    │    │"
 "│    │  ▸ [y] Allow once                                                  │    │"
-"│  v0│    [a] Always allow                                                │    │"
-"│    │    [n] Deny                                                        │    │"
-"│  En│    [N] Always deny                                                 │    │"
-"│  Ta│                                                                    │    │"
-"│    │  ↑↓ navigate  Enter confirm  Esc deny                              │    │"
+"│  En│    [a] Always allow                                                │    │"
+"│  Ta│    [n] Deny                                                        │    │"
+"│    │    [N] Always deny                                                 │    │"
 "│    │                                                                    │    │"
-"│    │                                                                    │    │"
+"│    │  ↑↓ nav  Enter confirm  y/a/n/N  Esc deny                          │    │"
 "│    │                                                                    │    │"
 "│    │                                                                    │    │"
 "│    └────────────────────────────────────────────────────────────────────┘    │"

@@ -10,6 +10,84 @@ use super::highlight;
 /// Default width for box-drawing code block borders.
 const CODE_BLOCK_WIDTH: usize = 60;
 
+/// Width used when rendering horizontal rules.
+const HORIZONTAL_RULE_WIDTH: usize = 60;
+
+/// Detect `http://` / `https://` URL byte ranges within `text`.
+///
+/// Returns a list of `(start, end)` byte index pairs (end is exclusive).
+/// Terminates each URL at the first whitespace or any of `)`, `>`, `]`.
+fn detect_urls(text: &str) -> Vec<(usize, usize)> {
+    let mut urls = Vec::new();
+    let mut search_from = 0;
+    while search_from < text.len() {
+        let slice = &text[search_from..];
+        let found = slice
+            .find("https://")
+            .or_else(|| slice.find("http://"))
+            .map(|pos| search_from + pos);
+        let Some(abs_start) = found else { break };
+        let end = text[abs_start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, ')' | '>' | ']'))
+            .map_or(text.len(), |e| abs_start + e);
+        if end > abs_start {
+            urls.push((abs_start, end));
+        }
+        search_from = end.max(abs_start + 1);
+    }
+    urls
+}
+
+/// Style applied to auto-detected bare URLs.
+fn url_style() -> Style {
+    Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::UNDERLINED)
+}
+
+/// Build a `Vec<Span<'static>>` from `text`, wrapping detected URLs with
+/// [`url_style`] and the remainder with `base_style`.
+fn spans_from_text_with_urls(text: &str, base_style: Style) -> Vec<Span<'static>> {
+    let url_ranges = detect_urls(text);
+    if url_ranges.is_empty() {
+        return vec![Span::styled(text.to_string(), base_style)];
+    }
+    let mut spans = Vec::new();
+    let mut cursor = 0usize;
+    for (start, end) in url_ranges {
+        if cursor < start {
+            spans.push(Span::styled(text[cursor..start].to_string(), base_style));
+        }
+        spans.push(Span::styled(text[start..end].to_string(), url_style()));
+        cursor = end;
+    }
+    if cursor < text.len() {
+        spans.push(Span::styled(text[cursor..].to_string(), base_style));
+    }
+    spans
+}
+
+/// Return a dim horizontal-rule `Line`.
+fn horizontal_rule_line() -> Line<'static> {
+    Line::from(Span::styled(
+        "\u{2500}".repeat(HORIZONTAL_RULE_WIDTH),
+        Style::default().fg(Color::DarkGray),
+    ))
+}
+
+/// Normalize common language alias shorthands to their canonical name.
+/// e.g. `"rs"` → `"rust"`, `"py"` → `"python"`.
+fn normalize_lang(lang: &str) -> &str {
+    match lang {
+        "rs" => "rust",
+        "py" => "python",
+        "js" => "javascript",
+        "ts" => "typescript",
+        "sh" | "bash" | "zsh" => "shell",
+        other => other,
+    }
+}
+
 /// Renders markdown text as styled Ratatui lines.
 pub struct MarkdownView<'a> {
     source: &'a str,
@@ -94,7 +172,8 @@ impl<'a> MarkdownView<'a> {
                         }
                     } else {
                         let style = *style_stack.last().unwrap_or(&Style::default());
-                        current_spans.push(Span::styled(text.to_string(), style));
+                        current_spans
+                            .extend(spans_from_text_with_urls(&text, style));
                     }
                 }
                 Event::Code(code) => {
@@ -105,6 +184,10 @@ impl<'a> MarkdownView<'a> {
                 }
                 Event::SoftBreak | Event::HardBreak => {
                     flush_spans(&mut current_spans, &mut lines);
+                }
+                Event::Rule => {
+                    flush_spans(&mut current_spans, &mut lines);
+                    lines.push(horizontal_rule_line());
                 }
                 _ => {}
             }
@@ -228,7 +311,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                     }
                 } else {
                     let style = *style_stack.last().unwrap_or(&Style::default());
-                    current_spans.push(Span::styled(text.to_string(), style));
+                    current_spans.extend(spans_from_text_with_urls(&text, style));
                 }
             }
             Event::Code(code) => {
@@ -239,6 +322,10 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
             }
             Event::SoftBreak | Event::HardBreak => {
                 flush_owned_spans(&mut current_spans, &mut lines);
+            }
+            Event::Rule => {
+                flush_owned_spans(&mut current_spans, &mut lines);
+                lines.push(horizontal_rule_line());
             }
             _ => {}
         }
@@ -347,9 +434,10 @@ pub fn parse_incremental(source: &str, state: &mut StreamParserState) -> Vec<Lin
                 state.code_lang.clear();
                 state.code_lines.clear();
             } else {
-                // Opening fence — extract language tag.
+                // Opening fence — extract and normalise language tag.
                 state.in_code_block = true;
-                state.code_lang = trimmed.trim_start_matches('`').to_string();
+                let raw_lang = trimmed.trim_start_matches('`');
+                state.code_lang = normalize_lang(raw_lang).to_string();
                 state.code_lines.clear();
             }
             continue;
@@ -357,6 +445,16 @@ pub fn parse_incremental(source: &str, state: &mut StreamParserState) -> Vec<Lin
 
         if state.in_code_block {
             state.code_lines.push(raw_line.to_string());
+            continue;
+        }
+
+        // Detect standalone horizontal rule lines: ---, ***, ___ (3+ same chars).
+        if trimmed.len() >= 3
+            && (trimmed.chars().all(|c| c == '-')
+                || trimmed.chars().all(|c| c == '*')
+                || trimmed.chars().all(|c| c == '_'))
+        {
+            lines.push(horizontal_rule_line());
             continue;
         }
 
@@ -550,5 +648,144 @@ mod tests {
         let lines = v.to_lines_indented(4);
         let first_span = &lines[0].spans[0];
         assert_eq!(first_span.content.as_ref(), "    ");
+    }
+
+    // --- URL detection ---
+
+    #[test]
+    fn detect_urls_finds_https() {
+        let ranges = detect_urls("Visit https://example.com for more.");
+        assert_eq!(ranges.len(), 1);
+        let (s, e) = ranges[0];
+        assert_eq!(&"Visit https://example.com for more."[s..e], "https://example.com");
+    }
+
+    #[test]
+    fn detect_urls_finds_http() {
+        let ranges = detect_urls("see http://example.org ok");
+        assert_eq!(ranges.len(), 1);
+        let (s, e) = ranges[0];
+        assert_eq!(&"see http://example.org ok"[s..e], "http://example.org");
+    }
+
+    #[test]
+    fn detect_urls_stops_at_closing_paren() {
+        let ranges = detect_urls("(https://example.com)");
+        assert_eq!(ranges.len(), 1);
+        let (s, e) = ranges[0];
+        assert_eq!(&"(https://example.com)"[s..e], "https://example.com");
+    }
+
+    #[test]
+    fn detect_urls_empty_when_none() {
+        assert!(detect_urls("no urls here").is_empty());
+    }
+
+    #[test]
+    fn detect_urls_multiple() {
+        let text = "a https://foo.com b https://bar.org c";
+        let ranges = detect_urls(text);
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(&text[ranges[0].0..ranges[0].1], "https://foo.com");
+        assert_eq!(&text[ranges[1].0..ranges[1].1], "https://bar.org");
+    }
+
+    #[test]
+    fn url_in_plain_text_renders_cyan_underline() {
+        let v = MarkdownView::new("Go to https://example.com now");
+        let lines = v.to_lines();
+        let url_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| {
+                s.style.fg == Some(Color::Cyan)
+                    && s.style.add_modifier.contains(Modifier::UNDERLINED)
+            })
+            .collect();
+        assert!(!url_spans.is_empty(), "URL should be Cyan + Underlined");
+        let url_text: String = url_spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(url_text.contains("https://example.com"));
+    }
+
+    #[test]
+    fn url_parse_owned_lines_cyan_underline() {
+        let lines = parse_to_owned_lines("See https://rust-lang.org for docs.");
+        let url_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| {
+                s.style.fg == Some(Color::Cyan)
+                    && s.style.add_modifier.contains(Modifier::UNDERLINED)
+            })
+            .collect();
+        assert!(!url_spans.is_empty(), "URL should be Cyan + Underlined");
+    }
+
+    // --- Horizontal rules ---
+
+    #[test]
+    fn horizontal_rule_dashes_renders() {
+        // pulldown_cmark parses --- as a rule only when on its own paragraph.
+        let v = MarkdownView::new("above\n\n---\n\nbelow");
+        let lines = v.to_lines();
+        let rule_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.content.contains('\u{2500}') && s.style.fg == Some(Color::DarkGray))
+            .collect();
+        assert!(!rule_spans.is_empty(), "Horizontal rule should render as ─ chars");
+    }
+
+    #[test]
+    fn horizontal_rule_incremental_dashes() {
+        let mut state = StreamParserState::default();
+        let lines = parse_incremental("---", &mut state);
+        let rule_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.content.contains('\u{2500}'))
+            .collect();
+        assert!(!rule_spans.is_empty(), "Incremental --- should render as horizontal rule");
+    }
+
+    #[test]
+    fn horizontal_rule_incremental_underscores() {
+        let mut state = StreamParserState::default();
+        let lines = parse_incremental("___", &mut state);
+        let rule_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.content.contains('\u{2500}'))
+            .collect();
+        assert!(!rule_spans.is_empty(), "Incremental ___ should render as horizontal rule");
+    }
+
+    // --- Code block language labels ---
+
+    #[test]
+    fn code_block_with_lang_shows_label_in_border() {
+        let source = "```rust\nfn main() {}\n```";
+        let v = MarkdownView::new(source);
+        let lines = v.to_lines();
+        let raw = text_of(&lines);
+        // The top-border line should contain the language name.
+        assert!(raw.contains("rust"), "Code block border should show language label");
+    }
+
+    #[test]
+    fn code_block_incremental_lang_alias_normalised() {
+        let mut state = StreamParserState::default();
+        // Open fence with alias "rs", should normalise to "rust".
+        parse_incremental("```rs", &mut state);
+        assert_eq!(state.code_lang, "rust", "rs alias should normalise to rust");
+    }
+
+    #[test]
+    fn normalize_lang_aliases() {
+        assert_eq!(normalize_lang("rs"), "rust");
+        assert_eq!(normalize_lang("py"), "python");
+        assert_eq!(normalize_lang("js"), "javascript");
+        assert_eq!(normalize_lang("ts"), "typescript");
+        assert_eq!(normalize_lang("go"), "go");
     }
 }

@@ -4,6 +4,43 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
+/// Risk level assigned to a tool, drives border color and visual emphasis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiskLevel {
+    /// Read-only / search tools — safe, green border.
+    Low,
+    /// File mutation or network tools — moderate, yellow border.
+    Moderate,
+    /// Shell execution — high risk, red border.
+    High,
+}
+
+impl RiskLevel {
+    /// Map a tool name to its risk level.
+    pub fn from_tool(tool_name: &str) -> Self {
+        match tool_name.to_lowercase().as_str() {
+            // Low-risk: read-only / search
+            "read" | "file_read" | "glob" | "grep" | "lsp" | "list_directory" | "ls" => Self::Low,
+            // High-risk: shell execution
+            "bash" => Self::High,
+            // Moderate-risk: file mutation, web, multi-edit
+            "write" | "file_write" | "edit" | "file_edit" | "multiedit" | "multi_edit"
+            | "webfetch" | "web_fetch" | "web_search" => Self::Moderate,
+            // Default: moderate
+            _ => Self::Moderate,
+        }
+    }
+
+    /// Border / title color for this risk level.
+    pub fn border_color(self) -> Color {
+        match self {
+            Self::Low => Color::Green,
+            Self::Moderate => Color::Yellow,
+            Self::High => Color::Red,
+        }
+    }
+}
+
 /// Overlay dialog for permission approval/denial.
 ///
 /// Shows tool name, command/input preview in a nested box,
@@ -13,7 +50,7 @@ pub struct PermissionDialog<'a> {
     input_summary: &'a str,
     risk_description: &'a str,
     selected: usize,
-    is_dangerous: bool,
+    risk_level: RiskLevel,
 }
 
 impl<'a> PermissionDialog<'a> {
@@ -23,7 +60,7 @@ impl<'a> PermissionDialog<'a> {
             input_summary,
             risk_description,
             selected: 0,
-            is_dangerous: false,
+            risk_level: RiskLevel::from_tool(tool_name),
         }
     }
 
@@ -32,8 +69,18 @@ impl<'a> PermissionDialog<'a> {
         self
     }
 
+    /// Override the risk level (computed from tool name by default).
+    pub fn with_risk_level(mut self, risk_level: RiskLevel) -> Self {
+        self.risk_level = risk_level;
+        self
+    }
+
+    /// Convenience setter kept for callers that only know whether an op is dangerous.
+    /// Maps `true` → `High`, `false` → preserves current level (no downgrade).
     pub fn with_dangerous(mut self, is_dangerous: bool) -> Self {
-        self.is_dangerous = is_dangerous;
+        if is_dangerous {
+            self.risk_level = RiskLevel::High;
+        }
         self
     }
 }
@@ -65,11 +112,7 @@ impl Widget for PermissionDialog<'_> {
         // Clear the area behind the dialog.
         Clear.render(dialog_area, buf);
 
-        let border_color = if self.is_dangerous {
-            Color::Red
-        } else {
-            Color::Yellow
-        };
+        let border_color = self.risk_level.border_color();
         let title = format!(" Allow {} ", self.tool_name);
         let block = Block::default()
             .borders(Borders::ALL)
@@ -89,7 +132,8 @@ impl Widget for PermissionDialog<'_> {
         let inner_width = (dialog_width as usize).saturating_sub(6);
         let preview_label = match self.tool_name.to_lowercase().as_str() {
             "bash" => "Command:",
-            "file_read" | "read" | "file_write" | "write" | "file_edit" | "edit" => "File:",
+            "file_read" | "read" | "file_write" | "write" | "file_edit" | "edit"
+            | "multiedit" | "multi_edit" => "File:",
             "glob" | "grep" => "Pattern:",
             _ => "Input:",
         };
@@ -137,8 +181,8 @@ impl Widget for PermissionDialog<'_> {
 
         lines.push(Line::from(""));
 
-        // Danger warning.
-        if self.is_dangerous {
+        // Danger warning — shown for High risk level.
+        if self.risk_level == RiskLevel::High {
             lines.push(Line::from(vec![
                 Span::styled("  \u{26a0} ", Style::default().fg(Color::Red)),
                 Span::styled(
@@ -178,12 +222,21 @@ impl Widget for PermissionDialog<'_> {
 
         lines.push(Line::from(""));
 
-        // Footer: navigation hints.
+        // Footer: explicit keybinding hints so users know all options at a glance.
         lines.push(Line::from(vec![
-            Span::styled("  \u{2191}\u{2193}", Style::default().fg(Color::DarkGray)),
-            Span::styled(" navigate  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  ", Style::default()),
+            Span::styled("\u{2191}\u{2193}", Style::default().fg(Color::DarkGray)),
+            Span::styled(" nav  ", Style::default().fg(Color::DarkGray)),
             Span::styled("Enter", Style::default().fg(Color::Green)),
             Span::styled(" confirm  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("y", Style::default().fg(Color::Green)),
+            Span::styled("/", Style::default().fg(Color::DarkGray)),
+            Span::styled("a", Style::default().fg(Color::Green)),
+            Span::styled("/", Style::default().fg(Color::DarkGray)),
+            Span::styled("n", Style::default().fg(Color::Red)),
+            Span::styled("/", Style::default().fg(Color::DarkGray)),
+            Span::styled("N", Style::default().fg(Color::Red)),
+            Span::styled("  ", Style::default().fg(Color::DarkGray)),
             Span::styled("Esc", Style::default().fg(Color::Red)),
             Span::styled(" deny", Style::default().fg(Color::DarkGray)),
         ]));
@@ -236,6 +289,53 @@ mod tests {
         let long_input = (0..10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
         let dialog = PermissionDialog::new("bash", &long_input, "Allow?");
         let area = Rect::new(0, 0, 80, 30);
+        let mut buf = Buffer::empty(area);
+        dialog.render(area, &mut buf);
+    }
+
+    #[test]
+    fn risk_level_from_tool_bash_is_high() {
+        assert_eq!(RiskLevel::from_tool("bash"), RiskLevel::High);
+        assert_eq!(RiskLevel::from_tool("Bash"), RiskLevel::High);
+    }
+
+    #[test]
+    fn risk_level_from_tool_read_is_low() {
+        assert_eq!(RiskLevel::from_tool("read"), RiskLevel::Low);
+        assert_eq!(RiskLevel::from_tool("glob"), RiskLevel::Low);
+        assert_eq!(RiskLevel::from_tool("grep"), RiskLevel::Low);
+    }
+
+    #[test]
+    fn risk_level_from_tool_write_is_moderate() {
+        assert_eq!(RiskLevel::from_tool("write"), RiskLevel::Moderate);
+        assert_eq!(RiskLevel::from_tool("edit"), RiskLevel::Moderate);
+    }
+
+    #[test]
+    fn risk_level_border_colors() {
+        assert_eq!(RiskLevel::Low.border_color(), Color::Green);
+        assert_eq!(RiskLevel::Moderate.border_color(), Color::Yellow);
+        assert_eq!(RiskLevel::High.border_color(), Color::Red);
+    }
+
+    #[test]
+    fn with_dangerous_upgrades_to_high() {
+        let dialog = PermissionDialog::new("read", "file.txt", "desc").with_dangerous(true);
+        assert_eq!(dialog.risk_level, RiskLevel::High);
+    }
+
+    #[test]
+    fn with_dangerous_false_keeps_computed_level() {
+        // "read" → Low; with_dangerous(false) should not change it
+        let dialog = PermissionDialog::new("read", "file.txt", "desc").with_dangerous(false);
+        assert_eq!(dialog.risk_level, RiskLevel::Low);
+    }
+
+    #[test]
+    fn read_tool_renders_green_border_without_panic() {
+        let dialog = PermissionDialog::new("read", "/src/main.rs", "Read file");
+        let area = Rect::new(0, 0, 80, 24);
         let mut buf = Buffer::empty(area);
         dialog.render(area, &mut buf);
     }

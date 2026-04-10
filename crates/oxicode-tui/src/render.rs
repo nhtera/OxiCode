@@ -38,14 +38,18 @@ pub fn spinner_char(frame_count: u64) -> char {
     SPINNER_FRAMES[(frame_count as usize) % SPINNER_FRAMES.len()]
 }
 
-/// Spinner color: yellow normally, red when stalled (>3s without stream data).
+/// Spinner color: green (active) → yellow (1–3s pause) → red (>3s stall).
 pub fn spinner_color(stall_start: Option<std::time::Instant>) -> Color {
     if let Some(start) = stall_start {
-        if start.elapsed() > STALL_THRESHOLD {
+        let elapsed = start.elapsed();
+        if elapsed > STALL_THRESHOLD {
             return Color::Red;
         }
+        if elapsed > std::time::Duration::from_secs(1) {
+            return Color::Yellow;
+        }
     }
-    Color::Yellow
+    Color::Green // Active streaming
 }
 
 /// Check if any modal overlay is blocking normal input routing.

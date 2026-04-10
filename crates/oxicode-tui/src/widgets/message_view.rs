@@ -28,6 +28,8 @@ pub struct MessageRenderCache {
     entries: Vec<Vec<Line<'static>>>,
     /// Terminal width when cache was built (invalidate on resize).
     cached_width: u16,
+    /// Set of message indices with expanded thinking blocks.
+    expanded_thinking: std::collections::HashSet<usize>,
 }
 
 impl Default for MessageRenderCache {
@@ -41,7 +43,31 @@ impl MessageRenderCache {
         Self {
             entries: Vec::new(),
             cached_width: 0,
+            expanded_thinking: std::collections::HashSet::new(),
         }
+    }
+
+    /// Toggle thinking block expansion for a message index.
+    /// Returns true if the message had a thinking block and was toggled.
+    pub fn toggle_thinking(&mut self, messages: &[Message], msg_index: usize) -> bool {
+        if msg_index >= messages.len() {
+            return false;
+        }
+        let has_thinking = messages[msg_index]
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Thinking { .. }));
+        if !has_thinking {
+            return false;
+        }
+        if self.expanded_thinking.contains(&msg_index) {
+            self.expanded_thinking.remove(&msg_index);
+        } else {
+            self.expanded_thinking.insert(msg_index);
+        }
+        // Invalidate cache for this message — clear and rebuild.
+        self.entries.clear();
+        true
     }
 
     /// Ensure cache is valid for the current state. Returns true if cache was usable.
@@ -55,10 +81,12 @@ impl MessageRenderCache {
 
         // Render only new messages (append to cache).
         let start = self.entries.len();
-        for msg in &messages[start..] {
+        for (idx, msg) in messages[start..].iter().enumerate() {
+            let msg_index = start + idx;
             let mut lines = Vec::new();
             render_message_header_static(msg, &mut lines);
-            render_content_blocks_static(&msg.content, &mut lines);
+            let expanded = self.expanded_thinking.contains(&msg_index);
+            render_content_blocks_static(&msg.content, &mut lines, expanded);
             // Apply user block style: orange left border + dark background.
             if msg.role == Role::User {
                 lines = lines
@@ -90,6 +118,8 @@ impl MessageRenderCache {
 pub struct ActiveToolInfo<'a> {
     pub name: &'a str,
     pub input_summary: &'a str,
+    /// Raw input JSON for tool-specific rendering.
+    pub raw_input: &'a serde_json::Value,
     /// When this tool call started (for elapsed time + spinner).
     pub started_at: std::time::Instant,
     /// `Some((content, is_error))` when the tool completed.
@@ -131,6 +161,8 @@ pub struct MessageView<'a> {
     frame_count: u64,
     /// Stall detection start time (spinner turns red when stalled).
     stall_start: Option<std::time::Instant>,
+    /// Thinking text accumulated during streaming (shown dim italic above content).
+    streaming_thinking: Option<&'a str>,
 }
 
 impl<'a> MessageView<'a> {
@@ -158,6 +190,7 @@ impl<'a> MessageView<'a> {
             cwd: None,
             frame_count: 0,
             stall_start: None,
+            streaming_thinking: None,
         }
     }
 
@@ -200,6 +233,12 @@ impl<'a> MessageView<'a> {
     /// Set stall detection start time (spinner turns red when stalled).
     pub fn with_stall_start(mut self, start: Option<std::time::Instant>) -> Self {
         self.stall_start = start;
+        self
+    }
+
+    /// Set thinking text accumulated during streaming (shown dim italic above content).
+    pub fn with_streaming_thinking(mut self, text: &'a str) -> Self {
+        self.streaming_thinking = Some(text);
         self
     }
 
@@ -264,15 +303,47 @@ impl<'a> MessageView<'a> {
                 let spinner = crate::render::spinner_char(self.frame_count);
                 let color = crate::render::spinner_color(self.stall_start);
                 let elapsed = tool_display::format_elapsed(started);
-                lines.push(Line::from(vec![
-                    Span::styled(format!("  {spinner} "), Style::default().fg(color)),
-                    Span::styled(
-                        format!("Thinking... ({elapsed})"),
-                        Style::default()
-                            .fg(Color::DarkGray)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                ]));
+
+                // Show accumulated thinking text (max 5 lines) if available.
+                if let Some(thinking) = self.streaming_thinking.filter(|t| !t.is_empty()) {
+                    let dim_italic = Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC);
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("  {spinner} "), Style::default().fg(color)),
+                        Span::styled(
+                            format!("Thinking... ({elapsed})"),
+                            dim_italic,
+                        ),
+                    ]));
+                    // Show up to 5 lines of thinking text.
+                    const MAX_THINK_LINES: usize = 5;
+                    let all_lines: Vec<&str> = thinking.lines().collect();
+                    let total = all_lines.len();
+                    let shown = all_lines.len().min(MAX_THINK_LINES);
+                    for think_line in &all_lines[..shown] {
+                        lines.push(Line::from(vec![
+                            Span::styled("  \u{2502} ", Style::default().fg(Color::DarkGray)),
+                            Span::styled((*think_line).to_string(), dim_italic),
+                        ]));
+                    }
+                    if total > MAX_THINK_LINES {
+                        lines.push(Line::from(Span::styled(
+                            format!("  \u{2502} ... ({} more lines)", total - MAX_THINK_LINES),
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                } else {
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("  {spinner} "), Style::default().fg(color)),
+                        Span::styled(
+                            format!("Thinking... ({elapsed})"),
+                            Style::default()
+                                .fg(Color::DarkGray)
+                                .add_modifier(Modifier::ITALIC),
+                        ),
+                    ]));
+                }
             }
             return;
         }
@@ -322,13 +393,14 @@ impl<'a> MessageView<'a> {
                     ));
                 }
                 Some((content, is_error)) => {
-                    let completed_lines = tool_display::completed_tool_lines(
+                    let completed_lines = tool_display::completed_tool_lines_with_input(
                         tool.name,
                         tool.input_summary,
                         content,
                         is_error,
                         Some(tool.started_at),
                         MAX_RESULT_LINES,
+                        Some(tool.raw_input),
                     );
                     lines.extend(completed_lines);
                 }
@@ -498,7 +570,25 @@ fn shorten_model_name(model: &str) -> String {
 }
 
 /// Render content blocks into owned lines (for caching). All strings are owned.
-fn render_content_blocks_static(blocks: &[ContentBlock], lines: &mut Vec<Line<'static>>) {
+///
+/// When `expanded_thinking` is true, thinking blocks show full text instead of collapsed.
+fn render_content_blocks_static(
+    blocks: &[ContentBlock],
+    lines: &mut Vec<Line<'static>>,
+    expanded_thinking: bool,
+) {
+    // Build tool_name map: tool_use_id → tool_name (for result display).
+    let tool_names: std::collections::HashMap<&str, &str> = blocks
+        .iter()
+        .filter_map(|b| {
+            if let ContentBlock::ToolUse { id, name, .. } = b {
+                Some((id.as_str(), name.as_str()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
     for block in blocks {
         match block {
             ContentBlock::Text { text } => {
@@ -527,18 +617,29 @@ fn render_content_blocks_static(blocks: &[ContentBlock], lines: &mut Vec<Line<'s
                 ]));
             }
             ContentBlock::ToolResult {
-                content, is_error, ..
+                tool_use_id,
+                content,
+                is_error,
             } => {
                 let (icon, color) = if *is_error {
                     ("\u{2717}", Color::Red) // ✗
                 } else {
                     ("\u{2713}", Color::Green) // ✓
                 };
-                let tag = if *is_error { "error" } else { "result" };
-                lines.push(Line::from(Span::styled(
-                    format!("  {icon} [{tag}]"),
-                    Style::default().fg(color),
-                )));
+                // Show tool name if available, otherwise generic tag.
+                let tool_label = tool_names
+                    .get(tool_use_id.as_str())
+                    .map_or_else(
+                        || if *is_error { "error".to_string() } else { "result".to_string() },
+                        |name| (*name).to_string(),
+                    );
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {icon} "), Style::default().fg(color)),
+                    Span::styled(
+                        tool_label,
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
+                    ),
+                ]));
                 let result_fg = if *is_error {
                     Color::Red
                 } else {
@@ -563,19 +664,44 @@ fn render_content_blocks_static(blocks: &[ContentBlock], lines: &mut Vec<Line<'s
             }
             ContentBlock::Thinking { thinking } => {
                 let line_count = thinking.lines().count();
-                // Collapsed header with line count.
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "  💭 Thinking ".to_string(),
-                        Style::default()
-                            .fg(Color::DarkGray)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                    Span::styled(
-                        format!("({line_count} lines) ▶"),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                ]));
+                if expanded_thinking {
+                    // Expanded: show full thinking text.
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            "  \u{25bc} Thinking ".to_string(), // ▼
+                            Style::default()
+                                .fg(Color::DarkGray)
+                                .add_modifier(Modifier::ITALIC),
+                        ),
+                        Span::styled(
+                            format!("({line_count} lines)"),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ]));
+                    let dim_italic = Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC);
+                    for think_line in thinking.lines() {
+                        lines.push(Line::from(vec![
+                            Span::styled("  \u{2502} ".to_string(), Style::default().fg(Color::DarkGray)),
+                            Span::styled(think_line.to_string(), dim_italic),
+                        ]));
+                    }
+                } else {
+                    // Collapsed header with line count.
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            "  \u{25b6} Thinking ".to_string(), // ▶
+                            Style::default()
+                                .fg(Color::DarkGray)
+                                .add_modifier(Modifier::ITALIC),
+                        ),
+                        Span::styled(
+                            format!("({line_count} lines)"),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ]));
+                }
             }
         }
     }

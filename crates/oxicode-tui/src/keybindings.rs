@@ -39,6 +39,8 @@ pub enum Action {
     OpenSearch,
     /// Toggle shortcuts overlay.
     ToggleShortcuts,
+    /// Toggle thinking block expansion for the last assistant message.
+    ToggleThinking,
     /// Cycle output style.
     CycleOutputStyle,
     /// Move cursor to start of input.
@@ -208,6 +210,12 @@ impl KeybindingRegistry {
             Action::HistorySearch,
         );
 
+        // Toggle thinking block expansion.
+        bindings.insert(
+            KeyCombo::new(KeyModifiers::CONTROL, KeyCode::Char('t')),
+            Action::ToggleThinking,
+        );
+
         Self { bindings }
     }
 
@@ -321,6 +329,7 @@ fn parse_action(s: &str) -> Option<Action> {
         "delete_to_line_start" => Some(Action::DeleteToLineStart),
         "open_search" => Some(Action::OpenSearch),
         "toggle_shortcuts" => Some(Action::ToggleShortcuts),
+        "toggle_thinking" => Some(Action::ToggleThinking),
         "cycle_output_style" => Some(Action::CycleOutputStyle),
         "cursor_home" => Some(Action::CursorHome),
         "cursor_end" => Some(Action::CursorEnd),

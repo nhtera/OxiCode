@@ -87,15 +87,78 @@ impl AutocompleteState {
     }
 }
 
-/// Filter command indices by prefix match on name (case-insensitive).
+/// Filter command indices by fuzzy subsequence match on name (case-insensitive).
+///
+/// Results sorted by match quality: prefix matches first, then subsequence.
 pub fn filter_commands(commands: &[SlashCommandMeta], query: &str) -> Vec<usize> {
     let query_lower = query.to_lowercase();
-    commands
+    if query_lower.is_empty() {
+        return (0..commands.len()).collect();
+    }
+
+    let mut scored: Vec<(usize, i32)> = commands
         .iter()
         .enumerate()
-        .filter(|(_, cmd)| cmd.name.to_lowercase().starts_with(&query_lower))
-        .map(|(i, _)| i)
-        .collect()
+        .filter_map(|(i, cmd)| {
+            let name_lower = cmd.name.to_lowercase();
+            fuzzy_score(&name_lower, &query_lower).map(|score| (i, score))
+        })
+        .collect();
+
+    // Higher score = better match.
+    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.into_iter().map(|(i, _)| i).collect()
+}
+
+/// Compute fuzzy match score. Returns `None` if not a subsequence.
+///
+/// Bonuses: +10 per char, +20 prefix, +15 consecutive, +5 word-start.
+fn fuzzy_score(name: &str, query: &str) -> Option<i32> {
+    let name_chars: Vec<char> = name.chars().collect();
+    let query_chars: Vec<char> = query.chars().collect();
+
+    if query_chars.is_empty() {
+        return Some(0);
+    }
+    if query_chars.len() > name_chars.len() {
+        return None;
+    }
+
+    let mut score: i32 = 0;
+    let mut name_idx = 0;
+    let mut prev_match_idx: Option<usize> = None;
+
+    for (qi, &qc) in query_chars.iter().enumerate() {
+        let mut found = false;
+        while name_idx < name_chars.len() {
+            if name_chars[name_idx] == qc {
+                score += 10;
+                if qi == 0 && name_idx == 0 {
+                    score += 20; // prefix bonus
+                }
+                if let Some(prev) = prev_match_idx {
+                    if name_idx == prev + 1 {
+                        score += 15; // consecutive bonus
+                    }
+                }
+                if name_idx == 0
+                    || (name_idx > 0 && matches!(name_chars[name_idx - 1], '-' | '_'))
+                {
+                    score += 5; // word-start bonus
+                }
+                prev_match_idx = Some(name_idx);
+                name_idx += 1;
+                found = true;
+                break;
+            }
+            name_idx += 1;
+        }
+        if !found {
+            return None;
+        }
+    }
+
+    Some(score)
 }
 
 /// Renders the command autocomplete dropdown.
@@ -272,23 +335,24 @@ mod tests {
     fn filter_prefix_match() {
         let cmds = sample_commands();
         let result = filter_commands(&cmds, "cl");
-        assert_eq!(result.len(), 1); // "clear"
-        assert_eq!(cmds[result[0]].name, "clear");
+        // "clear" has prefix match (highest score), possibly "color" via fuzzy
+        assert!(!result.is_empty());
+        assert_eq!(cmds[result[0]].name, "clear"); // prefix match ranked first
     }
 
     #[test]
     fn filter_multiple_matches() {
         let cmds = sample_commands();
         let result = filter_commands(&cmds, "co");
-        assert_eq!(result.len(), 2); // "compact", "color"
+        assert!(result.len() >= 2); // "compact", "color" both prefix match
     }
 
     #[test]
     fn filter_case_insensitive() {
         let cmds = sample_commands();
         let result = filter_commands(&cmds, "CL");
-        assert_eq!(result.len(), 1);
-        assert_eq!(cmds[result[0]].name, "clear");
+        assert!(!result.is_empty());
+        assert_eq!(cmds[result[0]].name, "clear"); // best match first
     }
 
     #[test]

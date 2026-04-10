@@ -24,10 +24,11 @@ use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
-    ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState, CommandAutocomplete, InputBox,
-    MessageRenderCache, MessageView, Notification, NotificationWidget, PastePreview,
-    PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel, ShortcutsState, SlashCommandMeta,
-    SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel, PASTE_PREVIEW_THRESHOLD,
+    permission_dialog::RiskLevel, ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState,
+    CommandAutocomplete, InputBox, MessageRenderCache, MessageView, Notification,
+    NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay, ShortcutsPanel,
+    ShortcutsState, SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
+    PASTE_PREVIEW_THRESHOLD,
 };
 
 /// A tool call in progress (between ToolUseStart and ToolResult events).
@@ -35,6 +36,8 @@ struct ActiveToolCall {
     id: String,
     name: String,
     input_summary: String,
+    /// Raw input JSON for tool-specific rendering (e.g., Bash shows command).
+    raw_input: serde_json::Value,
     /// When this tool call started (for elapsed time display).
     started_at: std::time::Instant,
     /// `Some((content, is_error))` when the tool has completed.
@@ -47,8 +50,8 @@ struct PendingPermission {
     input_summary: String,
     prompt: String,
     selected: usize,
-    /// Whether the requested operation is dangerous (rm -rf, sudo, etc.).
-    is_dangerous: bool,
+    /// Risk level derived from tool name and input (drives dialog border color).
+    risk_level: RiskLevel,
     reply_tx: tokio::sync::oneshot::Sender<oxicode_common::PermissionResponse>,
 }
 
@@ -121,6 +124,8 @@ pub struct App {
     /// Set when streaming starts, reset on each delta. If >3s since last delta,
     /// spinner turns red (stall detection).
     stall_start: Option<Instant>,
+    /// Thinking text accumulated during streaming (from ThinkingDelta events).
+    streaming_thinking: String,
 }
 
 impl App {
@@ -169,6 +174,7 @@ impl App {
             frame_count: 0,
             session_start: Instant::now(),
             stall_start: None,
+            streaming_thinking: String::new(),
         }
     }
 
@@ -458,6 +464,7 @@ impl App {
                 .map(|t| ActiveToolInfo {
                     name: &t.name,
                     input_summary: &t.input_summary,
+                    raw_input: &t.raw_input,
                     started_at: t.started_at,
                     result: t.result.as_ref().map(|(c, e)| (c.as_str(), *e)),
                 })
@@ -490,7 +497,8 @@ impl App {
             .with_frame_count(self.frame_count)
             .with_stall_start(self.stall_start)
             .with_model_name(&current_model)
-            .with_cwd(&cwd);
+            .with_cwd(&cwd)
+            .with_streaming_thinking(&self.streaming_thinking);
             frame.render_widget(message_view, left_area);
 
             // Read back the actual max scroll offset computed during rendering.
@@ -528,7 +536,7 @@ impl App {
                 let dialog =
                     PermissionDialog::new(&perm.tool_name, &perm.input_summary, &perm.prompt)
                         .with_selected(perm.selected)
-                        .with_dangerous(perm.is_dangerous);
+                        .with_risk_level(perm.risk_level);
                 frame.render_widget(dialog, content_area);
             }
 
@@ -1245,6 +1253,28 @@ impl App {
             Action::ToggleShortcuts => {
                 self.shortcuts.toggle();
             }
+            Action::ToggleThinking => {
+                // Toggle thinking expansion for the last assistant message with thinking.
+                let state = self.state_rx.borrow();
+                let msg_count = state.messages.len();
+                drop(state);
+                // Find last assistant message with thinking blocks (iterate backwards).
+                let state = self.state_rx.borrow();
+                for i in (0..msg_count).rev() {
+                    if state.messages[i].role == oxicode_common::Role::Assistant
+                        && state.messages[i].content.iter().any(|b| {
+                            matches!(b, oxicode_common::ContentBlock::Thinking { .. })
+                        })
+                    {
+                        drop(state);
+                        self.message_cache.toggle_thinking(
+                            &self.state_rx.borrow().messages,
+                            i,
+                        );
+                        break;
+                    }
+                }
+            }
             Action::CycleOutputStyle => {
                 // Handled via slash command, not inline.
             }
@@ -1550,6 +1580,7 @@ impl App {
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
+                self.streaming_thinking.clear();
                 self.active_tools.clear();
             }
             CoreEvent::StreamEnd => {
@@ -1577,6 +1608,7 @@ impl App {
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
+                self.streaming_thinking.clear();
                 self.active_tools.clear();
                 self.is_turn_active = false;
                 self.turn_started_at = None;
@@ -1597,6 +1629,7 @@ impl App {
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
+                self.streaming_thinking.clear();
                 self.active_tools.clear();
                 self.is_turn_active = false;
                 // Reset turn timer — otherwise the "thinking" indicator would
@@ -1610,6 +1643,7 @@ impl App {
                     id,
                     name,
                     input_summary: summary,
+                    raw_input: input,
                     started_at: Instant::now(),
                     result: None,
                 });
@@ -1631,13 +1665,20 @@ impl App {
                 prompt,
                 reply_tx,
             } => {
-                let is_dangerous = is_dangerous_operation(&tool_name, &input_summary);
+                // Compute risk level: start from tool name, then escalate if
+                // the input contains dangerous patterns (e.g. rm -rf for Bash).
+                let mut risk_level = RiskLevel::from_tool(&tool_name);
+                if risk_level != RiskLevel::High
+                    && is_dangerous_operation(&tool_name, &input_summary)
+                {
+                    risk_level = RiskLevel::High;
+                }
                 self.pending_permission = Some(PendingPermission {
                     tool_name,
                     input_summary,
                     prompt,
                     selected: 0,
-                    is_dangerous,
+                    risk_level,
                     reply_tx,
                 });
             }
@@ -1670,12 +1711,9 @@ impl App {
                     crate::widgets::notification::NotificationLevel::Warning,
                 ));
             }
-            CoreEvent::ThinkingDelta(_text) => {
-                // Thinking deltas are now properly accumulated by the core
-                // engine and included in the final message as ContentBlock::Thinking.
-                // During streaming, the thinking indicator in MessageView shows
-                // that thinking is in progress. The full thinking content is
-                // rendered as a collapsed block after MessageComplete.
+            CoreEvent::ThinkingDelta(text) => {
+                // Accumulate thinking text for live display during streaming.
+                self.streaming_thinking.push_str(&text);
                 self.auto_scroll = true;
             }
         }
@@ -2848,7 +2886,7 @@ mod tests {
             input_summary: "echo hi".to_string(),
             prompt: "Allow?".to_string(),
             selected: 0,
-            is_dangerous: false,
+            risk_level: RiskLevel::High,
             reply_tx,
         });
 
@@ -2874,7 +2912,7 @@ mod tests {
             input_summary: "rm -rf /".to_string(),
             prompt: "Allow?".to_string(),
             selected: 2,
-            is_dangerous: false,
+            risk_level: RiskLevel::High,
             reply_tx,
         });
 
@@ -2897,7 +2935,7 @@ mod tests {
             input_summary: "make build".to_string(),
             prompt: "Allow always?".to_string(),
             selected: 0,
-            is_dangerous: false,
+            risk_level: RiskLevel::High,
             reply_tx,
         });
 
@@ -2920,7 +2958,7 @@ mod tests {
             input_summary: "curl http://...".to_string(),
             prompt: "Network access?".to_string(),
             selected: 0,
-            is_dangerous: false,
+            risk_level: RiskLevel::High,
             reply_tx,
         });
 
@@ -2946,7 +2984,7 @@ mod tests {
             input_summary: "echo".to_string(),
             prompt: "Allow?".to_string(),
             selected: 0,
-            is_dangerous: false,
+            risk_level: RiskLevel::High,
             reply_tx,
         });
 
@@ -2969,7 +3007,7 @@ mod tests {
             input_summary: "cmd".to_string(),
             prompt: "Allow?".to_string(),
             selected: 0,
-            is_dangerous: false,
+            risk_level: RiskLevel::High,
             reply_tx,
         });
 
