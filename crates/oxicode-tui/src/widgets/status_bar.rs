@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use oxicode_common::Usage;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -25,6 +27,8 @@ pub struct StatusBar<'a> {
     permission_mode: &'a str,
     /// Current working directory (last 2 components shown).
     cwd: &'a str,
+    /// Session start time for elapsed display.
+    session_start: Option<Instant>,
 }
 
 impl<'a> StatusBar<'a> {
@@ -42,6 +46,7 @@ impl<'a> StatusBar<'a> {
             context_pct: None,
             permission_mode: "",
             cwd: "",
+            session_start: None,
         }
     }
 
@@ -96,6 +101,12 @@ impl<'a> StatusBar<'a> {
     /// Set current working directory.
     pub fn with_cwd(mut self, cwd: &'a str) -> Self {
         self.cwd = cwd;
+        self
+    }
+
+    /// Set session start time for elapsed display.
+    pub fn with_session_start(mut self, start: Option<Instant>) -> Self {
+        self.session_start = start;
         self
     }
 }
@@ -284,6 +295,22 @@ impl Widget for StatusBar<'_> {
             )
         };
 
+        // Elapsed session time.
+        let elapsed_span = match self.session_start {
+            Some(start) => {
+                let secs = start.elapsed().as_secs();
+                let display = if secs < 60 {
+                    format!(" {secs}s")
+                } else if secs < 3600 {
+                    format!(" {}m{}s", secs / 60, secs % 60)
+                } else {
+                    format!(" {}h{}m", secs / 3600, (secs % 3600) / 60)
+                };
+                Span::styled(display, Style::default().fg(Color::DarkGray))
+            }
+            None => Span::raw(""),
+        };
+
         // CWD (last 2 path components).
         let cwd_span = if self.cwd.is_empty() {
             Span::raw("")
@@ -299,6 +326,7 @@ impl Widget for StatusBar<'_> {
             tokens,
             cache_span,
             cost_span,
+            elapsed_span,
             ctx_span,
             perm_span,
             mcp_span,

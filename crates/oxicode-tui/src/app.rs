@@ -116,6 +116,8 @@ pub struct App {
     message_area: Rect,
     /// Frame counter — incremented each draw call, drives spinner animation.
     frame_count: u64,
+    /// Session start time for elapsed display in status bar.
+    session_start: Instant,
     /// Set when streaming starts, reset on each delta. If >3s since last delta,
     /// spinner turns red (stall detection).
     stall_start: Option<Instant>,
@@ -165,6 +167,7 @@ impl App {
             autocomplete: AutocompleteState::new(),
             message_area: Rect::default(),
             frame_count: 0,
+            session_start: Instant::now(),
             stall_start: None,
         }
     }
@@ -419,7 +422,8 @@ impl App {
                 .with_auth_label(&auth_label)
                 .with_context_pct(context_pct)
                 .with_permission_mode(&permission_mode)
-                .with_cwd(&cwd);
+                .with_cwd(&cwd)
+                .with_session_start(Some(self.session_start));
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
