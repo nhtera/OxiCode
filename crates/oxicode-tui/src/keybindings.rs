@@ -61,6 +61,8 @@ pub enum Action {
     HistorySearch,
     /// Open model picker overlay.
     OpenModelPicker,
+    /// Open session browser overlay.
+    OpenSessionBrowser,
 }
 
 /// A key combination (modifier flags + key code).
@@ -230,6 +232,12 @@ impl KeybindingRegistry {
             Action::OpenModelPicker,
         );
 
+        // Session browser (F3).
+        bindings.insert(
+            KeyCombo::new(KeyModifiers::NONE, KeyCode::F(3)),
+            Action::OpenSessionBrowser,
+        );
+
         Self { bindings }
     }
 
@@ -354,6 +362,7 @@ fn parse_action(s: &str) -> Option<Action> {
         "history_next" => Some(Action::HistoryNext),
         "history_search" => Some(Action::HistorySearch),
         "open_model_picker" => Some(Action::OpenModelPicker),
+        "open_session_browser" => Some(Action::OpenSessionBrowser),
         _ => None,
     }
 }

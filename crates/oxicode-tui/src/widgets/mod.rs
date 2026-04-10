@@ -13,6 +13,7 @@ pub mod pager;
 pub mod paste_preview;
 pub mod permission_dialog;
 pub mod search_overlay;
+pub mod session_browser;
 pub mod shortcuts_overlay;
 pub mod split_pane;
 pub mod status_bar;
@@ -37,6 +38,7 @@ pub use shortcuts_overlay::{
     default_shortcut_entries, HelpOverlay, HelpOverlayState, ShortcutsPanel, ShortcutsState,
 };
 pub use model_picker::{ModelPicker, ModelPickerState};
+pub use session_browser::{SessionBrowser, SessionBrowserState, SessionEntry};
 pub use split_pane::SplitPane;
 pub use status_bar::StatusBar;
 pub use suggestion_chips::SuggestionChips;

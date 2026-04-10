@@ -168,6 +168,11 @@ pub fn default_shortcut_entries() -> Vec<ShortcutEntry> {
             category: "App".into(),
         },
         ShortcutEntry {
+            key: "F3".into(),
+            description: "Session browser".into(),
+            category: "App".into(),
+        },
+        ShortcutEntry {
             key: "Ctrl+F".into(),
             description: "Search messages".into(),
             category: "App".into(),

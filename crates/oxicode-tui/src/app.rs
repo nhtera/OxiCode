@@ -27,6 +27,7 @@ use crate::widgets::{
     permission_dialog::RiskLevel, ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState,
     CommandAutocomplete, InputBox, MessageRenderCache, MessageView, ModelPickerState, Notification,
     NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay,
+    SessionBrowserState, SessionEntry,
     ShortcutsState, SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
     PASTE_PREVIEW_THRESHOLD,
 };
@@ -121,6 +122,8 @@ pub struct App {
     autocomplete: AutocompleteState,
     /// Model picker overlay state.
     model_picker: ModelPickerState,
+    /// Session browser overlay state.
+    session_browser: SessionBrowserState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     message_area: Rect,
     /// Frame counter — incremented each draw call, drives spinner animation.
@@ -186,6 +189,7 @@ impl App {
             help_shortcuts,
             autocomplete: AutocompleteState::new(),
             model_picker: ModelPickerState::new(),
+            session_browser: SessionBrowserState::new(),
             message_area: Rect::default(),
             frame_count: 0,
             session_start: Instant::now(),
@@ -558,6 +562,12 @@ impl App {
                 frame.render_widget(picker, content_area);
             }
 
+            // Session browser overlay (drawn on top of content area).
+            if self.session_browser.is_visible() {
+                let browser = crate::widgets::SessionBrowser::new(&self.session_browser);
+                frame.render_widget(browser, content_area);
+            }
+
             // Permission dialog overlay (drawn on top of everything).
             if let Some(ref perm) = self.pending_permission {
                 let dialog =
@@ -659,6 +669,12 @@ impl App {
         // Model picker captures keys when visible: navigate, filter, select, close.
         if self.model_picker.is_visible() {
             self.handle_model_picker_key(key).await;
+            return;
+        }
+
+        // Session browser captures keys when visible: navigate, rename, resume, close.
+        if self.session_browser.is_visible() {
+            self.handle_session_browser_key(key).await;
             return;
         }
 
@@ -1275,6 +1291,89 @@ impl App {
         }
     }
 
+    /// Handle key events when the session browser overlay is active.
+    async fn handle_session_browser_key(&mut self, key: KeyEvent) {
+        use crate::widgets::session_browser::SessionBrowserMode;
+
+        match &self.session_browser.mode() {
+            SessionBrowserMode::Browse => match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => self.session_browser.cancel(),
+                (_, KeyCode::Up) => self.session_browser.select_prev(),
+                (_, KeyCode::Down) => self.session_browser.select_next(),
+                (_, KeyCode::Char('r')) => self.session_browser.start_rename(),
+                (_, KeyCode::Enter) => {
+                    if let Some(session_id) = self.session_browser.confirm_resume() {
+                        let _ = self
+                            .ui_tx
+                            .send(UiEvent::SlashCommand {
+                                name: "resume".to_string(),
+                                args: session_id.clone(),
+                            })
+                            .await;
+                        self.notifications.push(Notification::new(
+                            format!("Resuming session {}", &session_id[..8.min(session_id.len())]),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                    }
+                }
+                _ => {}
+            },
+            SessionBrowserMode::Rename => match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => self.session_browser.cancel(),
+                (_, KeyCode::Enter) => {
+                    if let Some((session_id, new_name)) = self.session_browser.confirm_rename() {
+                        self.notifications.push(Notification::new(
+                            format!("Renamed session to \"{new_name}\""),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                        // Send rename command to core for persistence.
+                        let _ = self
+                            .ui_tx
+                            .send(UiEvent::SlashCommand {
+                                name: "rename-session".to_string(),
+                                args: format!("{session_id} {new_name}"),
+                            })
+                            .await;
+                    }
+                }
+                (_, KeyCode::Char(c)) => self.session_browser.push_rename_char(c),
+                (_, KeyCode::Backspace) => self.session_browser.pop_rename_char(),
+                _ => {}
+            },
+            SessionBrowserMode::Confirm => match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => self.session_browser.cancel(),
+                (_, KeyCode::Enter) => {
+                    // Future: handle confirm action (delete, export).
+                    self.session_browser.cancel();
+                }
+                _ => {}
+            },
+        }
+    }
+
+    /// Open the session browser with sessions loaded from disk.
+    fn open_session_browser(&mut self) {
+        // Load sessions from the oxicode-session crate.
+        let summaries = oxicode_session::list_sessions(None).unwrap_or_default();
+        let entries: Vec<SessionEntry> = summaries
+            .into_iter()
+            .map(|s| {
+                let title = s
+                    .preview
+                    .unwrap_or_else(|| format!("[{}]", &s.id[..8.min(s.id.len())]));
+                let last_updated = format_relative_time(s.updated_at);
+                SessionEntry {
+                    id: s.id,
+                    title,
+                    last_updated,
+                    message_count: s.message_count,
+                    cost_usd: 0.0, // Cost tracking not yet wired to sessions.
+                }
+            })
+            .collect();
+        self.session_browser.open(entries);
+    }
+
     fn scroll_up_by(&mut self, lines: u16) {
         if lines == 0 {
             return;
@@ -1412,6 +1511,9 @@ impl App {
                 drop(state);
                 self.model_picker.open(&current_model);
             }
+            Action::OpenSessionBrowser => {
+                self.open_session_browser();
+            }
         }
     }
 
@@ -1442,6 +1544,19 @@ impl App {
                 if trimmed == "vim" {
                     let new_state = !self.vim.enabled;
                     self.vim.set_enabled(new_state);
+                    return;
+                }
+                // Handle /sessions (and /session) inline — open browser overlay.
+                if trimmed == "sessions" || trimmed == "session" {
+                    self.open_session_browser();
+                    return;
+                }
+                // Handle /model with no args — open model picker overlay.
+                if trimmed == "model" {
+                    let state = self.state_rx.borrow();
+                    let current_model = state.current_model.clone();
+                    drop(state);
+                    self.model_picker.open(&current_model);
                     return;
                 }
                 let (name, args) = match trimmed.split_once(char::is_whitespace) {
@@ -1850,6 +1965,55 @@ fn summarize_input(input: &serde_json::Value) -> String {
 /// Convert a character index to a byte index in a UTF-8 string.
 fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
     s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i)
+}
+
+/// Format a `DateTime<Utc>` as a human-readable relative time string.
+fn format_relative_time(dt: chrono::DateTime<chrono::Utc>) -> String {
+    let now = chrono::Utc::now();
+    let diff = now.signed_duration_since(dt);
+
+    let secs = diff.num_seconds();
+    if secs < 60 {
+        return "just now".to_string();
+    }
+    let mins = diff.num_minutes();
+    if mins < 60 {
+        return if mins == 1 {
+            "1 min ago".to_string()
+        } else {
+            format!("{mins} mins ago")
+        };
+    }
+    let hours = diff.num_hours();
+    if hours < 24 {
+        return if hours == 1 {
+            "1 hour ago".to_string()
+        } else {
+            format!("{hours} hours ago")
+        };
+    }
+    let days = diff.num_days();
+    if days < 30 {
+        return if days == 1 {
+            "yesterday".to_string()
+        } else {
+            format!("{days} days ago")
+        };
+    }
+    let months = days / 30;
+    if months < 12 {
+        return if months == 1 {
+            "1 month ago".to_string()
+        } else {
+            format!("{months} months ago")
+        };
+    }
+    let years = days / 365;
+    if years == 1 {
+        "1 year ago".to_string()
+    } else {
+        format!("{years} years ago")
+    }
 }
 
 /// Detect provider name from model name for status bar display.
