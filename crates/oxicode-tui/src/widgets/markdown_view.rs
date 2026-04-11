@@ -1,4 +1,4 @@
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -101,7 +101,7 @@ impl<'a> MarkdownView<'a> {
 
     /// Convert markdown source to styled Ratatui Lines.
     pub fn to_lines(&self) -> Vec<Line<'a>> {
-        let parser = Parser::new(self.source);
+        let parser = Parser::new_ext(self.source, Options::ENABLE_TABLES);
         let mut lines: Vec<Line> = Vec::new();
         let mut current_spans: Vec<Span> = Vec::new();
         let mut style_stack: Vec<Style> = vec![Style::default()];
@@ -239,13 +239,20 @@ fn flush_spans<'a>(spans: &mut Vec<Span<'a>>, lines: &mut Vec<Line<'a>>) {
 /// Used by `MarkdownStreamCollector` so rendered lines can outlive the source
 /// string. This is a free function (no `MarkdownView` instance needed).
 pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
-    let parser = Parser::new(source);
+    let parser = Parser::new_ext(source, Options::ENABLE_TABLES);
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
     let mut style_stack: Vec<Style> = vec![Style::default()];
     let mut in_code_block = false;
     let mut code_block_lang = String::new();
     let mut code_block_lines: Vec<String> = Vec::new();
+    // Table state.
+    let mut in_table = false;
+    let mut table_alignments: Vec<Alignment> = Vec::new();
+    let mut table_headers: Vec<String> = Vec::new();
+    let mut table_rows: Vec<Vec<String>> = Vec::new();
+    let mut current_row: Vec<String> = Vec::new();
+    let mut current_cell = String::new();
 
     for event in parser {
         match event {
@@ -279,6 +286,21 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                         Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                     ));
                 }
+                Tag::Table(alignments) => {
+                    in_table = true;
+                    table_alignments = alignments;
+                    table_headers.clear();
+                    table_rows.clear();
+                }
+                Tag::TableHead => {
+                    current_row.clear();
+                }
+                Tag::TableRow => {
+                    current_row.clear();
+                }
+                Tag::TableCell => {
+                    current_cell.clear();
+                }
                 _ => {}
             },
             Event::End(tag_end) => match tag_end {
@@ -303,6 +325,25 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                 TagEnd::Item => {
                     flush_owned_spans(&mut current_spans, &mut lines);
                 }
+                TagEnd::TableCell => {
+                    current_row.push(std::mem::take(&mut current_cell));
+                }
+                TagEnd::TableHead => {
+                    table_headers = std::mem::take(&mut current_row);
+                }
+                TagEnd::TableRow => {
+                    table_rows.push(std::mem::take(&mut current_row));
+                }
+                TagEnd::Table => {
+                    in_table = false;
+                    render_table_boxed(
+                        &table_headers,
+                        &table_rows,
+                        &table_alignments,
+                        &mut lines,
+                    );
+                    lines.push(Line::from(""));
+                }
                 _ => {}
             },
             Event::Text(text) => {
@@ -310,6 +351,8 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                     for line in text.lines() {
                         code_block_lines.push(line.to_string());
                     }
+                } else if in_table {
+                    current_cell.push_str(&text);
                 } else {
                     let style = *style_stack.last().unwrap_or(&Style::default());
                     current_spans.extend(spans_from_text_with_urls(&text, style));
@@ -396,6 +439,122 @@ fn render_code_block_boxed(
     let bottom_fill = CODE_BLOCK_WIDTH.saturating_sub(3); // "  └" prefix
     output.push(Line::from(Span::styled(
         format!("  \u{2514}{}\u{2518}", "\u{2500}".repeat(bottom_fill)),
+        border_style,
+    )));
+}
+
+/// Maximum total table width (fits in 80-col terminal with indent).
+const TABLE_MAX_WIDTH: usize = 76;
+
+/// Render a markdown table with box-drawing borders.
+fn render_table_boxed(
+    headers: &[String],
+    rows: &[Vec<String>],
+    alignments: &[Alignment],
+    output: &mut Vec<Line<'static>>,
+) {
+    if headers.is_empty() {
+        return;
+    }
+    let col_count = headers.len();
+    let border_style = Style::default().fg(crate::render::CHROME_MUTED);
+    let header_style = Style::default()
+        .fg(crate::render::TRANSCRIPT_TEXT)
+        .add_modifier(Modifier::BOLD);
+    let cell_style = Style::default().fg(crate::render::TRANSCRIPT_TEXT);
+
+    // Compute column widths: max of header and all row cells.
+    let mut col_widths: Vec<usize> = headers.iter().map(|h| h.len().max(3)).collect();
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < col_widths.len() {
+                col_widths[i] = col_widths[i].max(cell.len());
+            }
+        }
+    }
+
+    // Shrink columns proportionally if total exceeds max width.
+    // Total = 2 (indent) + 1 (left border) + sum(col_w + 3) per col (│ + pad)
+    let overhead = 2 + 1 + col_count; // indent + borders
+    let content_budget = TABLE_MAX_WIDTH.saturating_sub(overhead);
+    let total_content: usize = col_widths.iter().sum();
+    if total_content > content_budget && content_budget > 0 {
+        let ratio = content_budget as f64 / total_content as f64;
+        for w in &mut col_widths {
+            *w = ((*w as f64 * ratio).floor() as usize).max(3);
+        }
+    }
+
+    // Helper: format a cell with alignment + padding.
+    let fmt_cell = |text: &str, width: usize, align_idx: usize| -> String {
+        let align = alignments.get(align_idx).copied().unwrap_or(Alignment::None);
+        let truncated: String = if text.len() > width {
+            text.chars().take(width.saturating_sub(1)).collect::<String>() + "…"
+        } else {
+            text.to_string()
+        };
+        match align {
+            Alignment::Center => format!("{truncated:^width$}"),
+            Alignment::Right => format!("{truncated:>width$}"),
+            _ => format!("{truncated:<width$}"),
+        }
+    };
+
+    // Helper: build a horizontal border line.
+    let hline = |left: &str, mid: &str, right: &str| -> String {
+        let mut s = format!("  {left}");
+        for (i, &w) in col_widths.iter().enumerate() {
+            s.push_str(&"\u{2500}".repeat(w + 2)); // +2 for padding
+            if i < col_count - 1 {
+                s.push_str(mid);
+            }
+        }
+        s.push_str(right);
+        s
+    };
+
+    // Top border: ┌──┬──┐
+    output.push(Line::from(Span::styled(
+        hline("\u{250c}", "\u{252c}", "\u{2510}"),
+        border_style,
+    )));
+
+    // Header row: │ H1 │ H2 │
+    let mut header_spans = vec![Span::styled("  \u{2502}".to_string(), border_style)];
+    for (i, h) in headers.iter().enumerate() {
+        let w = col_widths.get(i).copied().unwrap_or(3);
+        header_spans.push(Span::styled(
+            format!(" {} ", fmt_cell(h, w, i)),
+            header_style,
+        ));
+        header_spans.push(Span::styled("\u{2502}".to_string(), border_style));
+    }
+    output.push(Line::from(header_spans));
+
+    // Header separator: ├──┼──┤
+    output.push(Line::from(Span::styled(
+        hline("\u{251c}", "\u{253c}", "\u{2524}"),
+        border_style,
+    )));
+
+    // Data rows.
+    for row in rows {
+        let mut row_spans = vec![Span::styled("  \u{2502}".to_string(), border_style)];
+        for i in 0..col_count {
+            let cell_text = row.get(i).map_or("", String::as_str);
+            let w = col_widths.get(i).copied().unwrap_or(3);
+            row_spans.push(Span::styled(
+                format!(" {} ", fmt_cell(cell_text, w, i)),
+                cell_style,
+            ));
+            row_spans.push(Span::styled("\u{2502}".to_string(), border_style));
+        }
+        output.push(Line::from(row_spans));
+    }
+
+    // Bottom border: └──┴──┘
+    output.push(Line::from(Span::styled(
+        hline("\u{2514}", "\u{2534}", "\u{2518}"),
         border_style,
     )));
 }
@@ -788,5 +947,56 @@ mod tests {
         assert_eq!(normalize_lang("js"), "javascript");
         assert_eq!(normalize_lang("ts"), "typescript");
         assert_eq!(normalize_lang("go"), "go");
+    }
+
+    // --- Table rendering ---
+
+    #[test]
+    fn table_renders_with_box_drawing() {
+        let md = "| Name | Value |\n|------|-------|\n| foo  | 42    |\n| bar  | 99    |";
+        let lines = parse_to_owned_lines(md);
+        let text: String = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        // Should contain box-drawing characters.
+        assert!(text.contains('┌'), "should have top-left corner");
+        assert!(text.contains('┘'), "should have bottom-right corner");
+        assert!(text.contains("Name"), "should contain header");
+        assert!(text.contains("foo"), "should contain data");
+        assert!(text.contains("42"), "should contain value");
+    }
+
+    #[test]
+    fn table_with_alignment() {
+        let md = "| Left | Center | Right |\n|:-----|:------:|------:|\n| a | b | c |";
+        let lines = parse_to_owned_lines(md);
+        assert!(!lines.is_empty(), "table should produce lines");
+        let text: String = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Left"), "should contain Left header");
+        assert!(text.contains("Center"), "should contain Center header");
+    }
+
+    #[test]
+    fn empty_table_no_crash() {
+        // A table with headers but no rows.
+        let md = "| A | B |\n|---|---|";
+        let lines = parse_to_owned_lines(md);
+        assert!(!lines.is_empty(), "even empty table should render");
     }
 }
