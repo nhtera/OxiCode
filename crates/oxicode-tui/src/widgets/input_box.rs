@@ -74,14 +74,13 @@ impl<'a> InputBox<'a> {
     }
 
     /// Calculate required height for the input box (including borders).
-    /// Adds +1 row when images are pending for the attachment pill row.
-    pub fn required_height(text: &str, image_count: usize) -> u16 {
+    /// Images are shown inline as `[Image #N]` tags, so they don't add height.
+    pub fn required_height(text: &str, _image_count: usize) -> u16 {
         // Use split('\n') instead of lines() — lines() ignores a trailing '\n',
         // which would hide the empty line the cursor sits on after Alt+Enter.
         let line_count = text.split('\n').count().max(1) as u16;
-        // +2 for top/bottom border, +1 for image pill row when images present.
-        let image_row = u16::from(image_count > 0);
-        (line_count + image_row + 2).min(MAX_INPUT_LINES + 2)
+        // +2 for top/bottom border.
+        (line_count + 2).min(MAX_INPUT_LINES + 2)
     }
 }
 
@@ -135,46 +134,42 @@ impl Widget for InputBox<'_> {
             return;
         }
 
-        // Render image attachment pill row if images are pending.
-        // Shrinks the available area for text by 1 row.
-        let (area, _pill_rendered) = if self.image_count > 0 && area.height > 3 {
-            // Render pill inside the border — first inner row.
-            let pill_y = area.y + 1;
-            let pill_x = area.x + 1;
-            let pill_w = area.width.saturating_sub(2);
-            let label = if self.image_count == 1 {
-                " \u{1F4CE} 1 image ".to_string()
-            } else {
-                format!(" \u{1F4CE} {} images ", self.image_count)
-            };
-            let pill = Line::from(Span::styled(
-                label,
-                Style::default().fg(Color::Black).bg(Color::Cyan),
-            ));
-            let pill_area = Rect::new(pill_x, pill_y, pill_w, 1);
-            Paragraph::new(pill).render(pill_area, buf);
-            // Shrink remaining area: shift text down by 1 row.
-            let inner = Rect::new(
-                area.x,
-                area.y + 1,
-                area.width,
-                area.height.saturating_sub(1),
-            );
-            (inner, true)
-        } else {
-            (area, false)
-        };
-
         if self.text.is_empty() && self.focused {
-            let display_text = Line::from(Span::styled(
-                "Type your message...",
-                Style::default().fg(render::CHROME_MUTED),
-            ));
-            let paragraph = Paragraph::new(display_text).block(block);
-            paragraph.render(area, buf);
-            // Render cursor at start
+            if self.image_count > 0 {
+                // Show inline [Image #N] tags when images are pending with empty text.
+                let mut spans: Vec<Span<'_>> = Vec::new();
+                for i in 1..=self.image_count {
+                    spans.push(Span::styled(
+                        format!("[Image #{i}]"),
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::raw(" "));
+                }
+                let display_text = Line::from(spans);
+                let paragraph = Paragraph::new(display_text).block(block);
+                paragraph.render(area, buf);
+            } else {
+                let display_text = Line::from(Span::styled(
+                    "Type your message...",
+                    Style::default().fg(render::CHROME_MUTED),
+                ));
+                let paragraph = Paragraph::new(display_text).block(block);
+                paragraph.render(area, buf);
+            }
+            // Render cursor at start (or after image tags).
             if area.width > 2 && area.height > 2 {
-                if let Some(cell) = buf.cell_mut((area.x + 1, area.y + 1)) {
+                let cursor_x = if self.image_count > 0 {
+                    // Position cursor after all image tags: each is "[Image #N] " chars.
+                    let total_chars: usize = (1..=self.image_count)
+                        .map(|i| format!("[Image #{i}]").len() + 1)
+                        .sum();
+                    area.x + 1 + total_chars.min((area.width - 2) as usize) as u16
+                } else {
+                    area.x + 1
+                };
+                if let Some(cell) = buf.cell_mut((cursor_x, area.y + 1)) {
                     cell.set_style(
                         Style::default()
                             .fg(Color::Black)
@@ -188,7 +183,25 @@ impl Widget for InputBox<'_> {
 
         // Multiline: split by newlines for rendering.
         // Append ghost text to the last line if present.
+        // Prepend [Image #N] tags to the first line if images are pending.
         let mut lines: Vec<Line<'_>> = self.text.split('\n').map(Line::from).collect();
+        if self.image_count > 0 {
+            if let Some(first_line) = lines.first_mut() {
+                let mut image_spans: Vec<Span<'_>> = Vec::new();
+                for i in 1..=self.image_count {
+                    image_spans.push(Span::styled(
+                        format!("[Image #{i}]"),
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                    image_spans.push(Span::raw(" "));
+                }
+                let mut new_spans = image_spans;
+                new_spans.append(&mut first_line.spans);
+                first_line.spans = new_spans;
+            }
+        }
         if let Some(ghost) = self.ghost_text {
             if let Some(last_line) = lines.last_mut() {
                 last_line.spans.push(Span::styled(
@@ -281,9 +294,9 @@ mod tests {
 
     #[test]
     fn required_height_with_images() {
-        // With 1 image, adds 1 row for pill display.
-        assert_eq!(InputBox::required_height("hello", 1), 4); // 1 line + 1 image row + 2 borders
-        assert_eq!(InputBox::required_height("hello", 3), 4); // same regardless of count
+        // Images are inline [Image #N] tags — no extra row needed.
+        assert_eq!(InputBox::required_height("hello", 1), 3); // same as without images
+        assert_eq!(InputBox::required_height("hello", 3), 3); // same regardless of count
     }
 
     #[test]

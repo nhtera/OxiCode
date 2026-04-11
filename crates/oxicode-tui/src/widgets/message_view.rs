@@ -658,6 +658,8 @@ fn render_content_blocks_static(
         })
         .collect();
 
+    let mut image_counter: usize = 0;
+
     for block in blocks {
         match block {
             ContentBlock::Text { text } => {
@@ -669,21 +671,14 @@ fn render_content_blocks_static(
                     lines.push(Line::from(spans));
                 }
             }
-            ContentBlock::Image { source } => {
-                let label = source.media_type.as_deref().unwrap_or("image");
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        " img ".to_string(),
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(crate::render::STATUS_YELLOW)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        format!(" {label} "),
-                        Style::default().fg(crate::render::CHROME_MUTED),
-                    ),
-                ]));
+            ContentBlock::Image { .. } => {
+                image_counter += 1;
+                lines.push(Line::from(vec![Span::styled(
+                    format!("  [Image #{image_counter}]"),
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                )]));
             }
             ContentBlock::ToolUse { name, input, .. } => {
                 let summary = tool_input_summary(input);

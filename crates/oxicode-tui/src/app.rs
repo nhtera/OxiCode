@@ -847,9 +847,12 @@ impl App {
             // Ctrl+V: try image paste first, then let crossterm bracketed paste handle text.
             (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
                 if let Some(img) = crate::image_paste::read_clipboard_image() {
+                    let image_num = self.pending_images.len() + 1;
                     let msg = match img.dimensions {
-                        Some((w, h)) => format!("Image attached: {} ({}x{})", img.label, w, h),
-                        None => format!("Image attached: {}", img.label),
+                        Some((w, h)) => {
+                            format!("[Image #{image_num}] attached ({w}x{h})")
+                        }
+                        None => format!("[Image #{image_num}] attached"),
                     };
                     self.pending_images.push(img);
                     self.notifications.push(Notification::new(
