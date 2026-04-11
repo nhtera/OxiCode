@@ -474,8 +474,7 @@ impl App {
         let autocomplete_height = self.autocomplete.visible_height();
 
         terminal.draw(|frame| {
-            let base_input_height =
-                InputBox::required_height(&self.input_text, self.pending_images.len());
+            let base_input_height = InputBox::required_height(&self.input_text);
             let input_height = if search_active {
                 base_input_height + 2 // +2 for search bar
             } else {
@@ -673,16 +672,8 @@ impl App {
                     .constraints([Constraint::Length(base_input_height), Constraint::Length(2)])
                     .split(chunks[4]);
 
-                let text_cursor_pos = self.input_cursor.saturating_sub(self.pending_images.len());
-                let byte_cursor = char_to_byte_index(&self.input_text, text_cursor_pos);
-                let focused_img = if self.input_cursor < self.pending_images.len() {
-                    Some(self.input_cursor)
-                } else {
-                    None
-                };
-                let mut input = InputBox::new(&self.input_text, byte_cursor, true)
-                    .with_image_count(self.pending_images.len())
-                    .with_focused_image(focused_img);
+                let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
+                let mut input = InputBox::new(&self.input_text, byte_cursor, true);
                 if vim_enabled {
                     input = input.with_vim_badge(vim_badge);
                 }
@@ -699,16 +690,8 @@ impl App {
                 let search_bar = SearchBar::new(&self.search);
                 frame.render_widget(search_bar, input_chunks[1]);
             } else {
-                let text_cursor_pos = self.input_cursor.saturating_sub(self.pending_images.len());
-                let byte_cursor = char_to_byte_index(&self.input_text, text_cursor_pos);
-                let focused_img = if self.input_cursor < self.pending_images.len() {
-                    Some(self.input_cursor)
-                } else {
-                    None
-                };
-                let mut input = InputBox::new(&self.input_text, byte_cursor, true)
-                    .with_image_count(self.pending_images.len())
-                    .with_focused_image(focused_img);
+                let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
+                let mut input = InputBox::new(&self.input_text, byte_cursor, true);
                 if vim_enabled {
                     input = input.with_vim_badge(vim_badge);
                 }
@@ -869,8 +852,14 @@ impl App {
                         None => format!("[Image #{image_num}] attached"),
                     };
                     self.pending_images.push(img);
-                    // Position cursor after all images (start of text).
-                    self.input_cursor = self.pending_images.len();
+                    // Insert [Image #N] placeholder at cursor position in input text.
+                    let tag = format!("[Image #{image_num}]");
+                    let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                    // Add trailing space for readability.
+                    let insert = format!("{tag} ");
+                    let char_len = insert.chars().count();
+                    self.input_text.insert_str(byte_idx, &insert);
+                    self.input_cursor += char_len;
                     self.notifications.push(Notification::new(
                         msg,
                         crate::widgets::notification::NotificationLevel::Info,
@@ -883,16 +872,8 @@ impl App {
                 self.open_history_search();
             }
             // H3 FIX: cursor operates on char count, insert at byte offset.
-            // Virtual cursor: positions 0..image_count are image slots,
-            // positions image_count.. are text characters.
             (_, KeyCode::Char(c)) => {
-                let img_count = self.pending_images.len();
-                // If cursor is on an image, move to text start before inserting.
-                if self.input_cursor < img_count {
-                    self.input_cursor = img_count;
-                }
-                let text_pos = self.input_cursor - img_count;
-                let byte_idx = char_to_byte_index(&self.input_text, text_pos);
+                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
                 self.input_text.insert(byte_idx, c);
                 self.input_cursor += 1;
                 self.update_ghost_text();
@@ -903,24 +884,11 @@ impl App {
                 }
             }
             (_, KeyCode::Backspace) => {
-                let img_count = self.pending_images.len();
                 if self.input_cursor > 0 {
-                    if self.input_cursor <= img_count {
-                        // Cursor is on an image — delete that image.
-                        let idx = self.input_cursor - 1;
-                        self.pending_images.remove(idx);
-                        self.input_cursor -= 1;
-                    } else {
-                        // Cursor is in text region — delete text character.
-                        let text_pos = self.input_cursor - img_count;
-                        if text_pos > 0 {
-                            self.input_cursor -= 1;
-                            let new_text_pos = text_pos - 1;
-                            let start = char_to_byte_index(&self.input_text, new_text_pos);
-                            let end = char_to_byte_index(&self.input_text, new_text_pos + 1);
-                            self.input_text.replace_range(start..end, "");
-                        }
-                    }
+                    self.input_cursor -= 1;
+                    let start = char_to_byte_index(&self.input_text, self.input_cursor);
+                    let end = char_to_byte_index(&self.input_text, self.input_cursor + 1);
+                    self.input_text.replace_range(start..end, "");
                 }
                 self.update_ghost_text();
             }
@@ -935,8 +903,8 @@ impl App {
                 self.input_cursor = self.input_cursor.saturating_sub(1);
             }
             (_, KeyCode::Right) => {
-                let max_pos = self.pending_images.len() + self.input_text.chars().count();
-                if self.input_cursor < max_pos {
+                let char_count = self.input_text.chars().count();
+                if self.input_cursor < char_count {
                     self.input_cursor += 1;
                 } else {
                     self.accept_ghost_text();
@@ -958,7 +926,7 @@ impl App {
                 self.input_cursor = 0;
             }
             (_, KeyCode::End) => {
-                self.input_cursor = self.pending_images.len() + self.input_text.chars().count();
+                self.input_cursor = self.input_text.chars().count();
             }
             // Tab: accept ghost completion → select first suggestion → toggle panel.
             (_, KeyCode::Tab) => {
@@ -1719,8 +1687,16 @@ impl App {
                 };
                 let _ = self.ui_tx.send(UiEvent::SlashCommand { name, args }).await;
             } else {
+                // Strip [Image #N] placeholders from text before sending.
+                let clean_text = strip_image_tags(&text);
                 let images = std::mem::take(&mut self.pending_images);
-                let _ = self.ui_tx.send(UiEvent::UserInput { text, images }).await;
+                let _ = self
+                    .ui_tx
+                    .send(UiEvent::UserInput {
+                        text: clean_text,
+                        images,
+                    })
+                    .await;
             }
         }
     }
@@ -2234,6 +2210,32 @@ fn summarize_input(input: &serde_json::Value) -> String {
 /// Convert a character index to a byte index in a UTF-8 string.
 fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
     s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i)
+}
+
+/// Strip `[Image #N]` placeholder tags from input text, collapsing extra whitespace.
+fn strip_image_tags(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut remaining = text;
+    while let Some(start) = remaining.find("[Image #") {
+        if let Some(end_offset) = remaining[start..].find(']') {
+            let end = start + end_offset + 1;
+            let inner = &remaining[start + 8..start + end_offset];
+            if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit()) {
+                result.push_str(&remaining[..start]);
+                remaining = &remaining[end..];
+                // Skip trailing space after tag.
+                if remaining.starts_with(' ') {
+                    remaining = &remaining[1..];
+                }
+                continue;
+            }
+        }
+        let chunk_end = start + 8;
+        result.push_str(&remaining[..chunk_end]);
+        remaining = &remaining[chunk_end..];
+    }
+    result.push_str(remaining);
+    result.trim().to_string()
 }
 
 /// Format a `DateTime<Utc>` as a human-readable relative time string.

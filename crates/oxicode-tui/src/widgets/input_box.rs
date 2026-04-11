@@ -11,7 +11,7 @@ pub const MAX_INPUT_LINES: u16 = 10;
 
 /// Text input widget for user messages (supports multiline via Alt+Enter).
 pub struct InputBox<'a> {
-    /// Current input text.
+    /// Current input text (may contain `[Image #N]` placeholders).
     text: &'a str,
     /// Cursor position in the text (byte offset).
     cursor: usize,
@@ -25,10 +25,6 @@ pub struct InputBox<'a> {
     ghost_text: Option<&'a str>,
     /// Input metrics: (char_count, line_count). Shown in right title when set.
     metrics: Option<(usize, usize)>,
-    /// Number of pending image attachments to show as inline tags.
-    image_count: usize,
-    /// Index of the focused/selected image (for highlight), None if cursor is in text.
-    focused_image: Option<usize>,
 }
 
 impl<'a> InputBox<'a> {
@@ -41,8 +37,6 @@ impl<'a> InputBox<'a> {
             command_line: None,
             ghost_text: None,
             metrics: None,
-            image_count: 0,
-            focused_image: None,
         }
     }
 
@@ -70,21 +64,8 @@ impl<'a> InputBox<'a> {
         self
     }
 
-    /// Set the number of pending image attachments.
-    pub fn with_image_count(mut self, count: usize) -> Self {
-        self.image_count = count;
-        self
-    }
-
-    /// Set which image tag is focused/selected (for highlight on arrow key navigation).
-    pub fn with_focused_image(mut self, idx: Option<usize>) -> Self {
-        self.focused_image = idx;
-        self
-    }
-
     /// Calculate required height for the input box (including borders).
-    /// Images are shown inline as `[Image #N]` tags, so they don't add height.
-    pub fn required_height(text: &str, _image_count: usize) -> u16 {
+    pub fn required_height(text: &str) -> u16 {
         // Use split('\n') instead of lines() — lines() ignores a trailing '\n',
         // which would hide the empty line the cursor sits on after Alt+Enter.
         let line_count = text.split('\n').count().max(1) as u16;
@@ -144,95 +125,34 @@ impl Widget for InputBox<'_> {
         }
 
         if self.text.is_empty() && self.focused {
-            if self.image_count > 0 {
-                // Show inline [Image #N] tags when images are pending with empty text.
-                let mut spans: Vec<Span<'_>> = Vec::new();
-                for i in 1..=self.image_count {
-                    let idx = i - 1;
-                    let style = if self.focused_image == Some(idx) {
-                        // Inverted highlight for selected image.
+            let display_text = Line::from(Span::styled(
+                "Type your message...",
+                Style::default().fg(render::CHROME_MUTED),
+            ));
+            let paragraph = Paragraph::new(display_text).block(block);
+            paragraph.render(area, buf);
+            // Render cursor at start.
+            if area.width > 2 && area.height > 2 {
+                if let Some(cell) = buf.cell_mut((area.x + 1, area.y + 1)) {
+                    cell.set_style(
                         Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default()
-                            .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD)
-                    };
-                    spans.push(Span::styled(format!("[Image #{i}]"), style));
-                    spans.push(Span::raw(" "));
-                }
-                let display_text = Line::from(spans);
-                let paragraph = Paragraph::new(display_text).block(block);
-                paragraph.render(area, buf);
-            } else {
-                let display_text = Line::from(Span::styled(
-                    "Type your message...",
-                    Style::default().fg(render::CHROME_MUTED),
-                ));
-                let paragraph = Paragraph::new(display_text).block(block);
-                paragraph.render(area, buf);
-            }
-            // Render cursor after image tags (only when no image is focused).
-            if self.focused_image.is_none() && area.width > 2 && area.height > 2 {
-                let cursor_x = if self.image_count > 0 {
-                    let total_chars: usize = (1..=self.image_count)
-                        .map(|i| format!("[Image #{i}]").len() + 1)
-                        .sum();
-                    area.x + 1 + total_chars.min((area.width - 2) as usize) as u16
-                } else {
-                    area.x + 1
-                };
-                if cursor_x < area.x + area.width - 1 {
-                    if let Some(cell) = buf.cell_mut((cursor_x, area.y + 1)) {
-                        cell.set_style(
-                            Style::default()
-                                .fg(Color::Black)
-                                .bg(render::TRANSCRIPT_TEXT)
-                                .add_modifier(Modifier::BOLD),
-                        );
-                    }
+                            .fg(Color::Black)
+                            .bg(render::TRANSCRIPT_TEXT)
+                            .add_modifier(Modifier::BOLD),
+                    );
                 }
             }
             return;
         }
 
         // Multiline: split by newlines for rendering.
+        // Style `[Image #N]` patterns with magenta bold.
         // Append ghost text to the last line if present.
-        // Prepend [Image #N] tags to the first line if images are pending.
-        let mut lines: Vec<Line<'_>> = self.text.split('\n').map(Line::from).collect();
-        let image_prefix_len: usize = if self.image_count > 0 {
-            if let Some(first_line) = lines.first_mut() {
-                let mut image_spans: Vec<Span<'_>> = Vec::new();
-                let mut prefix_chars: usize = 0;
-                for i in 1..=self.image_count {
-                    let idx = i - 1;
-                    let tag = format!("[Image #{i}]");
-                    prefix_chars += tag.len() + 1; // +1 for space separator
-                    let style = if self.focused_image == Some(idx) {
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default()
-                            .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD)
-                    };
-                    image_spans.push(Span::styled(tag, style));
-                    image_spans.push(Span::raw(" "));
-                }
-                let mut new_spans = image_spans;
-                new_spans.append(&mut first_line.spans);
-                first_line.spans = new_spans;
-                prefix_chars
-            } else {
-                0
-            }
-        } else {
-            0
-        };
+        let mut lines: Vec<Line<'_>> = self
+            .text
+            .split('\n')
+            .map(|line_text| Line::from(style_image_tags(line_text)))
+            .collect();
         if let Some(ghost) = self.ghost_text {
             if let Some(last_line) = lines.last_mut() {
                 last_line.spans.push(Span::styled(
@@ -247,33 +167,18 @@ impl Widget for InputBox<'_> {
         paragraph.render(area, buf);
 
         // Render cursor — compute row/col from byte offset.
-        // Skip cursor rendering if an image tag is focused (image gets highlight instead).
-        if self.focused_image.is_some() {
-            // Image is highlighted via span styling above — no text cursor needed.
-        } else if self.focused && area.width > 2 && area.height > 2 {
+        if self.focused && area.width > 2 && area.height > 2 {
             let (cursor_row, cursor_col) = cursor_row_col(self.text, self.cursor);
             let inner_width = (area.width - 2) as usize;
             // Account for line wrapping within each row.
             let mut visual_row: u16 = 0;
             for (i, line_text) in self.text.split('\n').enumerate() {
-                // On first line, account for image tag prefix width.
-                let line_display_len = if i == 0 {
-                    image_prefix_len + line_text.len()
-                } else {
-                    line_text.len()
-                };
-                let wrapped_lines = (line_display_len / inner_width.max(1)) as u16 + 1;
+                let wrapped_lines = (line_text.len() / inner_width.max(1)) as u16 + 1;
                 if i == cursor_row {
                     // Cursor is in this line — add offset within wrapping.
                     let col_in_line = cursor_col.min(line_text.len());
-                    // On first line, offset by image prefix.
-                    let display_col = if i == 0 {
-                        image_prefix_len + col_in_line
-                    } else {
-                        col_in_line
-                    };
-                    visual_row += (display_col / inner_width.max(1)) as u16;
-                    let visual_col = display_col % inner_width.max(1);
+                    visual_row += (col_in_line / inner_width.max(1)) as u16;
+                    let visual_col = col_in_line % inner_width.max(1);
                     let cx = area.x + 1 + visual_col as u16;
                     let cy = area.y + 1 + visual_row;
                     if cy < area.y + area.height - 1 && cx < area.x + area.width - 1 {
@@ -294,6 +199,46 @@ impl Widget for InputBox<'_> {
     }
 }
 
+/// Style `[Image #N]` patterns in a line with magenta bold, leaving other text default.
+fn style_image_tags(text: &str) -> Vec<Span<'_>> {
+    let image_style = Style::default()
+        .fg(Color::Magenta)
+        .add_modifier(Modifier::BOLD);
+    let mut spans = Vec::new();
+    let mut remaining = text;
+
+    while let Some(start) = remaining.find("[Image #") {
+        // Find the closing bracket.
+        if let Some(end_offset) = remaining[start..].find(']') {
+            let end = start + end_offset + 1;
+            // Validate it's a proper [Image #N] tag (digits between # and ]).
+            let inner = &remaining[start + 8..start + end_offset];
+            if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit()) {
+                // Push text before the tag.
+                if start > 0 {
+                    spans.push(Span::raw(&remaining[..start]));
+                }
+                // Push the styled tag.
+                spans.push(Span::styled(&remaining[start..end], image_style));
+                remaining = &remaining[end..];
+                continue;
+            }
+        }
+        // Not a valid tag — push up to and including `[Image #` as plain text.
+        let chunk_end = start + 8;
+        spans.push(Span::raw(&remaining[..chunk_end]));
+        remaining = &remaining[chunk_end..];
+    }
+    // Push any remaining text.
+    if !remaining.is_empty() {
+        spans.push(Span::raw(remaining));
+    }
+    if spans.is_empty() {
+        spans.push(Span::raw(""));
+    }
+    spans
+}
+
 /// Convert a byte cursor offset into (row, col) for multiline text.
 fn cursor_row_col(text: &str, byte_cursor: usize) -> (usize, usize) {
     let before = &text[..byte_cursor.min(text.len())];
@@ -312,37 +257,30 @@ mod tests {
 
     #[test]
     fn required_height_single_line() {
-        assert_eq!(InputBox::required_height("hello", 0), 3); // 1 line + 2 borders
+        assert_eq!(InputBox::required_height("hello"), 3); // 1 line + 2 borders
     }
 
     #[test]
     fn required_height_multiline() {
-        assert_eq!(InputBox::required_height("line1\nline2\nline3", 0), 5); // 3 lines + 2 borders
+        assert_eq!(InputBox::required_height("line1\nline2\nline3"), 5); // 3 lines + 2 borders
     }
 
     #[test]
     fn required_height_empty() {
-        assert_eq!(InputBox::required_height("", 0), 3); // min 1 line + 2 borders
+        assert_eq!(InputBox::required_height(""), 3); // min 1 line + 2 borders
     }
 
     #[test]
     fn required_height_caps_at_max() {
         let long = (0..20).map(|_| "x").collect::<Vec<_>>().join("\n");
-        assert_eq!(InputBox::required_height(&long, 0), MAX_INPUT_LINES + 2);
+        assert_eq!(InputBox::required_height(&long), MAX_INPUT_LINES + 2);
     }
 
     #[test]
     fn required_height_trailing_newline() {
         // After Alt+Enter at end of line 2, text is "line1\nline2\n".
         // The trailing newline creates an empty 3rd line for the cursor.
-        assert_eq!(InputBox::required_height("line1\nline2\n", 0), 5); // 3 lines + 2 borders
-    }
-
-    #[test]
-    fn required_height_with_images() {
-        // Images are inline [Image #N] tags — no extra row needed.
-        assert_eq!(InputBox::required_height("hello", 1), 3); // same as without images
-        assert_eq!(InputBox::required_height("hello", 3), 3); // same regardless of count
+        assert_eq!(InputBox::required_height("line1\nline2\n"), 5); // 3 lines + 2 borders
     }
 
     #[test]
@@ -458,5 +396,44 @@ mod tests {
             .collect();
         assert!(bottom.contains("17c"), "Should show char count: {bottom}");
         assert!(bottom.contains("3L"), "Should show line count: {bottom}");
+    }
+
+    #[test]
+    fn style_image_tags_no_tags() {
+        let spans = style_image_tags("hello world");
+        assert_eq!(spans.len(), 1);
+    }
+
+    #[test]
+    fn style_image_tags_with_tag() {
+        let spans = style_image_tags("[Image #1] hello");
+        assert_eq!(spans.len(), 2); // tag + remaining text
+        assert_eq!(spans[0].content, "[Image #1]");
+    }
+
+    #[test]
+    fn style_image_tags_between_text() {
+        let spans = style_image_tags("hello [Image #2] world");
+        assert_eq!(spans.len(), 3); // "hello " + tag + " world"
+        assert_eq!(spans[1].content, "[Image #2]");
+    }
+
+    #[test]
+    fn render_image_tag_in_text() {
+        let area = Rect::new(0, 0, 60, 3);
+        let mut buf = Buffer::empty(area);
+        let widget = InputBox::new("[Image #1] describe this", 24, true);
+        widget.render(area, &mut buf);
+        let content: String = (0..60)
+            .map(|x| buf.cell((x, 1)).unwrap().symbol().to_string())
+            .collect();
+        assert!(
+            content.contains("[Image #1]"),
+            "Should show image tag: {content}"
+        );
+        assert!(
+            content.contains("describe this"),
+            "Should show text after tag: {content}"
+        );
     }
 }
