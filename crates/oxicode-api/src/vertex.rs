@@ -56,6 +56,16 @@ impl VertexProvider {
                         oxicode_common::ContentBlock::Text { text } => {
                             serde_json::json!({"type": "text", "text": text})
                         }
+                        oxicode_common::ContentBlock::Image { source } => {
+                            serde_json::json!({
+                                "type": "image",
+                                "source": {
+                                    "type": &source.source_type,
+                                    "media_type": &source.media_type,
+                                    "data": &source.data,
+                                }
+                            })
+                        }
                         oxicode_common::ContentBlock::ToolUse { id, name, input } => {
                             serde_json::json!({
                                 "type": "tool_use", "id": id, "name": name, "input": input,

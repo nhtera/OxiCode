@@ -1,6 +1,7 @@
 pub mod app;
 pub mod events;
 pub mod ghost_completion;
+pub mod image_paste;
 pub mod keybindings;
 pub mod paste_detector;
 pub mod prompt_suggestions;

@@ -108,7 +108,7 @@ async fn test_user_input_produces_core_events() {
 
         while let Some(event) = ui_rx.recv().await {
             match event {
-                UiEvent::UserInput(text) => {
+                UiEvent::UserInput { text, .. } => {
                     let user_msg = Message::user(&text);
                     state_clone.push_message(user_msg.clone());
                     conversation.push(user_msg);
@@ -144,7 +144,10 @@ async fn test_user_input_produces_core_events() {
 
     // Send user input.
     ui_tx
-        .send(UiEvent::UserInput("Say hello".to_string()))
+        .send(UiEvent::UserInput {
+            text: "Say hello".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 
@@ -222,7 +225,7 @@ async fn test_multiple_sequential_user_inputs() {
         let mut conversation = Conversation::new();
         while let Some(event) = ui_rx.recv().await {
             match event {
-                UiEvent::UserInput(text) => {
+                UiEvent::UserInput { text, .. } => {
                     let user_msg = Message::user(&text);
                     state_clone.push_message(user_msg.clone());
                     conversation.push(user_msg);
@@ -259,7 +262,10 @@ async fn test_multiple_sequential_user_inputs() {
     // Send two messages sequentially.
     for (i, input) in ["First message", "Second message"].iter().enumerate() {
         ui_tx
-            .send(UiEvent::UserInput(input.to_string()))
+            .send(UiEvent::UserInput {
+                text: input.to_string(),
+                images: vec![],
+            })
             .await
             .unwrap();
 
@@ -305,7 +311,7 @@ async fn test_engine_error_forwarded_as_core_error() {
         let mut conversation = Conversation::new();
         while let Some(event) = ui_rx.recv().await {
             match event {
-                UiEvent::UserInput(text) => {
+                UiEvent::UserInput { text, .. } => {
                     let user_msg = Message::user(&text);
                     conversation.push(user_msg);
 
@@ -339,7 +345,10 @@ async fn test_engine_error_forwarded_as_core_error() {
     });
 
     ui_tx
-        .send(UiEvent::UserInput("trigger error".to_string()))
+        .send(UiEvent::UserInput {
+            text: "trigger error".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 
@@ -398,7 +407,7 @@ async fn test_permission_dialog_through_tui_bridge() {
         let mut conversation = Conversation::new();
         while let Some(event) = ui_rx.recv().await {
             match event {
-                UiEvent::UserInput(text) => {
+                UiEvent::UserInput { text, .. } => {
                     let user_msg = Message::user(&text);
                     state_clone.push_message(user_msg.clone());
                     conversation.push(user_msg);
@@ -433,7 +442,10 @@ async fn test_permission_dialog_through_tui_bridge() {
     });
 
     ui_tx
-        .send(UiEvent::UserInput("run echo test".to_string()))
+        .send(UiEvent::UserInput {
+            text: "run echo test".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 

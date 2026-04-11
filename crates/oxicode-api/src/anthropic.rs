@@ -69,6 +69,16 @@ impl AnthropicProvider {
                         ContentBlock::Text { text } => {
                             serde_json::json!({"type": "text", "text": text})
                         }
+                        ContentBlock::Image { source } => {
+                            serde_json::json!({
+                                "type": "image",
+                                "source": {
+                                    "type": &source.source_type,
+                                    "media_type": &source.media_type,
+                                    "data": &source.data,
+                                }
+                            })
+                        }
                         ContentBlock::ToolUse { id, name, input } => {
                             serde_json::json!({
                                 "type": "tool_use",

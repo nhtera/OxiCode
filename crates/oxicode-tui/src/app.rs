@@ -114,6 +114,8 @@ pub struct App {
     ghost_text: Option<String>,
     /// Large paste text awaiting confirmation (shown in preview modal).
     pending_paste: Option<String>,
+    /// Pasted images waiting to be sent with the next message.
+    pending_images: Vec<crate::image_paste::PastedImage>,
     /// Context-aware follow-up suggestions shown as chips.
     suggestions: Vec<PromptSuggestion>,
     /// Timestamp when the current turn started (for thinking indicator).
@@ -191,6 +193,7 @@ impl App {
             message_cache: MessageRenderCache::new(),
             ghost_text: None,
             pending_paste: None,
+            pending_images: Vec::new(),
             suggestions: Vec::new(),
             turn_started_at: None,
             slash_commands,
@@ -471,7 +474,8 @@ impl App {
         let autocomplete_height = self.autocomplete.visible_height();
 
         terminal.draw(|frame| {
-            let base_input_height = InputBox::required_height(&self.input_text);
+            let base_input_height =
+                InputBox::required_height(&self.input_text, self.pending_images.len());
             let input_height = if search_active {
                 base_input_height + 2 // +2 for search bar
             } else {
@@ -670,7 +674,8 @@ impl App {
                     .split(chunks[4]);
 
                 let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
-                let mut input = InputBox::new(&self.input_text, byte_cursor, true);
+                let mut input = InputBox::new(&self.input_text, byte_cursor, true)
+                    .with_image_count(self.pending_images.len());
                 if vim_enabled {
                     input = input.with_vim_badge(vim_badge);
                 }
@@ -688,7 +693,8 @@ impl App {
                 frame.render_widget(search_bar, input_chunks[1]);
             } else {
                 let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
-                let mut input = InputBox::new(&self.input_text, byte_cursor, true);
+                let mut input = InputBox::new(&self.input_text, byte_cursor, true)
+                    .with_image_count(self.pending_images.len());
                 if vim_enabled {
                     input = input.with_vim_badge(vim_badge);
                 }
@@ -837,6 +843,21 @@ impl App {
             // `?` toggles help overlay when input is empty (no conflict with typing).
             (_, KeyCode::Char('?')) if self.input_text.is_empty() => {
                 self.shortcuts.toggle();
+            }
+            // Ctrl+V: try image paste first, then let crossterm bracketed paste handle text.
+            (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
+                if let Some(img) = crate::image_paste::read_clipboard_image() {
+                    let msg = match img.dimensions {
+                        Some((w, h)) => format!("Image attached: {} ({}x{})", img.label, w, h),
+                        None => format!("Image attached: {}", img.label),
+                    };
+                    self.pending_images.push(img);
+                    self.notifications.push(Notification::new(
+                        msg,
+                        crate::widgets::notification::NotificationLevel::Info,
+                    ));
+                }
+                // If no image found, text paste is handled by Event::Paste from crossterm.
             }
             // Ctrl+R: open reverse history search.
             (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
@@ -1658,7 +1679,8 @@ impl App {
                 };
                 let _ = self.ui_tx.send(UiEvent::SlashCommand { name, args }).await;
             } else {
-                let _ = self.ui_tx.send(UiEvent::UserInput(text)).await;
+                let images = std::mem::take(&mut self.pending_images);
+                let _ = self.ui_tx.send(UiEvent::UserInput { text, images }).await;
             }
         }
     }
@@ -2730,7 +2752,7 @@ mod tests {
             .expect("event loop exits");
 
         assert!(
-            matches!(ui_rx.recv().await, Some(UiEvent::UserInput(text)) if text == "hi"),
+            matches!(ui_rx.recv().await, Some(UiEvent::UserInput { text, .. }) if text == "hi"),
             "expected submitted input event"
         );
         assert!(

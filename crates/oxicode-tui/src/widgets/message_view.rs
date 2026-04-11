@@ -669,6 +669,22 @@ fn render_content_blocks_static(
                     lines.push(Line::from(spans));
                 }
             }
+            ContentBlock::Image { source } => {
+                let label = source.media_type.as_deref().unwrap_or("image");
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        " img ".to_string(),
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(crate::render::STATUS_YELLOW)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!(" {label} "),
+                        Style::default().fg(crate::render::CHROME_MUTED),
+                    ),
+                ]));
+            }
             ContentBlock::ToolUse { name, input, .. } => {
                 let summary = tool_input_summary(input);
                 lines.push(Line::from(vec![

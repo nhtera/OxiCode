@@ -25,6 +25,8 @@ pub struct InputBox<'a> {
     ghost_text: Option<&'a str>,
     /// Input metrics: (char_count, line_count). Shown in right title when set.
     metrics: Option<(usize, usize)>,
+    /// Number of pending image attachments to show as a pill.
+    image_count: usize,
 }
 
 impl<'a> InputBox<'a> {
@@ -37,6 +39,7 @@ impl<'a> InputBox<'a> {
             command_line: None,
             ghost_text: None,
             metrics: None,
+            image_count: 0,
         }
     }
 
@@ -64,17 +67,26 @@ impl<'a> InputBox<'a> {
         self
     }
 
+    /// Set the number of pending image attachments.
+    pub fn with_image_count(mut self, count: usize) -> Self {
+        self.image_count = count;
+        self
+    }
+
     /// Calculate required height for the input box (including borders).
-    pub fn required_height(text: &str) -> u16 {
+    /// Adds +1 row when images are pending for the attachment pill row.
+    pub fn required_height(text: &str, image_count: usize) -> u16 {
         // Use split('\n') instead of lines() — lines() ignores a trailing '\n',
         // which would hide the empty line the cursor sits on after Alt+Enter.
         let line_count = text.split('\n').count().max(1) as u16;
-        // +2 for top/bottom border
-        (line_count + 2).min(MAX_INPUT_LINES + 2)
+        // +2 for top/bottom border, +1 for image pill row when images present.
+        let image_row = u16::from(image_count > 0);
+        (line_count + image_row + 2).min(MAX_INPUT_LINES + 2)
     }
 }
 
 impl Widget for InputBox<'_> {
+    #[allow(clippy::too_many_lines)]
     fn render(self, area: Rect, buf: &mut Buffer) {
         let border_style = if self.focused {
             Style::default().fg(render::FOCUS_BORDER)
@@ -122,6 +134,36 @@ impl Widget for InputBox<'_> {
             paragraph.render(area, buf);
             return;
         }
+
+        // Render image attachment pill row if images are pending.
+        // Shrinks the available area for text by 1 row.
+        let (area, _pill_rendered) = if self.image_count > 0 && area.height > 3 {
+            // Render pill inside the border — first inner row.
+            let pill_y = area.y + 1;
+            let pill_x = area.x + 1;
+            let pill_w = area.width.saturating_sub(2);
+            let label = if self.image_count == 1 {
+                " \u{1F4CE} 1 image ".to_string()
+            } else {
+                format!(" \u{1F4CE} {} images ", self.image_count)
+            };
+            let pill = Line::from(Span::styled(
+                label,
+                Style::default().fg(Color::Black).bg(Color::Cyan),
+            ));
+            let pill_area = Rect::new(pill_x, pill_y, pill_w, 1);
+            Paragraph::new(pill).render(pill_area, buf);
+            // Shrink remaining area: shift text down by 1 row.
+            let inner = Rect::new(
+                area.x,
+                area.y + 1,
+                area.width,
+                area.height.saturating_sub(1),
+            );
+            (inner, true)
+        } else {
+            (area, false)
+        };
 
         if self.text.is_empty() && self.focused {
             let display_text = Line::from(Span::styled(
@@ -211,30 +253,37 @@ mod tests {
 
     #[test]
     fn required_height_single_line() {
-        assert_eq!(InputBox::required_height("hello"), 3); // 1 line + 2 borders
+        assert_eq!(InputBox::required_height("hello", 0), 3); // 1 line + 2 borders
     }
 
     #[test]
     fn required_height_multiline() {
-        assert_eq!(InputBox::required_height("line1\nline2\nline3"), 5); // 3 lines + 2 borders
+        assert_eq!(InputBox::required_height("line1\nline2\nline3", 0), 5); // 3 lines + 2 borders
     }
 
     #[test]
     fn required_height_empty() {
-        assert_eq!(InputBox::required_height(""), 3); // min 1 line + 2 borders
+        assert_eq!(InputBox::required_height("", 0), 3); // min 1 line + 2 borders
     }
 
     #[test]
     fn required_height_caps_at_max() {
         let long = (0..20).map(|_| "x").collect::<Vec<_>>().join("\n");
-        assert_eq!(InputBox::required_height(&long), MAX_INPUT_LINES + 2);
+        assert_eq!(InputBox::required_height(&long, 0), MAX_INPUT_LINES + 2);
     }
 
     #[test]
     fn required_height_trailing_newline() {
         // After Alt+Enter at end of line 2, text is "line1\nline2\n".
         // The trailing newline creates an empty 3rd line for the cursor.
-        assert_eq!(InputBox::required_height("line1\nline2\n"), 5); // 3 lines + 2 borders
+        assert_eq!(InputBox::required_height("line1\nline2\n", 0), 5); // 3 lines + 2 borders
+    }
+
+    #[test]
+    fn required_height_with_images() {
+        // With 1 image, adds 1 row for pill display.
+        assert_eq!(InputBox::required_height("hello", 1), 4); // 1 line + 1 image row + 2 borders
+        assert_eq!(InputBox::required_height("hello", 3), 4); // same regardless of count
     }
 
     #[test]

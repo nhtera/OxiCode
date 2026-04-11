@@ -231,7 +231,7 @@ fn spawn_engine_task(
         let mut rx = ui_rx;
         while let Some(event) = rx.recv().await {
             match event {
-                UiEvent::UserInput(text) => {
+                UiEvent::UserInput { text, .. } => {
                     let user_msg = Message::user(&text);
                     state_store.push_message(user_msg.clone());
                     conversation.push(user_msg);
@@ -295,9 +295,10 @@ async fn e2e_tui_full_roundtrip_real_api() {
 
     // Send user input through TUI channel.
     ui_tx
-        .send(UiEvent::UserInput(
-            "Say exactly 'roundtrip_ok' and nothing else.".to_string(),
-        ))
+        .send(UiEvent::UserInput {
+            text: "Say exactly 'roundtrip_ok' and nothing else.".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 
@@ -418,7 +419,13 @@ async fn e2e_permission_dialog_real_api() {
         "Write the text 'hello_perm' to the file at {} using the file_write tool.",
         target.display()
     );
-    ui_tx.send(UiEvent::UserInput(prompt)).await.unwrap();
+    ui_tx
+        .send(UiEvent::UserInput {
+            text: prompt,
+            images: vec![],
+        })
+        .await
+        .unwrap();
 
     // Collect events, auto-approving permissions.
     let events = collect_events_auto_approve(&mut core_rx, 60).await;
@@ -466,9 +473,10 @@ async fn e2e_multi_turn_state_preserved() {
 
     // Turn 1: Set a fact.
     ui_tx
-        .send(UiEvent::UserInput(
-            "Remember this: the secret code is ALPHA7. Just say 'Noted.'".to_string(),
-        ))
+        .send(UiEvent::UserInput {
+            text: "Remember this: the secret code is ALPHA7. Just say 'Noted.'".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 
@@ -482,9 +490,10 @@ async fn e2e_multi_turn_state_preserved() {
 
     // Turn 2: Recall the fact.
     ui_tx
-        .send(UiEvent::UserInput(
-            "What is the secret code I told you? Reply with just the code.".to_string(),
-        ))
+        .send(UiEvent::UserInput {
+            text: "What is the secret code I told you? Reply with just the code.".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 
@@ -582,9 +591,10 @@ async fn e2e_cancel_mid_stream() {
 
     // Ask for a long response.
     ui_tx
-        .send(UiEvent::UserInput(
-            "Write a 500-word essay about the history of computing.".to_string(),
-        ))
+        .send(UiEvent::UserInput {
+            text: "Write a 500-word essay about the history of computing.".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 
@@ -660,7 +670,13 @@ async fn e2e_tui_bridge_tool_use_real_api() {
         "Read the file at {} and tell me its content. Use the file_read tool.",
         target.display()
     );
-    ui_tx.send(UiEvent::UserInput(prompt)).await.unwrap();
+    ui_tx
+        .send(UiEvent::UserInput {
+            text: prompt,
+            images: vec![],
+        })
+        .await
+        .unwrap();
 
     let events = collect_events_auto_approve(&mut core_rx, 60).await;
 
@@ -720,7 +736,10 @@ async fn e2e_state_usage_tracking_real_api() {
     let engine_handle = spawn_engine_task(engine, state_store.clone(), ui_rx, core_tx, cancel_flag);
 
     ui_tx
-        .send(UiEvent::UserInput("Say hi".to_string()))
+        .send(UiEvent::UserInput {
+            text: "Say hi".to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 

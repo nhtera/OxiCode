@@ -58,6 +58,10 @@ impl TokenCounter {
 fn count_block(block: &ContentBlock) -> usize {
     match block {
         ContentBlock::Text { text } => TokenCounter::count_text(text),
+        ContentBlock::Image { .. } => {
+            // Anthropic uses ~1600 tokens for a typical image (varies by resolution).
+            1600
+        }
         ContentBlock::ToolUse { name, input, .. } => {
             let input_str = input.to_string();
             TokenCounter::count_text(name) + TokenCounter::count_text(&input_str)

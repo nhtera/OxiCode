@@ -1,8 +1,11 @@
 /// Events flowing from TUI to the core engine.
 #[derive(Debug, Clone)]
 pub enum UiEvent {
-    /// User submitted input text.
-    UserInput(String),
+    /// User submitted input text (optionally with pasted images).
+    UserInput {
+        text: String,
+        images: Vec<crate::image_paste::PastedImage>,
+    },
     /// Slash command parsed from user input.
     SlashCommand { name: String, args: String },
     /// User requested quit.

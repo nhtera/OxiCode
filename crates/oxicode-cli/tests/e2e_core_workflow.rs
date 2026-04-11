@@ -546,7 +546,7 @@ async fn run_tui_bridge(
         let mut conversation = Conversation::new();
         while let Some(event) = ui_rx.recv().await {
             match event {
-                UiEvent::UserInput(text) => {
+                UiEvent::UserInput { text, .. } => {
                     let user_msg = Message::user(&text);
                     state_clone.push_message(user_msg.clone());
                     conversation.push(user_msg);
@@ -582,7 +582,10 @@ async fn run_tui_bridge(
 
     // Send user input.
     ui_tx
-        .send(UiEvent::UserInput(prompt.to_string()))
+        .send(UiEvent::UserInput {
+            text: prompt.to_string(),
+            images: vec![],
+        })
         .await
         .unwrap();
 

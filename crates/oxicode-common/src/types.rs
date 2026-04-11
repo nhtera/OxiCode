@@ -11,12 +11,29 @@ pub enum Role {
     System,
 }
 
+/// Image source for the Anthropic API (base64-encoded image data).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageSource {
+    /// Source type: "base64" for inline data.
+    #[serde(rename = "type")]
+    pub source_type: String,
+    /// MIME type, e.g. "image/png", "image/jpeg".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    /// Base64-encoded image bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+}
+
 /// A single content block within a message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     Text {
         text: String,
+    },
+    Image {
+        source: ImageSource,
     },
     ToolUse {
         id: String,
@@ -62,6 +79,21 @@ impl Message {
             id: Uuid::new_v4().to_string(),
             role: Role::User,
             content: vec![ContentBlock::Text { text: text.into() }],
+            model: None,
+            stop_reason: None,
+            created_at: Utc::now(),
+            usage: None,
+        }
+    }
+
+    /// Create a user message with image blocks followed by text.
+    pub fn user_with_images(text: String, images: Vec<ContentBlock>) -> Self {
+        let mut content = images;
+        content.push(ContentBlock::Text { text });
+        Self {
+            id: Uuid::new_v4().to_string(),
+            role: Role::User,
+            content,
             model: None,
             stop_reason: None,
             created_at: Utc::now(),
@@ -228,6 +260,56 @@ mod tests {
         assert!(json.contains("tool_use"));
         let parsed: ContentBlock = serde_json::from_str(&json).unwrap();
         assert!(matches!(parsed, ContentBlock::ToolUse { .. }));
+    }
+
+    #[test]
+    fn test_image_serde_roundtrip() {
+        let block = ContentBlock::Image {
+            source: ImageSource {
+                source_type: "base64".to_string(),
+                media_type: Some("image/png".to_string()),
+                data: Some("aWVpZQ==".to_string()),
+            },
+        };
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains("\"type\":\"image\""));
+        assert!(json.contains("\"media_type\":\"image/png\""));
+        assert!(json.contains("\"data\":\"aWVpZQ==\""));
+        let parsed: ContentBlock = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, ContentBlock::Image { .. }));
+    }
+
+    #[test]
+    fn test_image_anthropic_format() {
+        // Verify serialization matches Anthropic API expected format.
+        let block = ContentBlock::Image {
+            source: ImageSource {
+                source_type: "base64".to_string(),
+                media_type: Some("image/png".to_string()),
+                data: Some("abc123".to_string()),
+            },
+        };
+        let val: serde_json::Value = serde_json::to_value(&block).unwrap();
+        assert_eq!(val["type"], "image");
+        assert_eq!(val["source"]["type"], "base64");
+        assert_eq!(val["source"]["media_type"], "image/png");
+        assert_eq!(val["source"]["data"], "abc123");
+    }
+
+    #[test]
+    fn test_user_with_images() {
+        let img = ContentBlock::Image {
+            source: ImageSource {
+                source_type: "base64".to_string(),
+                media_type: Some("image/png".to_string()),
+                data: Some("data".to_string()),
+            },
+        };
+        let msg = Message::user_with_images("describe this".to_string(), vec![img]);
+        assert_eq!(msg.role, Role::User);
+        assert_eq!(msg.content.len(), 2); // 1 image + 1 text
+        assert!(matches!(&msg.content[0], ContentBlock::Image { .. }));
+        assert_eq!(msg.text(), "describe this");
     }
 
     #[test]

@@ -470,7 +470,8 @@ async fn run_single_prompt_json(
                     } => {
                         writer.tool_result(tool_use_id, content, *is_error)?;
                     }
-                    oxicode_common::ContentBlock::Thinking { .. } => {}
+                    oxicode_common::ContentBlock::Thinking { .. }
+                    | oxicode_common::ContentBlock::Image { .. } => {}
                 }
             }
 
@@ -623,8 +624,26 @@ async fn run_tui(
 
         while let Some(event) = ui_rx.recv().await {
             match event {
-                UiEvent::UserInput(text) => {
-                    let user_msg = Message::user(&text);
+                UiEvent::UserInput { text, images } => {
+                    let user_msg = if images.is_empty() {
+                        Message::user(&text)
+                    } else {
+                        let img_blocks: Vec<oxicode_common::ContentBlock> = images
+                            .iter()
+                            .filter_map(|img| {
+                                oxicode_tui::image_paste::encode_image_base64(&img.path).map(
+                                    |b64| oxicode_common::ContentBlock::Image {
+                                        source: oxicode_common::ImageSource {
+                                            source_type: "base64".into(),
+                                            media_type: Some("image/png".into()),
+                                            data: Some(b64),
+                                        },
+                                    },
+                                )
+                            })
+                            .collect();
+                        Message::user_with_images(text, img_blocks)
+                    };
                     // Push user message to state_store (for TUI rendering).
                     // execute_turn does NOT push user messages, only assistant/tool results.
                     state_store_clone.push_message(user_msg.clone());
