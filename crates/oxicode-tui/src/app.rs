@@ -305,13 +305,18 @@ impl App {
                     }
                     self.draw(terminal)?;
                 }
-                Some(core_event) = self.core_rx.recv() => {
-                    self.handle_core_event(core_event);
-                    // Drain all pending core events before redrawing (batch updates).
-                    while let Ok(ev) = self.core_rx.try_recv() {
-                        self.handle_core_event(ev);
+                result = self.core_rx.recv() => {
+                    if let Some(core_event) = result {
+                        self.handle_core_event(core_event);
+                        // Drain all pending core events before redrawing (batch updates).
+                        while let Ok(ev) = self.core_rx.try_recv() {
+                            self.handle_core_event(ev);
+                        }
+                        self.draw(terminal)?;
+                    } else {
+                        // Engine channel closed — quit gracefully.
+                        self.should_quit = true;
                     }
-                    self.draw(terminal)?;
                 }
                 // Tick for spinner animation, notification expiry, and permission countdown.
                 () = tokio::time::sleep(Duration::from_millis(tick_ms)), if needs_tick => {
@@ -1622,6 +1627,12 @@ impl App {
 
             if let Some(trimmed) = text.strip_prefix('/') {
                 let trimmed = trimmed.trim();
+                // Handle /quit inline — set should_quit and notify engine.
+                if trimmed == "quit" || trimmed == "exit" {
+                    let _ = self.ui_tx.send(UiEvent::Quit).await;
+                    self.should_quit = true;
+                    return;
+                }
                 // Handle /vim toggle inline.
                 if trimmed == "vim" {
                     let new_state = !self.vim.enabled;
