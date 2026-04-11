@@ -51,10 +51,6 @@ struct ImageTagHit {
     msg_index: usize,
     /// Image number (1-based, from `[Image #N]`).
     image_number: usize,
-    /// Column start within the line (relative to inner area left edge).
-    col_start: usize,
-    /// Column end (exclusive) within the line.
-    col_end: usize,
 }
 
 /// A pending permission request awaiting user response.
@@ -149,9 +145,6 @@ pub struct App {
     session_browser: SessionBrowserState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     message_area: Rect,
-    /// Screen row where a hovered `[Image #N]` tag starts (for underline styling).
-    /// Stores (row, col_start, col_end) of the hovered image tag.
-    hovered_image_tag: Option<(u16, u16, u16)>,
     /// Frame counter — incremented each draw call, drives spinner animation.
     frame_count: u64,
     /// Session start time for elapsed display in status bar.
@@ -222,7 +215,6 @@ impl App {
             model_picker: ModelPickerState::new(),
             session_browser: SessionBrowserState::new(),
             message_area: Rect::default(),
-            hovered_image_tag: None,
             frame_count: 0,
             session_start: Instant::now(),
             stall_start: None,
@@ -601,19 +593,6 @@ impl App {
             .with_last_turn_duration(self.last_turn_duration)
             .with_message_roles(message_roles);
             frame.render_widget(message_view, left_area);
-
-            // Apply underline hover style to [Image #N] tag under mouse cursor.
-            if let Some((hover_row, col_start, col_end)) = self.hovered_image_tag {
-                let buf = frame.buffer_mut();
-                for cx in col_start..col_end {
-                    if let Some(cell) = buf.cell_mut((cx, hover_row)) {
-                        cell.set_style(
-                            cell.style()
-                                .add_modifier(ratatui::style::Modifier::UNDERLINED),
-                        );
-                    }
-                }
-            }
 
             // Read back the actual max scroll offset computed during rendering.
             self.max_scroll_offset = scroll_report.get();
@@ -1331,19 +1310,14 @@ impl App {
             MouseEventKind::ScrollUp => self.scroll_up_by(3),
             MouseEventKind::ScrollDown => self.scroll_down_by(3),
             MouseEventKind::Down(MouseButton::Left) => {
-                // Cmd+Click (macOS) or Ctrl+Click (Linux/Windows) to open image.
-                let has_modifier = mouse.modifiers.contains(KeyModifiers::SUPER)
-                    || mouse.modifiers.contains(KeyModifiers::CONTROL);
-                if has_modifier && self.handle_image_click(mouse.column, mouse.row) {
+                // Click on [Image #N] tag opens image in system viewer.
+                if self.handle_image_click(mouse.column, mouse.row) {
                     return;
                 }
                 self.handle_scrollbar_click(mouse.column, mouse.row);
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 self.handle_scrollbar_click(mouse.column, mouse.row);
-            }
-            MouseEventKind::Moved => {
-                self.update_image_hover(mouse.column, mouse.row);
             }
             _ => {}
         }
@@ -1395,23 +1369,6 @@ impl App {
             }
         }
         false
-    }
-
-    /// Update hover state: underline `[Image #N]` tag under the mouse cursor.
-    fn update_image_hover(&mut self, col: u16, row: u16) {
-        if let Some(hit) = self.find_image_tag_at(col, row) {
-            if self.sent_image_paths.contains_key(&hit.msg_index) {
-                let area = self.message_area;
-                let inner_left = area.x + 1;
-                self.hovered_image_tag = Some((
-                    row,
-                    inner_left + hit.col_start as u16,
-                    inner_left + hit.col_end as u16,
-                ));
-                return;
-            }
-        }
-        self.hovered_image_tag = None;
     }
 
     /// Find an `[Image #N]` tag at a screen position.
@@ -1486,8 +1443,6 @@ impl App {
                     return Some(ImageTagHit {
                         msg_index: msg_idx,
                         image_number: n,
-                        col_start: span_offset,
-                        col_end: span_offset + span_width,
                     });
                 }
             }
