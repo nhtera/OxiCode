@@ -141,6 +141,8 @@ pub struct App {
     stall_start: Option<Instant>,
     /// Thinking text accumulated during streaming (from ThinkingDelta events).
     streaming_thinking: String,
+    /// Duration of the last completed turn (set on MessageComplete).
+    last_turn_duration: Option<Duration>,
 }
 
 impl App {
@@ -202,6 +204,7 @@ impl App {
             session_start: Instant::now(),
             stall_start: None,
             streaming_thinking: String::new(),
+            last_turn_duration: None,
         }
     }
 
@@ -558,7 +561,8 @@ impl App {
             .with_stall_start(self.stall_start)
             .with_model_name(&current_model)
             .with_cwd(&cwd)
-            .with_streaming_thinking(&self.streaming_thinking);
+            .with_streaming_thinking(&self.streaming_thinking)
+            .with_last_turn_duration(self.last_turn_duration);
             frame.render_widget(message_view, left_area);
 
             // Read back the actual max scroll offset computed during rendering.
@@ -1974,6 +1978,7 @@ impl App {
                 self.is_turn_active = true;
                 self.turn_started_at = Some(Instant::now());
                 self.stall_start = Some(Instant::now());
+                self.last_turn_duration = None; // Clear previous turn's duration.
                 self.streaming_text.clear();
                 self.streaming_collector.clear();
                 self.streaming_committed_lines.clear();
@@ -1993,6 +1998,8 @@ impl App {
             }
             CoreEvent::MessageComplete => {
                 // Full turn complete — message now persisted in state_store.messages.
+                // Save turn duration before clearing timer.
+                self.last_turn_duration = self.turn_started_at.map(|t| t.elapsed());
                 // Force message cache update BEFORE clearing streaming state to
                 // prevent a blank frame between "streaming visible" and "cached visible".
                 {

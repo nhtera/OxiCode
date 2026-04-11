@@ -163,6 +163,8 @@ pub struct MessageView<'a> {
     stall_start: Option<std::time::Instant>,
     /// Thinking text accumulated during streaming (shown dim italic above content).
     streaming_thinking: Option<&'a str>,
+    /// Duration of the last completed turn (for metadata footer).
+    last_turn_duration: Option<std::time::Duration>,
 }
 
 impl<'a> MessageView<'a> {
@@ -191,6 +193,7 @@ impl<'a> MessageView<'a> {
             frame_count: 0,
             stall_start: None,
             streaming_thinking: None,
+            last_turn_duration: None,
         }
     }
 
@@ -242,6 +245,12 @@ impl<'a> MessageView<'a> {
         self
     }
 
+    /// Set the duration of the last completed turn (for metadata footer).
+    pub fn with_last_turn_duration(mut self, duration: Option<std::time::Duration>) -> Self {
+        self.last_turn_duration = duration;
+        self
+    }
+
     fn format_messages(&self) -> Text<'a> {
         let mut lines: Vec<Line<'a>> = Vec::new();
 
@@ -265,6 +274,26 @@ impl<'a> MessageView<'a> {
             }
             for line in entry {
                 lines.push(line.clone());
+            }
+        }
+
+        // Turn metadata footer — show duration after the last completed turn.
+        if let Some(duration) = self.last_turn_duration {
+            if !self.cached_lines.is_empty() {
+                let secs = duration.as_secs_f64();
+                let duration_str = if secs < 1.0 {
+                    format!("{:.0}ms", secs * 1000.0)
+                } else if secs < 60.0 {
+                    format!("{secs:.1}s")
+                } else {
+                    let mins = secs as u64 / 60;
+                    let rem = secs as u64 % 60;
+                    format!("{mins}m{rem}s")
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("  ⏱ {duration_str}"),
+                    Style::default().fg(crate::render::CHROME_MUTED),
+                )));
             }
         }
 
@@ -702,19 +731,48 @@ fn render_content_blocks_static(
                         ]));
                     }
                 } else {
-                    // Collapsed header with line count.
-                    lines.push(Line::from(vec![
+                    // Collapsed: show 72-char preview of thinking text + line count.
+                    let preview: String = thinking
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .chars()
+                        .take(72)
+                        .collect();
+                    let truncated = preview.len() < thinking.lines().next().map_or(0, str::len);
+                    let preview_display = if truncated {
+                        format!("\"{preview}...\"")
+                    } else if preview.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\"{preview}\"")
+                    };
+                    let mut spans = vec![
                         Span::styled(
                             "  \u{25b6} Thinking ".to_string(), // ▶
                             Style::default()
                                 .fg(crate::render::TRANSCRIPT_MUTED)
                                 .add_modifier(Modifier::ITALIC),
                         ),
-                        Span::styled(
+                    ];
+                    if !preview_display.is_empty() {
+                        spans.push(Span::styled(
+                            preview_display,
+                            Style::default()
+                                .fg(crate::render::CHROME_MUTED)
+                                .add_modifier(Modifier::ITALIC),
+                        ));
+                        spans.push(Span::styled(
+                            format!(" ({line_count} lines)"),
+                            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                        ));
+                    } else {
+                        spans.push(Span::styled(
                             format!("({line_count} lines)"),
                             Style::default().fg(crate::render::TRANSCRIPT_MUTED),
-                        ),
-                    ]));
+                        ));
+                    }
+                    lines.push(Line::from(spans));
                 }
             }
         }
