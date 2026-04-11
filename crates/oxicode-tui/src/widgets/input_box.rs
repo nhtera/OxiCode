@@ -147,9 +147,10 @@ impl Widget for InputBox<'_> {
         let mut lines: Vec<Line<'_>> = self.text.split('\n').map(Line::from).collect();
         if let Some(ghost) = self.ghost_text {
             if let Some(last_line) = lines.last_mut() {
-                last_line
-                    .spans
-                    .push(Span::styled(ghost, Style::default().fg(render::CHROME_MUTED)));
+                last_line.spans.push(Span::styled(
+                    ghost,
+                    Style::default().fg(render::CHROME_MUTED),
+                ));
             }
         }
         let paragraph = Paragraph::new(lines)

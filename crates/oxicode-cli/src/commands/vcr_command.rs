@@ -165,7 +165,8 @@ fn list_recordings() -> CommandOutput {
                 Some(name.strip_suffix(".vcr.gz").unwrap_or(name).to_string())
             } else if std::path::Path::new(name)
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("json")) {
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+            {
                 Some(name.strip_suffix(".json").unwrap_or(name).to_string())
             } else {
                 None

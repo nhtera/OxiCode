@@ -159,10 +159,7 @@ pub fn render_modal_title(buf: &mut Buffer, area: Rect, title: &str, right_hint:
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" ".repeat(padding)),
-        Span::styled(
-            format!("{right_hint} "),
-            Style::default().fg(DIALOG_MUTED),
-        ),
+        Span::styled(format!("{right_hint} "), Style::default().fg(DIALOG_MUTED)),
     ]);
     buf.set_line(area.x, area.y, &line, area.width);
 }

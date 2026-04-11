@@ -116,12 +116,12 @@ impl<'a> StatusBar<'a> {
 /// Map provider name to a color for visual distinction.
 fn provider_color(provider: &str) -> Color {
     match provider {
-        "anthropic" => Color::Rgb(200, 90, 23),    // Burnt orange (brand)
-        "openai" => Color::Rgb(116, 170, 156),     // Teal
-        "ollama" => Color::Rgb(150, 140, 135),      // Warm gray (local)
-        "deepseek" => Color::Rgb(100, 149, 237),    // Cornflower blue
-        "azure" => Color::Rgb(0, 120, 212),         // Azure blue
-        "openrouter" => Color::Rgb(168, 85, 247),   // Purple
+        "anthropic" => Color::Rgb(200, 90, 23), // Burnt orange (brand)
+        "openai" => Color::Rgb(116, 170, 156),  // Teal
+        "ollama" => Color::Rgb(150, 140, 135),  // Warm gray (local)
+        "deepseek" => Color::Rgb(100, 149, 237), // Cornflower blue
+        "azure" => Color::Rgb(0, 120, 212),     // Azure blue
+        "openrouter" => Color::Rgb(168, 85, 247), // Purple
         _ => render::CHROME_TEXT,
     }
 }
@@ -250,7 +250,7 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         } else {
             let badge_color = match self.vim_badge {
-                "N" => Color::Rgb(180, 130, 80),      // Warm amber for Normal
+                "N" => Color::Rgb(180, 130, 80),        // Warm amber for Normal
                 "I" => render::STATUS_GREEN,            // Green for Insert
                 "V" | "VL" => Color::Rgb(180, 100, 60), // Warm rust for Visual
                 "C" => render::STATUS_YELLOW,           // Amber for Command
@@ -276,9 +276,7 @@ impl Widget for StatusBar<'_> {
             };
             Span::styled(
                 format!(" {} ", self.auth_label),
-                Style::default()
-                    .fg(auth_color)
-                    .bg(render::STATUS_BAR_BG),
+                Style::default().fg(auth_color).bg(render::STATUS_BAR_BG),
             )
         };
 
@@ -334,9 +332,7 @@ impl Widget for StatusBar<'_> {
             };
             Span::styled(
                 format!(" [{}]", self.permission_mode),
-                Style::default()
-                    .fg(perm_color)
-                    .bg(render::STATUS_BAR_BG),
+                Style::default().fg(perm_color).bg(render::STATUS_BAR_BG),
             )
         };
 

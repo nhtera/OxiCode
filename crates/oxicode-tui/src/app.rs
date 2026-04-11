@@ -27,8 +27,8 @@ use crate::widgets::{
     permission_dialog::RiskLevel, ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState,
     CommandAutocomplete, HistorySearchState, HistorySearchWidget, InputBox, MessageRenderCache,
     MessageView, ModelPickerState, Notification, NotificationWidget, PastePreview,
-    PermissionDialog, SearchBar, SearchOverlay, SessionBrowserState, SessionEntry,
-    ShortcutsState, SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
+    PermissionDialog, SearchBar, SearchOverlay, SessionBrowserState, SessionEntry, ShortcutsState,
+    SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
     PASTE_PREVIEW_THRESHOLD,
 };
 
@@ -314,7 +314,7 @@ impl App {
                     self.draw(terminal)?;
                 }
                 // Tick for spinner animation, notification expiry, and permission countdown.
-                _ = tokio::time::sleep(Duration::from_millis(tick_ms)), if needs_tick => {
+                () = tokio::time::sleep(Duration::from_millis(tick_ms)), if needs_tick => {
                     // Auto-deny permission if countdown expired (30s).
                     if let Some(ref perm) = self.pending_permission {
                         if perm.created_at.elapsed().as_secs() >= 30 {
@@ -1393,7 +1393,10 @@ impl App {
                             })
                             .await;
                         self.notifications.push(Notification::new(
-                            format!("Resuming session {}", &session_id[..8.min(session_id.len())]),
+                            format!(
+                                "Resuming session {}",
+                                &session_id[..8.min(session_id.len())]
+                            ),
                             crate::widgets::notification::NotificationLevel::Info,
                         ));
                     }
@@ -1485,6 +1488,7 @@ impl App {
     }
 
     /// Execute a keybinding action.
+    #[allow(clippy::too_many_lines)]
     async fn execute_keybinding_action(&mut self, action: Action) {
         match action {
             Action::Quit => {
@@ -1544,15 +1548,14 @@ impl App {
                 let state = self.state_rx.borrow();
                 for i in (0..msg_count).rev() {
                     if state.messages[i].role == oxicode_common::Role::Assistant
-                        && state.messages[i].content.iter().any(|b| {
-                            matches!(b, oxicode_common::ContentBlock::Thinking { .. })
-                        })
+                        && state.messages[i]
+                            .content
+                            .iter()
+                            .any(|b| matches!(b, oxicode_common::ContentBlock::Thinking { .. }))
                     {
                         drop(state);
-                        self.message_cache.toggle_thinking(
-                            &self.state_rx.borrow().messages,
-                            i,
-                        );
+                        self.message_cache
+                            .toggle_thinking(&self.state_rx.borrow().messages, i);
                         break;
                     }
                 }
@@ -1706,10 +1709,7 @@ impl App {
 
     /// Open the reverse history search overlay (Ctrl+R).
     fn open_history_search(&mut self) {
-        let mut state = HistorySearchState::new(
-            self.input_text.clone(),
-            self.input_cursor,
-        );
+        let mut state = HistorySearchState::new(self.input_text.clone(), self.input_cursor);
         // Initialize with all entries (newest-first).
         let items: Vec<(usize, String)> = self
             .history
@@ -1942,7 +1942,10 @@ impl App {
             (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
                 // "Always deny" hotkey — only for dialogs that have this option.
                 if let Some(ref perm) = self.pending_permission {
-                    if matches!(perm.kind, crate::widgets::PermissionDialogKind::FileRead { .. }) {
+                    if matches!(
+                        perm.kind,
+                        crate::widgets::PermissionDialogKind::FileRead { .. }
+                    ) {
                         return; // FileRead has no "Always deny" option
                     }
                 }
@@ -2086,10 +2089,7 @@ impl App {
                 {
                     risk_level = RiskLevel::High;
                 }
-                let kind = crate::widgets::PermissionDialogKind::detect(
-                    &tool_name,
-                    &input_summary,
-                );
+                let kind = crate::widgets::PermissionDialogKind::detect(&tool_name, &input_summary);
                 self.pending_permission = Some(PendingPermission {
                     tool_name,
                     input_summary,
@@ -2122,9 +2122,8 @@ impl App {
                 max_retries,
                 retry_in_secs,
             } => {
-                let notif_msg = format!(
-                    "Retrying ({attempt}/{max_retries}) in {retry_in_secs:.0}s: {message}"
-                );
+                let notif_msg =
+                    format!("Retrying ({attempt}/{max_retries}) in {retry_in_secs:.0}s: {message}");
                 self.notifications.push(Notification::new(
                     notif_msg,
                     crate::widgets::notification::NotificationLevel::Warning,
@@ -2239,10 +2238,26 @@ fn detect_provider_from_model_name(model: &str) -> String {
 
 /// Dangerous command patterns for permission dialog warning.
 const DANGEROUS_PATTERNS: &[&str] = &[
-    "rm -rf", "rm -r", "rmdir", "sudo ", "chmod 777", "chmod -R",
-    "> /dev/", "mkfs", "dd if=", ":(){ :|:", "shutdown", "reboot",
-    "kill -9", "pkill", "git push --force", "git reset --hard",
-    "DROP TABLE", "DROP DATABASE", "TRUNCATE", "DELETE FROM",
+    "rm -rf",
+    "rm -r",
+    "rmdir",
+    "sudo ",
+    "chmod 777",
+    "chmod -R",
+    "> /dev/",
+    "mkfs",
+    "dd if=",
+    ":(){ :|:",
+    "shutdown",
+    "reboot",
+    "kill -9",
+    "pkill",
+    "git push --force",
+    "git reset --hard",
+    "DROP TABLE",
+    "DROP DATABASE",
+    "TRUNCATE",
+    "DELETE FROM",
 ];
 
 /// Check if a tool operation is potentially dangerous.
@@ -2254,8 +2269,20 @@ fn is_dangerous_operation(tool_name: &str, input_summary: &str) -> bool {
             .any(|p| lower.contains(&p.to_lowercase()));
     }
     // File write/edit to sensitive paths.
-    if tool_name == "file_write" || tool_name == "file_edit" || tool_name == "Write" || tool_name == "Edit" {
-        let sensitive = ["/etc/", "/usr/", "/bin/", "/sbin/", ".env", "credentials", ".ssh/"];
+    if tool_name == "file_write"
+        || tool_name == "file_edit"
+        || tool_name == "Write"
+        || tool_name == "Edit"
+    {
+        let sensitive = [
+            "/etc/",
+            "/usr/",
+            "/bin/",
+            "/sbin/",
+            ".env",
+            "credentials",
+            ".ssh/",
+        ];
         return sensitive.iter().any(|s| input_summary.contains(s));
     }
     false
@@ -3300,10 +3327,7 @@ mod tests {
             "consecutive duplicates deduped"
         );
         // The last entry should be "cargo build".
-        assert_eq!(
-            app.history.get(app.history.len() - 1),
-            Some("cargo build")
-        );
+        assert_eq!(app.history.get(app.history.len() - 1), Some("cargo build"));
     }
 
     /// /vim is handled inline — no UiEvent sent.
@@ -3365,7 +3389,9 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
-            kind: crate::widgets::PermissionDialogKind::Bash { command: "echo hi".to_string() },
+            kind: crate::widgets::PermissionDialogKind::Bash {
+                command: "echo hi".to_string(),
+            },
             created_at: Instant::now(),
             reply_tx,
         });
@@ -3393,7 +3419,9 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 2,
             risk_level: RiskLevel::High,
-            kind: crate::widgets::PermissionDialogKind::Bash { command: "rm -rf /".to_string() },
+            kind: crate::widgets::PermissionDialogKind::Bash {
+                command: "rm -rf /".to_string(),
+            },
             created_at: Instant::now(),
             reply_tx,
         });
@@ -3418,7 +3446,9 @@ mod tests {
             prompt: "Allow always?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
-            kind: crate::widgets::PermissionDialogKind::Bash { command: "make build".to_string() },
+            kind: crate::widgets::PermissionDialogKind::Bash {
+                command: "make build".to_string(),
+            },
             created_at: Instant::now(),
             reply_tx,
         });
@@ -3443,7 +3473,9 @@ mod tests {
             prompt: "Network access?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
-            kind: crate::widgets::PermissionDialogKind::Bash { command: "curl http://...".to_string() },
+            kind: crate::widgets::PermissionDialogKind::Bash {
+                command: "curl http://...".to_string(),
+            },
             created_at: Instant::now(),
             reply_tx,
         });
@@ -3471,7 +3503,9 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
-            kind: crate::widgets::PermissionDialogKind::Bash { command: "echo".to_string() },
+            kind: crate::widgets::PermissionDialogKind::Bash {
+                command: "echo".to_string(),
+            },
             created_at: Instant::now(),
             reply_tx,
         });
@@ -3496,7 +3530,9 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
-            kind: crate::widgets::PermissionDialogKind::Bash { command: "cmd".to_string() },
+            kind: crate::widgets::PermissionDialogKind::Bash {
+                command: "cmd".to_string(),
+            },
             created_at: Instant::now(),
             reply_tx,
         });

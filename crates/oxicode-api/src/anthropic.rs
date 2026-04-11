@@ -171,6 +171,11 @@ impl LlmProvider for AnthropicProvider {
         let stream = async_stream::stream! {
             let mut retry_count = 0u32;
 
+            // Stream read timeout: 90s with no data = stall.
+            // Normal thinking pauses (extended thinking) can take 30-60s,
+            // so 90s gives headroom while catching true hangs.
+            const STREAM_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+
             // C2 FIX: Outer retry loop reconstructs EventSource on each attempt.
             'retry: loop {
                 let mut req = client
@@ -197,11 +202,6 @@ impl LlmProvider for AnthropicProvider {
                         return;
                     }
                 };
-
-                // Stream read timeout: 90s with no data = stall.
-                // Normal thinking pauses (extended thinking) can take 30-60s,
-                // so 90s gives headroom while catching true hangs.
-                const STREAM_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
                 loop {
                     match tokio::time::timeout(STREAM_READ_TIMEOUT, es.next()).await {

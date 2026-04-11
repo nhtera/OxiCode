@@ -119,11 +119,7 @@ impl ModelPickerState {
         for m in &mut self.models {
             m.is_current = m.id == current_model;
         }
-        self.selected_idx = self
-            .models
-            .iter()
-            .position(|m| m.is_current)
-            .unwrap_or(0);
+        self.selected_idx = self.models.iter().position(|m| m.is_current).unwrap_or(0);
         self.filter.clear();
         self.visible = true;
     }
@@ -316,14 +312,11 @@ fn build_model_lines(state: &ModelPickerState) -> Vec<Line<'static>> {
         // Model name
         spans.push(Span::styled(
             model.display_name.clone(),
-            Style::default()
-                .fg(fg)
-                .bg(bg)
-                .add_modifier(if is_selected {
-                    Modifier::BOLD
-                } else {
-                    Modifier::empty()
-                }),
+            Style::default().fg(fg).bg(bg).add_modifier(if is_selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            }),
         ));
 
         // Effort indicator (only on selected row for effort-supporting models)
@@ -391,7 +384,12 @@ fn render_picker_search(buf: &mut Buffer, header: Rect, filter: &str) {
                 Span::styled("\u{2588}", Style::default().fg(Color::White)),
             ])
         };
-        buf.set_line(search_area.x, search_area.y, &search_line, search_area.width);
+        buf.set_line(
+            search_area.x,
+            search_area.y,
+            &search_line,
+            search_area.width,
+        );
     }
 }
 
@@ -489,11 +487,10 @@ mod tests {
         assert!(p.visible);
         let current_count = p.models.iter().filter(|m| m.is_current).count();
         assert_eq!(current_count, 1);
-        assert!(
-            p.models
-                .iter()
-                .any(|m| m.id == "claude-sonnet-4-6" && m.is_current)
-        );
+        assert!(p
+            .models
+            .iter()
+            .any(|m| m.id == "claude-sonnet-4-6" && m.is_current));
     }
 
     #[test]

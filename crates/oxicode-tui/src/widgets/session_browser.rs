@@ -11,8 +11,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
 use super::modal_helpers::{
-    begin_modal, render_modal_title, render_separator, DIALOG_MUTED, DIALOG_TEXT,
-    PANEL_BG,
+    begin_modal, render_modal_title, render_separator, DIALOG_MUTED, DIALOG_TEXT, PANEL_BG,
 };
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -258,10 +257,7 @@ fn build_session_lines(state: &SessionBrowserState, body_width: u16) -> Vec<Line
     lines.push(Line::from(vec![Span::styled(
         format!(
             " {:<title_w$}  {:<date_w$}  {:>msgs_w$}  {:>cost_w$}",
-            "Session",
-            "Last Updated",
-            "Msgs",
-            "Cost",
+            "Session", "Last Updated", "Msgs", "Cost",
         ),
         Style::default()
             .fg(DIALOG_MUTED)
@@ -393,10 +389,7 @@ impl Widget for SessionBrowser<'_> {
         let layout = begin_modal(buf, area, dialog_w, dialog_h, 2, footer_h);
 
         // ── Header ───────────────────────────────────────────────────────────
-        let session_label = format!(
-            "Sessions ({} total)",
-            self.state.sessions.len()
-        );
+        let session_label = format!("Sessions ({} total)", self.state.sessions.len());
         render_modal_title(buf, layout.header_area, &session_label, "esc");
         if layout.header_area.height >= 2 {
             let sep_area = Rect {

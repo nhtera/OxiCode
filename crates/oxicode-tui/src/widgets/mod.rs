@@ -31,16 +31,16 @@ pub use history_search::{HistorySearchState, HistorySearchWidget};
 pub use input_box::InputBox;
 pub use markdown_view::MarkdownView;
 pub use message_view::{ActiveToolInfo, MessageRenderCache, MessageView};
+pub use model_picker::{ModelPicker, ModelPickerState};
 pub use notification::{Notification, NotificationLevel, NotificationWidget};
 pub use pager::{Pager, PagerView};
 pub use paste_preview::{PastePreview, PASTE_PREVIEW_THRESHOLD};
 pub use permission_dialog::{PermissionDialog, PermissionDialogKind};
 pub use search_overlay::{find_matches_in_cache, SearchBar, SearchOverlay};
+pub use session_browser::{SessionBrowser, SessionBrowserState, SessionEntry};
 pub use shortcuts_overlay::{
     default_shortcut_entries, HelpOverlay, HelpOverlayState, ShortcutsPanel, ShortcutsState,
 };
-pub use model_picker::{ModelPicker, ModelPickerState};
-pub use session_browser::{SessionBrowser, SessionBrowserState, SessionEntry};
 pub use split_pane::SplitPane;
 pub use status_bar::StatusBar;
 pub use suggestion_chips::SuggestionChips;

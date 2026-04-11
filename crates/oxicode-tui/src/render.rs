@@ -14,13 +14,9 @@ use ratatui::style::Color;
 
 /// 10-frame braille spinner — smooth rotation effect, widely supported.
 #[cfg(not(target_os = "windows"))]
-pub const SPINNER_FRAMES: &[char] = &[
-    '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏',
-];
+pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 #[cfg(target_os = "windows")]
-pub const SPINNER_FRAMES: &[char] = &[
-    '|', '/', '-', '\\', '|', '/', '-', '\\', '|', '/',
-];
+pub const SPINNER_FRAMES: &[char] = &['|', '/', '-', '\\', '|', '/', '-', '\\', '|', '/'];
 
 // ── Brand & accent ─────────────────────────────────────────────────
 

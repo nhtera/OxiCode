@@ -52,9 +52,8 @@ impl PersistentHistory {
 
     /// Read and parse the JSONL file, skipping corrupted lines.
     fn read_file(path: &Path) -> Vec<HistoryEntry> {
-        let file = match File::open(path) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
+        let Ok(file) = File::open(path) else {
+            return Vec::new();
         };
         let reader = BufReader::new(file);
         let mut entries: Vec<HistoryEntry> = reader
@@ -109,10 +108,7 @@ impl PersistentHistory {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(
-                    &self.file_path,
-                    fs::Permissions::from_mode(0o600),
-                );
+                let _ = fs::set_permissions(&self.file_path, fs::Permissions::from_mode(0o600));
             }
         }
 
@@ -137,10 +133,7 @@ impl PersistentHistory {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(
-                    &self.file_path,
-                    fs::Permissions::from_mode(0o600),
-                );
+                let _ = fs::set_permissions(&self.file_path, fs::Permissions::from_mode(0o600));
             }
         }
     }

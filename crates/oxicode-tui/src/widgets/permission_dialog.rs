@@ -17,6 +17,7 @@ pub enum RiskLevel {
 
 impl RiskLevel {
     /// Map a tool name to its risk level.
+    #[allow(clippy::match_same_arms)]
     pub fn from_tool(tool_name: &str) -> Self {
         match tool_name.to_lowercase().as_str() {
             // Low-risk: read-only / search
@@ -85,12 +86,7 @@ impl PermissionDialogKind {
     fn options(&self) -> &[&str] {
         match self {
             Self::FileRead { .. } => &["Allow once", "Allow for session", "Deny"],
-            _ => &[
-                "Allow once",
-                "Allow for session",
-                "Deny",
-                "Always deny",
-            ],
+            _ => &["Allow once", "Allow for session", "Deny", "Always deny"],
         }
     }
 
@@ -195,9 +191,7 @@ impl Widget for PermissionDialog<'_> {
             .min(area.width.saturating_sub(2))
             .max(40)
             .min(area.width);
-        let dialog_height = 22u16
-            .min(area.height.saturating_sub(2))
-            .min(area.height);
+        let dialog_height = 22u16.min(area.height.saturating_sub(2)).min(area.height);
         let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
         let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
         let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
@@ -555,9 +549,7 @@ mod tests {
     #[test]
     fn dialog_kind_detect_file_write() {
         let kind = PermissionDialogKind::detect("write", "/tmp/out.txt");
-        assert!(
-            matches!(kind, PermissionDialogKind::FileWrite { path } if path == "/tmp/out.txt")
-        );
+        assert!(matches!(kind, PermissionDialogKind::FileWrite { path } if path == "/tmp/out.txt"));
     }
 
     #[test]

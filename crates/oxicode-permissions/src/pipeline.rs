@@ -109,9 +109,7 @@ impl PermissionPipeline {
             return PermissionDecision::Allow;
         }
         if self.session_denylist.lock().unwrap().contains(tool_name) {
-            return PermissionDecision::Deny(format!(
-                "Denied for session: {tool_name}"
-            ));
+            return PermissionDecision::Deny(format!("Denied for session: {tool_name}"));
         }
 
         // Layer 4: Permission mode (only reached after security checks pass).

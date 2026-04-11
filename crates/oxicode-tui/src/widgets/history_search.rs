@@ -69,9 +69,7 @@ impl HistorySearchState {
 
     /// Get the content of the currently selected match (if any).
     pub fn selected_content(&self) -> Option<&str> {
-        self.display_items
-            .get(self.selected)
-            .map(String::as_str)
+        self.display_items.get(self.selected).map(String::as_str)
     }
 
     /// Update results from a history search. `items` are (index, content) pairs.
@@ -97,7 +95,9 @@ impl<'a> HistorySearchWidget<'a> {
 
     /// Compute centered overlay area (60% width, max 15 lines height).
     fn overlay_area(area: Rect) -> Rect {
-        let width = (area.width * 3 / 5).max(30).min(area.width.saturating_sub(4));
+        let width = (area.width * 3 / 5)
+            .max(30)
+            .min(area.width.saturating_sub(4));
         let height = 12u16.min(area.height.saturating_sub(4));
         let x = area.x + (area.width.saturating_sub(width)) / 2;
         let y = area.y + (area.height.saturating_sub(height)) / 2;
@@ -237,11 +237,7 @@ mod tests {
     #[test]
     fn select_next_wraps() {
         let mut state = HistorySearchState::new(String::new(), 0);
-        state.update_results(vec![
-            (2, "c".into()),
-            (1, "b".into()),
-            (0, "a".into()),
-        ]);
+        state.update_results(vec![(2, "c".into()), (1, "b".into()), (0, "a".into())]);
         assert_eq!(state.selected, 0);
         state.select_next();
         assert_eq!(state.selected, 1);

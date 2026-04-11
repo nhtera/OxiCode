@@ -141,8 +141,7 @@ fn fuzzy_score(name: &str, query: &str) -> Option<i32> {
                         score += 15; // consecutive bonus
                     }
                 }
-                if name_idx == 0
-                    || (name_idx > 0 && matches!(name_chars[name_idx - 1], '-' | '_'))
+                if name_idx == 0 || (name_idx > 0 && matches!(name_chars[name_idx - 1], '-' | '_'))
                 {
                     score += 5; // word-start bonus
                 }
@@ -217,8 +216,8 @@ impl Widget for CommandAutocomplete<'_> {
             } else {
                 None
             };
-            let show_category = !cmd.category.is_empty()
-                && prev_category.map_or(true, |prev| prev != cmd.category);
+            let show_category =
+                !cmd.category.is_empty() && prev_category.map_or(true, |prev| prev != cmd.category);
 
             // Styling — selected vs normal.
             let (name_style, desc_style, bg) = if is_selected {

@@ -149,7 +149,9 @@ mod tests {
         let green_lines: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(crate::render::STATUS_GREEN) && s.content.starts_with('+'))
+            .filter(|s| {
+                s.style.fg == Some(crate::render::STATUS_GREEN) && s.content.starts_with('+')
+            })
             .collect();
 
         assert!(!red_lines.is_empty(), "Should have red (removal) lines");
@@ -166,7 +168,9 @@ mod tests {
         let green: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(crate::render::STATUS_GREEN) && s.content.contains("line2"))
+            .filter(|s| {
+                s.style.fg == Some(crate::render::STATUS_GREEN) && s.content.contains("line2")
+            })
             .collect();
         assert!(!green.is_empty(), "Added line should be green");
     }
@@ -178,7 +182,9 @@ mod tests {
         let red: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(crate::render::STATUS_RED) && s.content.contains("line2"))
+            .filter(|s| {
+                s.style.fg == Some(crate::render::STATUS_RED) && s.content.contains("line2")
+            })
             .collect();
         assert!(!red.is_empty(), "Removed line should be red");
     }

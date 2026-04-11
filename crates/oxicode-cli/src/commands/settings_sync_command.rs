@@ -115,9 +115,11 @@ fn pull_settings() -> CommandOutput {
 fn sync_status(_ctx: &CommandContext) -> CommandOutput {
     let settings_path = dirs::home_dir().map(|h| h.join(".oxicode").join("settings.toml"));
 
-    let file_status = settings_path
-        .as_ref()
-        .map_or("unknown", |p| if p.exists() { "found" } else { "not found" });
+    let file_status =
+        settings_path.as_ref().map_or(
+            "unknown",
+            |p| if p.exists() { "found" } else { "not found" },
+        );
 
     CommandOutput::Message(format!(
         "Settings sync status:\n\

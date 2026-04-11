@@ -112,10 +112,7 @@ impl Default for SearchOverlay {
 
 /// Scan rendered message cache lines for matches against the query.
 /// Returns a `Vec<usize>` of flattened line indices where matches occur.
-pub fn find_matches_in_cache(
-    cached_lines: &[Vec<Line<'_>>],
-    query: &str,
-) -> Vec<usize> {
+pub fn find_matches_in_cache(cached_lines: &[Vec<Line<'_>>], query: &str) -> Vec<usize> {
     if query.is_empty() {
         return Vec::new();
     }
@@ -272,14 +269,8 @@ mod tests {
     #[test]
     fn test_find_matches_in_cache() {
         let lines = vec![
-            vec![
-                Line::from("Hello world"),
-                Line::from("foo bar"),
-            ],
-            vec![
-                Line::from("world peace"),
-                Line::from("baz qux"),
-            ],
+            vec![Line::from("Hello world"), Line::from("foo bar")],
+            vec![Line::from("world peace"), Line::from("baz qux")],
         ];
         let positions = find_matches_in_cache(&lines, "world");
         assert_eq!(positions, vec![0, 2]); // line 0 and line 2

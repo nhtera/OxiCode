@@ -17,6 +17,9 @@ use super::tool_display;
 /// Maximum lines of tool result output shown inline.
 const MAX_RESULT_LINES: usize = 30;
 
+/// Maximum lines of streaming thinking text shown inline.
+const MAX_THINK_LINES: usize = 5;
+
 /// Per-message render cache — avoids re-parsing markdown for unchanged messages.
 ///
 /// Each entry stores the pre-rendered `Vec<Line<'static>>` for one message (header +
@@ -280,10 +283,7 @@ impl<'a> MessageView<'a> {
         for (i, entry) in self.cached_lines.iter().enumerate() {
             if i > 0 {
                 // Turn separator: thicker line between turns (User after non-User).
-                let is_turn_boundary = self
-                    .message_roles
-                    .get(i)
-                    .is_some_and(|r| *r == Role::User);
+                let is_turn_boundary = self.message_roles.get(i).is_some_and(|r| *r == Role::User);
                 if is_turn_boundary {
                     render_turn_separator(&mut lines);
                 } else {
@@ -304,7 +304,9 @@ impl<'a> MessageView<'a> {
                 } else if secs < 60.0 {
                     format!("{secs:.1}s")
                 } else {
+                    #[allow(clippy::cast_sign_loss)]
                     let mins = secs as u64 / 60;
+                    #[allow(clippy::cast_sign_loss)]
                     let rem = secs as u64 % 60;
                     format!("{mins}m{rem}s")
                 };
@@ -321,9 +323,7 @@ impl<'a> MessageView<'a> {
                 render_separator(&mut lines);
             }
             // Show assistant header if last message isn't already assistant.
-            if self
-                .last_message_role != Some(Role::Assistant)
-            {
+            if self.last_message_role != Some(Role::Assistant) {
                 lines.push(Line::from(Span::styled(
                     "\u{25c6} Assistant", // ◆ Assistant
                     Style::default()
@@ -358,19 +358,18 @@ impl<'a> MessageView<'a> {
                         .add_modifier(Modifier::ITALIC);
                     lines.push(Line::from(vec![
                         Span::styled(format!("  {spinner} "), Style::default().fg(color)),
-                        Span::styled(
-                            format!("Thinking... ({elapsed})"),
-                            dim_italic,
-                        ),
+                        Span::styled(format!("Thinking... ({elapsed})"), dim_italic),
                     ]));
                     // Show up to 5 lines of thinking text.
-                    const MAX_THINK_LINES: usize = 5;
                     let all_lines: Vec<&str> = thinking.lines().collect();
                     let total = all_lines.len();
                     let shown = all_lines.len().min(MAX_THINK_LINES);
                     for think_line in &all_lines[..shown] {
                         lines.push(Line::from(vec![
-                            Span::styled("  \u{2502} ", Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
+                            Span::styled(
+                                "  \u{2502} ",
+                                Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                            ),
                             Span::styled((*think_line).to_string(), dim_italic),
                         ]));
                     }
@@ -417,7 +416,10 @@ impl<'a> MessageView<'a> {
             let elapsed = tool_display::format_elapsed(started);
             lines.push(Line::from(vec![
                 Span::styled(format!("  {spinner} "), Style::default().fg(color)),
-                Span::styled(elapsed, Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
+                Span::styled(
+                    elapsed,
+                    Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                ),
             ]));
         } else {
             lines.push(Line::from(Span::styled(
@@ -552,16 +554,11 @@ fn apply_user_block_style(line: Line<'static>, width: u16) -> Line<'static> {
     // Orange left border character.
     spans.push(Span::styled(
         "\u{258f} ".to_string(), // ▏ (left 1/8 block)
-        Style::default()
-            .fg(crate::render::CLAUDE_ORANGE)
-            .bg(bg),
+        Style::default().fg(crate::render::CLAUDE_ORANGE).bg(bg),
     ));
     // Re-style existing spans with dark background.
     for span in line.spans {
-        spans.push(Span::styled(
-            span.content.to_string(),
-            span.style.bg(bg),
-        ));
+        spans.push(Span::styled(span.content.to_string(), span.style.bg(bg)));
     }
     // Fill remaining width with background to create a solid block.
     // Use inner width (accounting for Block borders) to avoid triggering
@@ -643,6 +640,7 @@ fn shorten_model_name(model: &str) -> String {
 /// Render content blocks into owned lines (for caching). All strings are owned.
 ///
 /// When `expanded_thinking` is true, thinking blocks show full text instead of collapsed.
+#[allow(clippy::too_many_lines)]
 fn render_content_blocks_static(
     blocks: &[ContentBlock],
     lines: &mut Vec<Line<'static>>,
@@ -674,7 +672,10 @@ fn render_content_blocks_static(
             ContentBlock::ToolUse { name, input, .. } => {
                 let summary = tool_input_summary(input);
                 lines.push(Line::from(vec![
-                    Span::styled("  \u{27f3} ", Style::default().fg(crate::render::STATUS_YELLOW)),
+                    Span::styled(
+                        "  \u{27f3} ",
+                        Style::default().fg(crate::render::STATUS_YELLOW),
+                    ),
                     Span::styled(
                         name.clone(),
                         Style::default()
@@ -698,12 +699,16 @@ fn render_content_blocks_static(
                     ("\u{2713}", crate::render::STATUS_GREEN) // ✓
                 };
                 // Show tool name if available, otherwise generic tag.
-                let tool_label = tool_names
-                    .get(tool_use_id.as_str())
-                    .map_or_else(
-                        || if *is_error { "error".to_string() } else { "result".to_string() },
-                        |name| (*name).to_string(),
-                    );
+                let tool_label = tool_names.get(tool_use_id.as_str()).map_or_else(
+                    || {
+                        if *is_error {
+                            "error".to_string()
+                        } else {
+                            "result".to_string()
+                        }
+                    },
+                    |name| (*name).to_string(),
+                );
                 lines.push(Line::from(vec![
                     Span::styled(format!("  {icon} "), Style::default().fg(color)),
                     Span::styled(
@@ -754,7 +759,10 @@ fn render_content_blocks_static(
                         .add_modifier(Modifier::ITALIC);
                     for think_line in thinking.lines() {
                         lines.push(Line::from(vec![
-                            Span::styled("  \u{2502} ".to_string(), Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
+                            Span::styled(
+                                "  \u{2502} ".to_string(),
+                                Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                            ),
                             Span::styled(think_line.to_string(), dim_italic),
                         ]));
                     }
@@ -775,15 +783,18 @@ fn render_content_blocks_static(
                     } else {
                         format!("\"{preview}\"")
                     };
-                    let mut spans = vec![
-                        Span::styled(
-                            "  \u{25b6} Thinking ".to_string(), // ▶
-                            Style::default()
-                                .fg(crate::render::TRANSCRIPT_MUTED)
-                                .add_modifier(Modifier::ITALIC),
-                        ),
-                    ];
-                    if !preview_display.is_empty() {
+                    let mut spans = vec![Span::styled(
+                        "  \u{25b6} Thinking ".to_string(), // ▶
+                        Style::default()
+                            .fg(crate::render::TRANSCRIPT_MUTED)
+                            .add_modifier(Modifier::ITALIC),
+                    )];
+                    if preview_display.is_empty() {
+                        spans.push(Span::styled(
+                            format!("({line_count} lines)"),
+                            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                        ));
+                    } else {
                         spans.push(Span::styled(
                             preview_display,
                             Style::default()
@@ -792,11 +803,6 @@ fn render_content_blocks_static(
                         ));
                         spans.push(Span::styled(
                             format!(" ({line_count} lines)"),
-                            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
-                        ));
-                    } else {
-                        spans.push(Span::styled(
-                            format!("({line_count} lines)"),
                             Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                         ));
                     }
@@ -970,11 +976,11 @@ mod tests {
         );
         let text = view.format_messages();
         // Compact separator: single empty line between messages.
-        let has_empty = text
-            .lines
-            .iter()
-            .any(|line| line.spans.is_empty());
-        assert!(has_empty, "Should have empty-line separator between messages");
+        let has_empty = text.lines.iter().any(|line| line.spans.is_empty());
+        assert!(
+            has_empty,
+            "Should have empty-line separator between messages"
+        );
     }
 
     #[test]

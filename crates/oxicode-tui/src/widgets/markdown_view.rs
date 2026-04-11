@@ -137,8 +137,10 @@ impl<'a> MarkdownView<'a> {
                         style_stack.push(base.fg(Color::Blue).add_modifier(Modifier::UNDERLINED));
                     }
                     Tag::Item => {
-                        current_spans
-                            .push(Span::styled("• ", Style::default().fg(crate::render::TRANSCRIPT_MUTED)));
+                        current_spans.push(Span::styled(
+                            "• ",
+                            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                        ));
                     }
                     _ => {}
                 },
@@ -173,8 +175,7 @@ impl<'a> MarkdownView<'a> {
                         }
                     } else {
                         let style = *style_stack.last().unwrap_or(&Style::default());
-                        current_spans
-                            .extend(spans_from_text_with_urls(&text, style));
+                        current_spans.extend(spans_from_text_with_urls(&text, style));
                     }
                 }
                 Event::Code(code) => {
@@ -238,6 +239,7 @@ fn flush_spans<'a>(spans: &mut Vec<Span<'a>>, lines: &mut Vec<Line<'a>>) {
 ///
 /// Used by `MarkdownStreamCollector` so rendered lines can outlive the source
 /// string. This is a free function (no `MarkdownView` instance needed).
+#[allow(clippy::too_many_lines)]
 pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
     let parser = Parser::new_ext(source, Options::ENABLE_TABLES);
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -292,10 +294,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                     table_headers.clear();
                     table_rows.clear();
                 }
-                Tag::TableHead => {
-                    current_row.clear();
-                }
-                Tag::TableRow => {
+                Tag::TableHead | Tag::TableRow => {
                     current_row.clear();
                 }
                 Tag::TableCell => {
@@ -336,12 +335,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                 }
                 TagEnd::Table => {
                     in_table = false;
-                    render_table_boxed(
-                        &table_headers,
-                        &table_rows,
-                        &table_alignments,
-                        &mut lines,
-                    );
+                    render_table_boxed(&table_headers, &table_rows, &table_alignments, &mut lines);
                     lines.push(Line::from(""));
                 }
                 _ => {}
@@ -398,17 +392,21 @@ fn flush_owned_spans(spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'stati
 ///   │ fn main() {}                │
 ///   └─────────────────────────────┘
 /// ```
-fn render_code_block_boxed(
-    code_lines: &[String],
-    lang: &str,
-    output: &mut Vec<Line<'static>>,
-) {
+fn render_code_block_boxed(code_lines: &[String], lang: &str, output: &mut Vec<Line<'static>>) {
     let border_style = Style::default().fg(crate::render::CHROME_MUTED);
-    let label_style = Style::default().fg(crate::render::TRANSCRIPT_TEXT).add_modifier(Modifier::BOLD);
-    let code_bg = Style::default().fg(crate::render::TRANSCRIPT_TEXT).bg(Color::Rgb(40, 40, 40));
+    let label_style = Style::default()
+        .fg(crate::render::TRANSCRIPT_TEXT)
+        .add_modifier(Modifier::BOLD);
+    let code_bg = Style::default()
+        .fg(crate::render::TRANSCRIPT_TEXT)
+        .bg(Color::Rgb(40, 40, 40));
 
     // Top border: ┌─ lang ──...──┐
-    let label = if lang.is_empty() { String::new() } else { format!(" {lang} ") };
+    let label = if lang.is_empty() {
+        String::new()
+    } else {
+        format!(" {lang} ")
+    };
     let used = 4 + label.len(); // "  ┌─" + label
     let fill = CODE_BLOCK_WIDTH.saturating_sub(used);
     output.push(Line::from(vec![
@@ -479,17 +477,26 @@ fn render_table_boxed(
     let content_budget = TABLE_MAX_WIDTH.saturating_sub(overhead);
     let total_content: usize = col_widths.iter().sum();
     if total_content > content_budget && content_budget > 0 {
+        #[allow(clippy::cast_precision_loss)]
         let ratio = content_budget as f64 / total_content as f64;
         for w in &mut col_widths {
-            *w = ((*w as f64 * ratio).floor() as usize).max(3);
+            #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
+            let new_w = ((*w as f64 * ratio).floor() as usize).max(3);
+            *w = new_w;
         }
     }
 
     // Helper: format a cell with alignment + padding.
     let fmt_cell = |text: &str, width: usize, align_idx: usize| -> String {
-        let align = alignments.get(align_idx).copied().unwrap_or(Alignment::None);
+        let align = alignments
+            .get(align_idx)
+            .copied()
+            .unwrap_or(Alignment::None);
         let truncated: String = if text.len() > width {
-            text.chars().take(width.saturating_sub(1)).collect::<String>() + "…"
+            text.chars()
+                .take(width.saturating_sub(1))
+                .collect::<String>()
+                + "…"
         } else {
             text.to_string()
         };
@@ -764,7 +771,10 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .filter(|s| s.style.fg == Some(crate::render::STATUS_YELLOW))
             .collect();
-        assert!(!code_spans.is_empty(), "Inline code should be STATUS_YELLOW");
+        assert!(
+            !code_spans.is_empty(),
+            "Inline code should be STATUS_YELLOW"
+        );
     }
 
     #[test]
@@ -817,7 +827,10 @@ mod tests {
         let ranges = detect_urls("Visit https://example.com for more.");
         assert_eq!(ranges.len(), 1);
         let (s, e) = ranges[0];
-        assert_eq!(&"Visit https://example.com for more."[s..e], "https://example.com");
+        assert_eq!(
+            &"Visit https://example.com for more."[s..e],
+            "https://example.com"
+        );
     }
 
     #[test]
@@ -862,7 +875,10 @@ mod tests {
                     && s.style.add_modifier.contains(Modifier::UNDERLINED)
             })
             .collect();
-        assert!(!url_spans.is_empty(), "URL should be STATUS_CYAN + Underlined");
+        assert!(
+            !url_spans.is_empty(),
+            "URL should be STATUS_CYAN + Underlined"
+        );
         let url_text: String = url_spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(url_text.contains("https://example.com"));
     }
@@ -878,7 +894,10 @@ mod tests {
                     && s.style.add_modifier.contains(Modifier::UNDERLINED)
             })
             .collect();
-        assert!(!url_spans.is_empty(), "URL should be STATUS_CYAN + Underlined");
+        assert!(
+            !url_spans.is_empty(),
+            "URL should be STATUS_CYAN + Underlined"
+        );
     }
 
     // --- Horizontal rules ---
@@ -891,9 +910,15 @@ mod tests {
         let rule_spans: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.content.contains('\u{2500}') && s.style.fg == Some(crate::render::TRANSCRIPT_MUTED))
+            .filter(|s| {
+                s.content.contains('\u{2500}')
+                    && s.style.fg == Some(crate::render::TRANSCRIPT_MUTED)
+            })
             .collect();
-        assert!(!rule_spans.is_empty(), "Horizontal rule should render as ─ chars");
+        assert!(
+            !rule_spans.is_empty(),
+            "Horizontal rule should render as ─ chars"
+        );
     }
 
     #[test]
@@ -905,7 +930,10 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .filter(|s| s.content.contains('\u{2500}'))
             .collect();
-        assert!(!rule_spans.is_empty(), "Incremental --- should render as horizontal rule");
+        assert!(
+            !rule_spans.is_empty(),
+            "Incremental --- should render as horizontal rule"
+        );
     }
 
     #[test]
@@ -917,7 +945,10 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .filter(|s| s.content.contains('\u{2500}'))
             .collect();
-        assert!(!rule_spans.is_empty(), "Incremental ___ should render as horizontal rule");
+        assert!(
+            !rule_spans.is_empty(),
+            "Incremental ___ should render as horizontal rule"
+        );
     }
 
     // --- Code block language labels ---
@@ -929,7 +960,10 @@ mod tests {
         let lines = v.to_lines();
         let raw = text_of(&lines);
         // The top-border line should contain the language name.
-        assert!(raw.contains("rust"), "Code block border should show language label");
+        assert!(
+            raw.contains("rust"),
+            "Code block border should show language label"
+        );
     }
 
     #[test]

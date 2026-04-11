@@ -335,7 +335,12 @@ impl Widget for HelpOverlay<'_> {
         let layout = begin_modal(buf, area, dialog_w, dialog_h, 3, 1);
 
         // ── Header ───────────────────────────────────────────────────────────
-        render_modal_title(buf, layout.header_area, "Help — Shortcuts & Commands", "esc");
+        render_modal_title(
+            buf,
+            layout.header_area,
+            "Help — Shortcuts & Commands",
+            "esc",
+        );
 
         if layout.header_area.height >= 2 {
             let sep_area = Rect {
@@ -367,7 +372,12 @@ impl Widget for HelpOverlay<'_> {
                     Span::styled("\u{2588}", Style::default().fg(Color::White)),
                 ])
             };
-            buf.set_line(search_area.x, search_area.y, &search_line, search_area.width);
+            buf.set_line(
+                search_area.x,
+                search_area.y,
+                &search_line,
+                search_area.width,
+            );
         }
 
         // ── Body: two-column layout ──────────────────────────────────────────
@@ -481,10 +491,18 @@ mod tests {
 
     #[test]
     fn help_overlay_renders_without_panic() {
-        let state = HelpOverlayState { visible: true, filter: String::new(), scroll_offset: 0 };
+        let state = HelpOverlayState {
+            visible: true,
+            filter: String::new(),
+            scroll_offset: 0,
+        };
         let shortcuts = default_shortcut_entries();
         let commands = vec![
-            ("clear".into(), "Clear conversation".into(), "Session".into()),
+            (
+                "clear".into(),
+                "Clear conversation".into(),
+                "Session".into(),
+            ),
             ("help".into(), "Show help".into(), "Session".into()),
             ("model".into(), "Switch model".into(), "Model".into()),
         ];
@@ -496,7 +514,11 @@ mod tests {
 
     #[test]
     fn help_overlay_skips_small_terminal() {
-        let state = HelpOverlayState { visible: true, filter: String::new(), scroll_offset: 0 };
+        let state = HelpOverlayState {
+            visible: true,
+            filter: String::new(),
+            scroll_offset: 0,
+        };
         let shortcuts = default_shortcut_entries();
         let commands = vec![];
         let area = Rect::new(0, 0, 20, 5); // too small

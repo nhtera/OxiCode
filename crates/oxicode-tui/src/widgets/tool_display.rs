@@ -60,7 +60,10 @@ pub fn running_tool_line(name: &str, input_summary: &str, started_at: Instant) -
     let frame = spinner_frame(started_at);
     let elapsed = format_elapsed(started_at);
     Line::from(vec![
-        Span::styled(format!("  {frame} "), Style::default().fg(crate::render::STATUS_CYAN)),
+        Span::styled(
+            format!("  {frame} "),
+            Style::default().fg(crate::render::STATUS_CYAN),
+        ),
         Span::styled(
             name.to_string(),
             Style::default()
@@ -122,7 +125,15 @@ pub fn completed_tool_lines(
     started_at: Option<Instant>,
     max_result_lines: usize,
 ) -> Vec<Line<'static>> {
-    completed_tool_lines_with_input(name, input_summary, content, is_error, started_at, max_result_lines, None)
+    completed_tool_lines_with_input(
+        name,
+        input_summary,
+        content,
+        is_error,
+        started_at,
+        max_result_lines,
+        None,
+    )
 }
 
 /// Build styled lines for a completed tool call with raw input JSON for
@@ -136,14 +147,42 @@ pub fn completed_tool_lines_with_input(
     max_result_lines: usize,
     raw_input: Option<&Value>,
 ) -> Vec<Line<'static>> {
-    let max = if max_result_lines == 0 { DEFAULT_MAX_LINES } else { max_result_lines };
+    let max = if max_result_lines == 0 {
+        DEFAULT_MAX_LINES
+    } else {
+        max_result_lines
+    };
     match name {
-        "Bash" | "bash" => render_bash(input_summary, content, is_error, started_at, max, raw_input),
-        "Read" | "file_read" => render_file_read(input_summary, content, is_error, started_at, max, raw_input),
-        "Write" | "file_write" => render_file_write(input_summary, content, is_error, started_at, raw_input),
-        "Edit" | "file_edit" => render_edit(input_summary, content, is_error, started_at, raw_input),
-        "Grep" | "grep" => render_search("Grep", input_summary, content, is_error, started_at, max, raw_input),
-        "Glob" | "glob" => render_search("Glob", input_summary, content, is_error, started_at, max, raw_input),
+        "Bash" | "bash" => {
+            render_bash(input_summary, content, is_error, started_at, max, raw_input)
+        }
+        "Read" | "file_read" => {
+            render_file_read(input_summary, content, is_error, started_at, max, raw_input)
+        }
+        "Write" | "file_write" => {
+            render_file_write(input_summary, content, is_error, started_at, raw_input)
+        }
+        "Edit" | "file_edit" => {
+            render_edit(input_summary, content, is_error, started_at, raw_input)
+        }
+        "Grep" | "grep" => render_search(
+            "Grep",
+            input_summary,
+            content,
+            is_error,
+            started_at,
+            max,
+            raw_input,
+        ),
+        "Glob" | "glob" => render_search(
+            "Glob",
+            input_summary,
+            content,
+            is_error,
+            started_at,
+            max,
+            raw_input,
+        ),
         _ => render_generic(name, input_summary, content, is_error, started_at, max),
     }
 }
@@ -151,29 +190,35 @@ pub fn completed_tool_lines_with_input(
 // ─── Header helper ──────────────────────────────────────────────────────────
 
 /// Build the standard tool header line with icon, name, summary, and elapsed.
-fn tool_header(icon: &str, color: Color, name: &str, summary: &str, started_at: Option<Instant>) -> Line<'static> {
+fn tool_header(
+    icon: &str,
+    color: Color,
+    name: &str,
+    summary: &str,
+    started_at: Option<Instant>,
+) -> Line<'static> {
     let elapsed_str = started_at.map_or(String::new(), |t| format!(" ({})", format_elapsed(t)));
     Line::from(vec![
         Span::styled(format!("  {icon} "), Style::default().fg(color)),
         Span::styled(
             name.to_string(),
-            Style::default().fg(crate::render::TRANSCRIPT_TEXT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(crate::render::TRANSCRIPT_TEXT)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" \u{2014} {summary}"),
             Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
-        Span::styled(elapsed_str, Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
+        Span::styled(
+            elapsed_str,
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+        ),
     ])
 }
 
 /// Append truncated output lines with `│` prefix.
-fn append_output_lines(
-    lines: &mut Vec<Line<'static>>,
-    content: &str,
-    max: usize,
-    style: Style,
-) {
+fn append_output_lines(lines: &mut Vec<Line<'static>>, content: &str, max: usize, style: Style) {
     let pipe_style = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
     let total = content.lines().count();
     for (i, line) in content.lines().enumerate() {
@@ -304,7 +349,12 @@ fn render_file_write(
     lines.push(tool_header(icon, color, "Write", &summary, started_at));
 
     if is_error && !content.is_empty() {
-        append_output_lines(&mut lines, content, 3, Style::default().fg(crate::render::STATUS_RED));
+        append_output_lines(
+            &mut lines,
+            content,
+            3,
+            Style::default().fg(crate::render::STATUS_RED),
+        );
     }
     lines
 }
@@ -346,7 +396,10 @@ fn render_edit(
             }
             if old_str.lines().count() > 3 {
                 lines.push(Line::from(Span::styled(
-                    format!("  \u{2502} ... ({} more removed)", old_str.lines().count() - 3),
+                    format!(
+                        "  \u{2502} ... ({} more removed)",
+                        old_str.lines().count() - 3
+                    ),
                     pipe_style,
                 )));
             }
@@ -358,7 +411,10 @@ fn render_edit(
             }
             if new_str.lines().count() > 3 {
                 lines.push(Line::from(Span::styled(
-                    format!("  \u{2502} ... ({} more added)", new_str.lines().count() - 3),
+                    format!(
+                        "  \u{2502} ... ({} more added)",
+                        new_str.lines().count() - 3
+                    ),
                     pipe_style,
                 )));
             }
@@ -366,7 +422,12 @@ fn render_edit(
     }
 
     if is_error && !content.is_empty() {
-        append_output_lines(&mut lines, content, 3, Style::default().fg(crate::render::STATUS_RED));
+        append_output_lines(
+            &mut lines,
+            content,
+            3,
+            Style::default().fg(crate::render::STATUS_RED),
+        );
     }
     lines
 }
@@ -413,7 +474,12 @@ fn render_search(
             Style::default().fg(crate::render::TRANSCRIPT_SECONDARY),
         );
     } else if is_error {
-        append_output_lines(&mut lines, content, max, Style::default().fg(crate::render::STATUS_RED));
+        append_output_lines(
+            &mut lines,
+            content,
+            max,
+            Style::default().fg(crate::render::STATUS_RED),
+        );
     }
     lines
 }
@@ -511,17 +577,29 @@ mod tests {
             .join("\n");
         let lines = completed_tool_lines("bash", "cmd", &long_output, false, None, 3);
         let raw = lines_to_string(&lines);
-        assert!(raw.contains("more lines"), "Should show truncation indicator");
+        assert!(
+            raw.contains("more lines"),
+            "Should show truncation indicator"
+        );
     }
 
     #[test]
     fn bash_shows_dollar_command() {
         let input = serde_json::json!({"command": "echo hello world"});
         let lines = completed_tool_lines_with_input(
-            "Bash", "echo hello world", "hello world", false, None, 10, Some(&input),
+            "Bash",
+            "echo hello world",
+            "hello world",
+            false,
+            None,
+            10,
+            Some(&input),
         );
         let raw = lines_to_string(&lines);
-        assert!(raw.contains("$ echo hello world"), "Bash should show $ command");
+        assert!(
+            raw.contains("$ echo hello world"),
+            "Bash should show $ command"
+        );
         assert!(raw.contains("Bash"), "Should show Bash label");
     }
 
@@ -530,7 +608,13 @@ mod tests {
         let input = serde_json::json!({"file_path": "/src/main.rs"});
         let content = "fn main() {\n    println!(\"hello\");\n}";
         let lines = completed_tool_lines_with_input(
-            "Read", "/src/main.rs", content, false, None, 10, Some(&input),
+            "Read",
+            "/src/main.rs",
+            content,
+            false,
+            None,
+            10,
+            Some(&input),
         );
         let raw = lines_to_string(&lines);
         assert!(raw.contains("/src/main.rs"), "Should show file path");
@@ -541,7 +625,13 @@ mod tests {
     fn file_write_shows_created() {
         let input = serde_json::json!({"file_path": "/tmp/new.txt", "content": "hello"});
         let lines = completed_tool_lines_with_input(
-            "Write", "/tmp/new.txt", "", false, None, 10, Some(&input),
+            "Write",
+            "/tmp/new.txt",
+            "",
+            false,
+            None,
+            10,
+            Some(&input),
         );
         let raw = lines_to_string(&lines);
         assert!(raw.contains("Created"), "Write should show Created");
@@ -556,7 +646,13 @@ mod tests {
             "new_string": "new line 1\nnew line 2\nnew line 3",
         });
         let lines = completed_tool_lines_with_input(
-            "Edit", "/src/lib.rs", "ok", false, None, 10, Some(&input),
+            "Edit",
+            "/src/lib.rs",
+            "ok",
+            false,
+            None,
+            10,
+            Some(&input),
         );
         let raw = lines_to_string(&lines);
         assert!(raw.contains("-old line"), "Should show removed lines");
@@ -569,7 +665,13 @@ mod tests {
         let input = serde_json::json!({"pattern": "fn main", "path": "src/"});
         let content = "src/main.rs\nsrc/lib.rs\nsrc/app.rs";
         let lines = completed_tool_lines_with_input(
-            "Grep", "fn main in src/", content, false, None, 10, Some(&input),
+            "Grep",
+            "fn main in src/",
+            content,
+            false,
+            None,
+            10,
+            Some(&input),
         );
         let raw = lines_to_string(&lines);
         assert!(raw.contains("\"fn main\""), "Should show pattern");
@@ -580,9 +682,8 @@ mod tests {
     fn glob_shows_file_count() {
         let input = serde_json::json!({"pattern": "*.rs"});
         let content = "src/main.rs\nsrc/lib.rs";
-        let lines = completed_tool_lines_with_input(
-            "Glob", "*.rs", content, false, None, 10, Some(&input),
-        );
+        let lines =
+            completed_tool_lines_with_input("Glob", "*.rs", content, false, None, 10, Some(&input));
         let raw = lines_to_string(&lines);
         assert!(raw.contains("2 files"), "Should show file count");
     }
@@ -590,7 +691,13 @@ mod tests {
     #[test]
     fn generic_fallback_for_unknown_tool() {
         let lines = completed_tool_lines_with_input(
-            "CustomTool", "some input", "output", false, None, 10, None,
+            "CustomTool",
+            "some input",
+            "output",
+            false,
+            None,
+            10,
+            None,
         );
         let raw = lines_to_string(&lines);
         assert!(raw.contains("CustomTool"), "Should show tool name");
