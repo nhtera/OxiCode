@@ -165,6 +165,8 @@ pub struct MessageView<'a> {
     streaming_thinking: Option<&'a str>,
     /// Duration of the last completed turn (for metadata footer).
     last_turn_duration: Option<std::time::Duration>,
+    /// Message roles for turn boundary detection.
+    message_roles: Vec<Role>,
 }
 
 impl<'a> MessageView<'a> {
@@ -194,6 +196,7 @@ impl<'a> MessageView<'a> {
             stall_start: None,
             streaming_thinking: None,
             last_turn_duration: None,
+            message_roles: Vec::new(),
         }
     }
 
@@ -251,6 +254,12 @@ impl<'a> MessageView<'a> {
         self
     }
 
+    /// Set message roles for turn boundary detection (turn separators).
+    pub fn with_message_roles(mut self, roles: Vec<Role>) -> Self {
+        self.message_roles = roles;
+        self
+    }
+
     fn format_messages(&self) -> Text<'a> {
         let mut lines: Vec<Line<'a>> = Vec::new();
 
@@ -270,7 +279,16 @@ impl<'a> MessageView<'a> {
         // total line count is accurate for max_scroll_offset computation.
         for (i, entry) in self.cached_lines.iter().enumerate() {
             if i > 0 {
-                render_separator(&mut lines);
+                // Turn separator: thicker line between turns (User after non-User).
+                let is_turn_boundary = self
+                    .message_roles
+                    .get(i)
+                    .is_some_and(|r| *r == Role::User);
+                if is_turn_boundary {
+                    render_turn_separator(&mut lines);
+                } else {
+                    render_separator(&mut lines);
+                }
             }
             for line in entry {
                 lines.push(line.clone());
@@ -512,6 +530,16 @@ impl<'a> MessageView<'a> {
 
 /// Render a compact separator between messages — single empty line.
 fn render_separator(lines: &mut Vec<Line<'_>>) {
+    lines.push(Line::from(""));
+}
+
+/// Visual separator between conversation turns (dimmed horizontal line).
+fn render_turn_separator(lines: &mut Vec<Line<'_>>) {
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "─".repeat(60),
+        Style::default().fg(Color::DarkGray),
+    )));
     lines.push(Line::from(""));
 }
 

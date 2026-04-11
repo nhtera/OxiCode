@@ -388,6 +388,7 @@ impl App {
             auth_label,
             message_count,
             last_role,
+            message_roles,
             agent_infos,
             task_infos,
             context_window_max,
@@ -400,6 +401,8 @@ impl App {
             self.message_cache.update(&state.messages, term_width);
             let msg_count = state.messages.len();
             let last_role = state.messages.last().map(|m| m.role);
+            let msg_roles: Vec<oxicode_common::Role> =
+                state.messages.iter().map(|m| m.role).collect();
             let agents: Vec<AgentInfo> = state
                 .active_agents
                 .iter()
@@ -429,6 +432,7 @@ impl App {
                 state.auth_label.clone(),
                 msg_count,
                 last_role,
+                msg_roles,
                 agents,
                 tasks,
                 state.context_window_max,
@@ -562,7 +566,8 @@ impl App {
             .with_model_name(&current_model)
             .with_cwd(&cwd)
             .with_streaming_thinking(&self.streaming_thinking)
-            .with_last_turn_duration(self.last_turn_duration);
+            .with_last_turn_duration(self.last_turn_duration)
+            .with_message_roles(message_roles);
             frame.render_widget(message_view, left_area);
 
             // Read back the actual max scroll offset computed during rendering.
