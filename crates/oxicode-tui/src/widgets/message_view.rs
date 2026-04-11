@@ -1,4 +1,6 @@
 use std::cell::Cell;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use oxicode_common::{ContentBlock, Message, Role};
@@ -33,6 +35,8 @@ pub struct MessageRenderCache {
     cached_width: u16,
     /// Set of message indices with expanded thinking blocks.
     expanded_thinking: std::collections::HashSet<usize>,
+    /// Running image counter across all messages (for session-global numbering).
+    image_counter: usize,
 }
 
 impl Default for MessageRenderCache {
@@ -47,6 +51,7 @@ impl MessageRenderCache {
             entries: Vec::new(),
             cached_width: 0,
             expanded_thinking: std::collections::HashSet::new(),
+            image_counter: 0,
         }
     }
 
@@ -70,6 +75,7 @@ impl MessageRenderCache {
         }
         // Invalidate cache for this message — clear and rebuild.
         self.entries.clear();
+        self.image_counter = 0;
         true
     }
 
@@ -80,6 +86,7 @@ impl MessageRenderCache {
         if terminal_width != self.cached_width || messages.len() < self.entries.len() {
             self.entries.clear();
             self.cached_width = terminal_width;
+            self.image_counter = 0;
         }
 
         // Render only new messages (append to cache).
@@ -89,7 +96,12 @@ impl MessageRenderCache {
             let mut lines = Vec::new();
             render_message_header_static(msg, &mut lines);
             let expanded = self.expanded_thinking.contains(&msg_index);
-            render_content_blocks_static(&msg.content, &mut lines, expanded);
+            render_content_blocks_static(
+                &msg.content,
+                &mut lines,
+                expanded,
+                &mut self.image_counter,
+            );
             // Apply user block style: orange left border + dark background.
             if msg.role == Role::User {
                 lines = lines
@@ -114,6 +126,11 @@ impl MessageRenderCache {
     /// The terminal width this cache was built for (for external scroll estimation).
     pub fn cached_width(&self) -> u16 {
         self.cached_width
+    }
+
+    /// Current global image counter (for numbering new images).
+    pub fn image_counter(&self) -> usize {
+        self.image_counter
     }
 }
 
@@ -170,6 +187,8 @@ pub struct MessageView<'a> {
     last_turn_duration: Option<std::time::Duration>,
     /// Message roles for turn boundary detection.
     message_roles: Vec<Role>,
+    /// Image file paths keyed by global image number (1-based) for OSC 8 hyperlinks.
+    image_paths: Option<&'a HashMap<usize, PathBuf>>,
 }
 
 impl<'a> MessageView<'a> {
@@ -200,6 +219,7 @@ impl<'a> MessageView<'a> {
             streaming_thinking: None,
             last_turn_duration: None,
             message_roles: Vec::new(),
+            image_paths: None,
         }
     }
 
@@ -260,6 +280,12 @@ impl<'a> MessageView<'a> {
     /// Set message roles for turn boundary detection (turn separators).
     pub fn with_message_roles(mut self, roles: Vec<Role>) -> Self {
         self.message_roles = roles;
+        self
+    }
+
+    /// Set image file paths for OSC 8 terminal hyperlinks on `[Image #N]` tags.
+    pub fn with_image_paths(mut self, paths: &'a HashMap<usize, PathBuf>) -> Self {
+        self.image_paths = Some(paths);
         self
     }
 
@@ -645,6 +671,7 @@ fn render_content_blocks_static(
     blocks: &[ContentBlock],
     lines: &mut Vec<Line<'static>>,
     expanded_thinking: bool,
+    image_counter: &mut usize,
 ) {
     // Build tool_name map: tool_use_id → tool_name (for result display).
     let tool_names: std::collections::HashMap<&str, &str> = blocks
@@ -658,7 +685,6 @@ fn render_content_blocks_static(
         })
         .collect();
 
-    let mut image_counter: usize = 0;
     let mut pending_image_spans: Vec<Span<'static>> = Vec::new();
 
     for block in blocks {
@@ -677,10 +703,10 @@ fn render_content_blocks_static(
                 }
             }
             ContentBlock::Image { .. } => {
-                image_counter += 1;
+                *image_counter += 1;
                 // Buffer image spans — they'll be prepended to the next text block's first line.
                 pending_image_spans.push(Span::styled(
-                    format!("[Image #{image_counter}]"),
+                    format!("[Image #{}]", *image_counter),
                     Style::default()
                         .fg(Color::Magenta)
                         .add_modifier(Modifier::BOLD),
@@ -894,6 +920,15 @@ impl Widget for MessageView<'_> {
         let paragraph = paragraph.scroll((scroll_y, 0));
         paragraph.render(area, buf);
 
+        // Overlay OSC 8 terminal hyperlinks on [Image #N] tags in the buffer.
+        // Uses the ratatui hyperlink example approach: overwrite buffer cells
+        // with OSC 8-wrapped 2-char chunks so terminals handle hover + Cmd+Click.
+        if let Some(paths) = self.image_paths {
+            if !paths.is_empty() {
+                overlay_image_hyperlinks(area, buf, paths);
+            }
+        }
+
         // Scrollbar on right edge (only when content exceeds viewport).
         if wrapped_line_count > self.viewport_height as usize {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -936,6 +971,82 @@ fn max_content_scroll(area: Rect, line_count: usize) -> u16 {
     let viewport_height = area.height.saturating_sub(2); // account for Block borders
     let content_height = u16::try_from(line_count).unwrap_or(u16::MAX);
     content_height.saturating_sub(viewport_height)
+}
+
+/// Overlay OSC 8 terminal hyperlinks on `[Image #N]` tags in the rendered buffer.
+///
+/// Scans buffer cells row-by-row for the pattern `[Image #N]`. When found, and the
+/// image number has a stored file path, overwrites each cell with an OSC 8 hyperlink
+/// wrapping that single character. This follows the ratatui hyperlink example approach:
+/// <https://github.com/ratatui/ratatui/blob/main/examples/apps/hyperlink/src/main.rs>
+///
+/// The terminal renders the same visible text but treats it as a clickable link with
+/// native hover underline and Cmd+Click/Ctrl+Click support.
+fn overlay_image_hyperlinks(area: Rect, buf: &mut Buffer, image_paths: &HashMap<usize, PathBuf>) {
+    let inner_x = area.x + 1;
+    let inner_y = area.y + 1;
+    let inner_right = area.right().saturating_sub(1);
+    let inner_bottom = area.bottom().saturating_sub(1);
+
+    for row in inner_y..inner_bottom {
+        // Collect cell symbols for this row into (col, symbol) pairs.
+        // Each cell has exactly one symbol (single char for ASCII).
+        let cells: Vec<(u16, String)> = (inner_x..inner_right)
+            .map(|col| (col, buf[(col, row)].symbol().to_string()))
+            .collect();
+
+        // Build the row text from cell symbols to find [Image #N] patterns.
+        let row_text: String = cells.iter().map(|(_, s)| s.as_str()).collect();
+
+        // Find all [Image #N] occurrences using character-level scanning.
+        let chars: Vec<char> = row_text.chars().collect();
+        let mut i = 0;
+        while i + 9 < chars.len() {
+            // Look for '[Image #'
+            if chars[i] == '['
+                && chars.get(i + 1) == Some(&'I')
+                && chars.get(i + 2) == Some(&'m')
+                && chars.get(i + 3) == Some(&'a')
+                && chars.get(i + 4) == Some(&'g')
+                && chars.get(i + 5) == Some(&'e')
+                && chars.get(i + 6) == Some(&' ')
+                && chars.get(i + 7) == Some(&'#')
+            {
+                // Extract the number and find closing ']'.
+                let num_start = i + 8;
+                let mut num_end = num_start;
+                while num_end < chars.len() && chars[num_end].is_ascii_digit() {
+                    num_end += 1;
+                }
+                if num_end > num_start && num_end < chars.len() && chars[num_end] == ']' {
+                    let num_str: String = chars[num_start..num_end].iter().collect();
+                    if let Ok(n) = num_str.parse::<usize>() {
+                        if let Some(path) = image_paths.get(&n) {
+                            let file_url = format!("file://{}", path.display());
+                            let tag_len = num_end - i + 1; // includes ']'
+                                                           // Overwrite each cell with OSC 8 hyperlink wrapping
+                                                           // 2 characters at a time (ratatui example technique).
+                            let tag_chars: Vec<char> = chars[i..i + tag_len].to_vec();
+                            for (ci, chunk) in tag_chars.chunks(2).enumerate() {
+                                let chunk_text: String = chunk.iter().collect();
+                                let hyperlink =
+                                    format!("\x1B]8;;{file_url}\x07{chunk_text}\x1B]8;;\x07");
+                                // Map char index back to cell column.
+                                let cell_idx = i + ci * 2;
+                                if cell_idx < cells.len() {
+                                    let col = cells[cell_idx].0;
+                                    buf[(col, row)].set_symbol(&hyperlink);
+                                }
+                            }
+                        }
+                    }
+                    i = num_end + 1;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+    }
 }
 
 #[cfg(test)]

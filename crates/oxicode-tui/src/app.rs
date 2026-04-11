@@ -47,9 +47,7 @@ struct ActiveToolCall {
 
 /// Result from `find_image_tag_at()` — identifies an `[Image #N]` span hit.
 struct ImageTagHit {
-    /// Message index in state.messages.
-    msg_index: usize,
-    /// Image number (1-based, from `[Image #N]`).
+    /// Global image number (1-based, from `[Image #N]`).
     image_number: usize,
 }
 
@@ -124,9 +122,9 @@ pub struct App {
     pending_paste: Option<String>,
     /// Pasted images waiting to be sent with the next message.
     pending_images: Vec<crate::image_paste::PastedImage>,
-    /// Image file paths per message index (for click-to-open after sending).
-    /// Key = message index in state.messages, Value = image paths in order.
-    sent_image_paths: std::collections::HashMap<usize, Vec<std::path::PathBuf>>,
+    /// Image file paths keyed by global image number (1-based, session-wide).
+    /// Used for click-to-open and OSC 8 hyperlinks.
+    sent_image_paths: std::collections::HashMap<usize, std::path::PathBuf>,
     /// Context-aware follow-up suggestions shown as chips.
     suggestions: Vec<PromptSuggestion>,
     /// Timestamp when the current turn started (for thinking indicator).
@@ -591,7 +589,8 @@ impl App {
             .with_cwd(&cwd)
             .with_streaming_thinking(&self.streaming_thinking)
             .with_last_turn_duration(self.last_turn_duration)
-            .with_message_roles(message_roles);
+            .with_message_roles(message_roles)
+            .with_image_paths(&self.sent_image_paths);
             frame.render_widget(message_view, left_area);
 
             // Read back the actual max scroll offset computed during rendering.
@@ -856,7 +855,9 @@ impl App {
             // Ctrl+V: try image paste first, then let crossterm bracketed paste handle text.
             (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
                 if let Some(img) = crate::image_paste::read_clipboard_image() {
-                    let image_num = self.pending_images.len() + 1;
+                    // Use global image counter for session-wide numbering.
+                    let image_num =
+                        self.message_cache.image_counter() + self.pending_images.len() + 1;
                     let msg = match img.dimensions {
                         Some((w, h)) => {
                             format!("[Image #{image_num}] attached ({w}x{h})")
@@ -1361,11 +1362,9 @@ impl App {
     /// Returns `true` if an image was opened (click consumed).
     fn handle_image_click(&self, col: u16, row: u16) -> bool {
         if let Some(hit) = self.find_image_tag_at(col, row) {
-            if let Some(paths) = self.sent_image_paths.get(&hit.msg_index) {
-                if let Some(path) = paths.get(hit.image_number.wrapping_sub(1)) {
-                    crate::image_paste::open_file_in_viewer(path);
-                    return true;
-                }
+            if let Some(path) = self.sent_image_paths.get(&hit.image_number) {
+                crate::image_paste::open_file_in_viewer(path);
+                return true;
             }
         }
         false
@@ -1440,10 +1439,7 @@ impl App {
             {
                 let num_str = &content[8..content.len() - 1];
                 if let Ok(n) = num_str.parse::<usize>() {
-                    return Some(ImageTagHit {
-                        msg_index: msg_idx,
-                        image_number: n,
-                    });
+                    return Some(ImageTagHit { image_number: n });
                 }
             }
             span_offset += span_width;
@@ -1804,16 +1800,12 @@ impl App {
                 // Strip [Image #N] placeholders from text before sending.
                 let clean_text = strip_image_tags(&text);
                 // Retain image paths for click-to-open in message view.
+                // Use global image counter from cache so numbering is session-wide.
                 if !self.pending_images.is_empty() {
-                    let state = self.state_rx.borrow();
-                    let msg_index = state.messages.len();
-                    drop(state);
-                    let paths: Vec<std::path::PathBuf> = self
-                        .pending_images
-                        .iter()
-                        .map(|img| img.path.clone())
-                        .collect();
-                    self.sent_image_paths.insert(msg_index, paths);
+                    let base = self.message_cache.image_counter();
+                    for (i, img) in self.pending_images.iter().enumerate() {
+                        self.sent_image_paths.insert(base + 1 + i, img.path.clone());
+                    }
                 }
                 let images = std::mem::take(&mut self.pending_images);
                 let _ = self
