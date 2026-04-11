@@ -67,6 +67,25 @@ pub fn png_dimensions(path: &Path) -> Option<(u32, u32)> {
     Some((w, h))
 }
 
+/// Open an image file in the system's default viewer.
+///
+/// Uses platform-specific commands: `open` (macOS), `xdg-open` (Linux),
+/// `explorer` (Windows). Failures are silently ignored.
+pub fn open_file_in_viewer(path: &Path) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").arg(path).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("explorer").arg(path).spawn();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = Command::new("xdg-open").arg(path).spawn();
+    }
+}
+
 /// Generate a unique temp file path for a pasted PNG.
 fn make_temp_png() -> PathBuf {
     let tmp_dir = std::env::temp_dir();

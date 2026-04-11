@@ -116,6 +116,9 @@ pub struct App {
     pending_paste: Option<String>,
     /// Pasted images waiting to be sent with the next message.
     pending_images: Vec<crate::image_paste::PastedImage>,
+    /// Image file paths per message index (for click-to-open after sending).
+    /// Key = message index in state.messages, Value = image paths in order.
+    sent_image_paths: std::collections::HashMap<usize, Vec<std::path::PathBuf>>,
     /// Context-aware follow-up suggestions shown as chips.
     suggestions: Vec<PromptSuggestion>,
     /// Timestamp when the current turn started (for thinking indicator).
@@ -194,6 +197,7 @@ impl App {
             ghost_text: None,
             pending_paste: None,
             pending_images: Vec::new(),
+            sent_image_paths: std::collections::HashMap::new(),
             suggestions: Vec::new(),
             turn_started_at: None,
             slash_commands,
@@ -1292,12 +1296,18 @@ impl App {
         }
     }
 
-    /// Handle mouse events: scroll wheel, scrollbar click/drag.
+    /// Handle mouse events: scroll wheel, scrollbar click/drag, image click.
     fn handle_mouse(&mut self, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollUp => self.scroll_up_by(3),
             MouseEventKind::ScrollDown => self.scroll_down_by(3),
-            MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left) => {
+            MouseEventKind::Down(MouseButton::Left) => {
+                // Try image click first; fall through to scrollbar if not an image.
+                if !self.handle_image_click(mouse.column, mouse.row) {
+                    self.handle_scrollbar_click(mouse.column, mouse.row);
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
                 self.handle_scrollbar_click(mouse.column, mouse.row);
             }
             _ => {}
@@ -1335,6 +1345,89 @@ impl App {
 
         self.scroll_offset = new_offset.min(self.max_scroll_offset);
         self.auto_scroll = self.scroll_offset >= self.max_scroll_offset;
+    }
+
+    /// Handle click on an `[Image #N]` tag in the message view.
+    ///
+    /// Maps the clicked screen position to an absolute content line, walks the
+    /// render cache to find which message was clicked, then scans the line's
+    /// spans for an `[Image #N]` pattern. If found, opens the corresponding
+    /// image file in the system's default viewer.
+    ///
+    /// Returns `true` if an image was opened (click consumed).
+    fn handle_image_click(&self, col: u16, row: u16) -> bool {
+        let area = self.message_area;
+        // Must be inside the message area inner bounds (exclude borders + scrollbar).
+        if col <= area.x
+            || col >= area.right().saturating_sub(2)
+            || row <= area.y
+            || row >= area.bottom().saturating_sub(1)
+        {
+            return false;
+        }
+
+        // Absolute content line = (clicked row − inner top) + scroll offset.
+        let inner_top = area.y + 1;
+        let abs_line = (row - inner_top) as usize + self.scroll_offset as usize;
+
+        // Gather message roles to determine separator sizes.
+        let state = self.state_rx.borrow();
+        let msg_count = state.messages.len();
+        let msg_roles: Vec<oxicode_common::Role> = state.messages.iter().map(|m| m.role).collect();
+        drop(state);
+
+        let entries = self.message_cache.lines(msg_count);
+        if entries.is_empty() {
+            return false;
+        }
+
+        // Walk cached entries to locate the message index + line within it.
+        let mut cumulative: usize = 0;
+        let mut found_msg_idx: Option<usize> = None;
+        let mut line_in_msg: usize = 0;
+        for (i, entry) in entries.iter().enumerate() {
+            // Account for separators between messages.
+            if i > 0 {
+                let is_turn = msg_roles
+                    .get(i)
+                    .is_some_and(|r| *r == oxicode_common::Role::User);
+                cumulative += if is_turn { 3 } else { 1 };
+            }
+            if abs_line < cumulative + entry.len() {
+                found_msg_idx = Some(i);
+                line_in_msg = abs_line - cumulative;
+                break;
+            }
+            cumulative += entry.len();
+        }
+
+        let Some(msg_idx) = found_msg_idx else {
+            return false;
+        };
+
+        // Check if this message has stored image paths.
+        let Some(paths) = self.sent_image_paths.get(&msg_idx) else {
+            return false;
+        };
+
+        // Scan the clicked line's spans for an [Image #N] pattern.
+        if line_in_msg >= entries[msg_idx].len() {
+            return false;
+        }
+        let line = &entries[msg_idx][line_in_msg];
+        for span in &line.spans {
+            let content = span.content.as_ref();
+            if content.starts_with("[Image #") && content.ends_with(']') {
+                let num_str = &content[8..content.len() - 1];
+                if let Ok(n) = num_str.parse::<usize>() {
+                    if let Some(path) = paths.get(n.wrapping_sub(1)) {
+                        crate::image_paste::open_file_in_viewer(path);
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Handle bracketed paste — insert text at cursor in bulk,
@@ -1689,6 +1782,18 @@ impl App {
             } else {
                 // Strip [Image #N] placeholders from text before sending.
                 let clean_text = strip_image_tags(&text);
+                // Retain image paths for click-to-open in message view.
+                if !self.pending_images.is_empty() {
+                    let state = self.state_rx.borrow();
+                    let msg_index = state.messages.len();
+                    drop(state);
+                    let paths: Vec<std::path::PathBuf> = self
+                        .pending_images
+                        .iter()
+                        .map(|img| img.path.clone())
+                        .collect();
+                    self.sent_image_paths.insert(msg_index, paths);
+                }
                 let images = std::mem::take(&mut self.pending_images);
                 let _ = self
                     .ui_tx
