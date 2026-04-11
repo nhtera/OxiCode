@@ -66,7 +66,9 @@ impl<'a> InputBox<'a> {
 
     /// Calculate required height for the input box (including borders).
     pub fn required_height(text: &str) -> u16 {
-        let line_count = text.lines().count().max(1) as u16;
+        // Use split('\n') instead of lines() — lines() ignores a trailing '\n',
+        // which would hide the empty line the cursor sits on after Alt+Enter.
+        let line_count = text.split('\n').count().max(1) as u16;
         // +2 for top/bottom border
         (line_count + 2).min(MAX_INPUT_LINES + 2)
     }
@@ -229,6 +231,13 @@ mod tests {
     }
 
     #[test]
+    fn required_height_trailing_newline() {
+        // After Alt+Enter at end of line 2, text is "line1\nline2\n".
+        // The trailing newline creates an empty 3rd line for the cursor.
+        assert_eq!(InputBox::required_height("line1\nline2\n"), 5); // 3 lines + 2 borders
+    }
+
+    #[test]
     fn cursor_row_col_at_start() {
         assert_eq!(cursor_row_col("hello", 0), (0, 0));
     }
@@ -248,6 +257,12 @@ mod tests {
     fn cursor_row_col_beyond_end() {
         // Clamp to text length.
         assert_eq!(cursor_row_col("hi", 100), (0, 2));
+    }
+
+    #[test]
+    fn cursor_row_col_trailing_newline() {
+        // After Alt+Enter at end of "ab\ncd", text becomes "ab\ncd\n" with cursor at byte 6.
+        assert_eq!(cursor_row_col("ab\ncd\n", 6), (2, 0)); // row 2, col 0
     }
 
     #[test]

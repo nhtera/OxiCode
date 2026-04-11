@@ -679,7 +679,7 @@ impl App {
                 }
                 if !self.input_text.is_empty() {
                     let chars = self.input_text.chars().count();
-                    let lines = self.input_text.lines().count().max(1);
+                    let lines = self.input_text.split('\n').count();
                     input = input.with_metrics(chars, lines);
                 }
                 frame.render_widget(input, input_chunks[0]);
@@ -700,7 +700,7 @@ impl App {
                 }
                 if !self.input_text.is_empty() {
                     let chars = self.input_text.chars().count();
-                    let lines = self.input_text.lines().count().max(1);
+                    let lines = self.input_text.split('\n').count();
                     input = input.with_metrics(chars, lines);
                 }
                 frame.render_widget(input, chunks[4]);
