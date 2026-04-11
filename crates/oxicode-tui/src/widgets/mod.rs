@@ -32,7 +32,7 @@ pub use message_view::{ActiveToolInfo, MessageRenderCache, MessageView};
 pub use notification::{Notification, NotificationLevel, NotificationWidget};
 pub use pager::{Pager, PagerView};
 pub use paste_preview::{PastePreview, PASTE_PREVIEW_THRESHOLD};
-pub use permission_dialog::PermissionDialog;
+pub use permission_dialog::{PermissionDialog, PermissionDialogKind};
 pub use search_overlay::{find_matches_in_cache, SearchBar, SearchOverlay};
 pub use shortcuts_overlay::{
     default_shortcut_entries, HelpOverlay, HelpOverlayState, ShortcutsPanel, ShortcutsState,

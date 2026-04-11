@@ -53,6 +53,10 @@ struct PendingPermission {
     selected: usize,
     /// Risk level derived from tool name and input (drives dialog border color).
     risk_level: RiskLevel,
+    /// Tool-specific dialog variant (drives options and content layout).
+    kind: crate::widgets::PermissionDialogKind,
+    /// When this permission request was created (for countdown timer).
+    created_at: Instant,
     reply_tx: tokio::sync::oneshot::Sender<oxicode_common::PermissionResponse>,
 }
 
@@ -299,8 +303,20 @@ impl App {
                     }
                     self.draw(terminal)?;
                 }
-                // Tick for spinner animation and notification expiry.
-                _ = tick_interval.tick(), if self.is_turn_active || !self.notifications.is_empty() => {
+                // Tick for spinner animation, notification expiry, and permission countdown.
+                _ = tick_interval.tick(), if self.is_turn_active || !self.notifications.is_empty() || self.pending_permission.is_some() => {
+                    // Auto-deny permission if countdown expired (30s).
+                    if let Some(ref perm) = self.pending_permission {
+                        if perm.created_at.elapsed().as_secs() >= 30 {
+                            if let Some(perm) = self.pending_permission.take() {
+                                let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
+                            }
+                            self.notifications.push(Notification::new(
+                                "Permission auto-denied (timeout)".to_string(),
+                                crate::widgets::notification::NotificationLevel::Warning,
+                            ));
+                        }
+                    }
                     self.draw(terminal)?;
                 }
             }
@@ -570,10 +586,13 @@ impl App {
 
             // Permission dialog overlay (drawn on top of everything).
             if let Some(ref perm) = self.pending_permission {
+                let remaining = 30u32.saturating_sub(perm.created_at.elapsed().as_secs() as u32);
                 let dialog =
                     PermissionDialog::new(&perm.tool_name, &perm.input_summary, &perm.prompt)
                         .with_selected(perm.selected)
-                        .with_risk_level(perm.risk_level);
+                        .with_risk_level(perm.risk_level)
+                        .with_kind(&perm.kind)
+                        .with_countdown(remaining);
                 frame.render_widget(dialog, content_area);
             }
 
@@ -1719,14 +1738,18 @@ impl App {
         let Some(ref mut perm) = self.pending_permission else {
             return;
         };
+        let max_idx = perm.kind.option_count().saturating_sub(1);
         match (key.modifiers, key.code) {
             (_, KeyCode::Up) => {
                 perm.selected = perm.selected.saturating_sub(1);
             }
             (_, KeyCode::Down) => {
-                perm.selected = (perm.selected + 1).min(3); // 4 options: 0-3
+                perm.selected = (perm.selected + 1).min(max_idx);
             }
             (_, KeyCode::Enter) => {
+                // Map selected index to response based on dialog kind.
+                // FileRead (3 opts): 0=AllowOnce, 1=AlwaysAllow, 2=Deny
+                // Others  (4 opts): 0=AllowOnce, 1=AlwaysAllow, 2=Deny, 3=AlwaysDeny
                 let response = match perm.selected {
                     0 => oxicode_common::PermissionResponse::AllowOnce,
                     1 => oxicode_common::PermissionResponse::AlwaysAllow,
@@ -1737,7 +1760,7 @@ impl App {
                     let _ = perm.reply_tx.send(response);
                 }
             }
-            // Hotkeys: y = allow once, a = always allow, n = deny, N = always deny
+            // Hotkeys: y = allow once, a = allow session, n = deny, N = always deny
             (_, KeyCode::Char('y')) => {
                 if let Some(perm) = self.pending_permission.take() {
                     let _ = perm
@@ -1758,6 +1781,12 @@ impl App {
                 }
             }
             (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
+                // "Always deny" hotkey — only for dialogs that have this option.
+                if let Some(ref perm) = self.pending_permission {
+                    if matches!(perm.kind, crate::widgets::PermissionDialogKind::FileRead { .. }) {
+                        return; // FileRead has no "Always deny" option
+                    }
+                }
                 if let Some(perm) = self.pending_permission.take() {
                     let _ = perm
                         .reply_tx
@@ -1895,12 +1924,18 @@ impl App {
                 {
                     risk_level = RiskLevel::High;
                 }
+                let kind = crate::widgets::PermissionDialogKind::detect(
+                    &tool_name,
+                    &input_summary,
+                );
                 self.pending_permission = Some(PendingPermission {
                     tool_name,
                     input_summary,
                     prompt,
                     selected: 0,
                     risk_level,
+                    kind,
+                    created_at: Instant::now(),
                     reply_tx,
                 });
             }
@@ -3158,6 +3193,8 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
+            kind: crate::widgets::PermissionDialogKind::Bash { command: "echo hi".to_string() },
+            created_at: Instant::now(),
             reply_tx,
         });
 
@@ -3184,6 +3221,8 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 2,
             risk_level: RiskLevel::High,
+            kind: crate::widgets::PermissionDialogKind::Bash { command: "rm -rf /".to_string() },
+            created_at: Instant::now(),
             reply_tx,
         });
 
@@ -3207,6 +3246,8 @@ mod tests {
             prompt: "Allow always?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
+            kind: crate::widgets::PermissionDialogKind::Bash { command: "make build".to_string() },
+            created_at: Instant::now(),
             reply_tx,
         });
 
@@ -3230,6 +3271,8 @@ mod tests {
             prompt: "Network access?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
+            kind: crate::widgets::PermissionDialogKind::Bash { command: "curl http://...".to_string() },
+            created_at: Instant::now(),
             reply_tx,
         });
 
@@ -3256,6 +3299,8 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
+            kind: crate::widgets::PermissionDialogKind::Bash { command: "echo".to_string() },
+            created_at: Instant::now(),
             reply_tx,
         });
 
@@ -3279,6 +3324,8 @@ mod tests {
             prompt: "Allow?".to_string(),
             selected: 0,
             risk_level: RiskLevel::High,
+            kind: crate::widgets::PermissionDialogKind::Bash { command: "cmd".to_string() },
+            created_at: Instant::now(),
             reply_tx,
         });
 
