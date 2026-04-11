@@ -659,26 +659,33 @@ fn render_content_blocks_static(
         .collect();
 
     let mut image_counter: usize = 0;
+    let mut pending_image_spans: Vec<Span<'static>> = Vec::new();
 
     for block in blocks {
         match block {
             ContentBlock::Text { text } => {
                 // Render text through markdown parser for styled output.
                 let md_lines = markdown_view::parse_to_owned_lines(text);
-                for md_line in md_lines {
+                for (line_idx, md_line) in md_lines.into_iter().enumerate() {
                     let mut spans = vec![Span::raw("  ")];
+                    // Prepend buffered image tags to the first text line.
+                    if line_idx == 0 && !pending_image_spans.is_empty() {
+                        spans.append(&mut pending_image_spans);
+                    }
                     spans.extend(md_line.spans);
                     lines.push(Line::from(spans));
                 }
             }
             ContentBlock::Image { .. } => {
                 image_counter += 1;
-                lines.push(Line::from(vec![Span::styled(
-                    format!("  [Image #{image_counter}]"),
+                // Buffer image spans — they'll be prepended to the next text block's first line.
+                pending_image_spans.push(Span::styled(
+                    format!("[Image #{image_counter}]"),
                     Style::default()
                         .fg(Color::Magenta)
                         .add_modifier(Modifier::BOLD),
-                )]));
+                ));
+                pending_image_spans.push(Span::raw(" "));
             }
             ContentBlock::ToolUse { name, input, .. } => {
                 let summary = tool_input_summary(input);
@@ -821,6 +828,12 @@ fn render_content_blocks_static(
                 }
             }
         }
+    }
+    // Flush any remaining image spans (images at end without following text block).
+    if !pending_image_spans.is_empty() {
+        let mut spans = vec![Span::raw("  ")];
+        spans.append(&mut pending_image_spans);
+        lines.push(Line::from(spans));
     }
 }
 

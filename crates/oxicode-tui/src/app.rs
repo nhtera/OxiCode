@@ -673,9 +673,16 @@ impl App {
                     .constraints([Constraint::Length(base_input_height), Constraint::Length(2)])
                     .split(chunks[4]);
 
-                let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
+                let text_cursor_pos = self.input_cursor.saturating_sub(self.pending_images.len());
+                let byte_cursor = char_to_byte_index(&self.input_text, text_cursor_pos);
+                let focused_img = if self.input_cursor < self.pending_images.len() {
+                    Some(self.input_cursor)
+                } else {
+                    None
+                };
                 let mut input = InputBox::new(&self.input_text, byte_cursor, true)
-                    .with_image_count(self.pending_images.len());
+                    .with_image_count(self.pending_images.len())
+                    .with_focused_image(focused_img);
                 if vim_enabled {
                     input = input.with_vim_badge(vim_badge);
                 }
@@ -692,9 +699,16 @@ impl App {
                 let search_bar = SearchBar::new(&self.search);
                 frame.render_widget(search_bar, input_chunks[1]);
             } else {
-                let byte_cursor = char_to_byte_index(&self.input_text, self.input_cursor);
+                let text_cursor_pos = self.input_cursor.saturating_sub(self.pending_images.len());
+                let byte_cursor = char_to_byte_index(&self.input_text, text_cursor_pos);
+                let focused_img = if self.input_cursor < self.pending_images.len() {
+                    Some(self.input_cursor)
+                } else {
+                    None
+                };
                 let mut input = InputBox::new(&self.input_text, byte_cursor, true)
-                    .with_image_count(self.pending_images.len());
+                    .with_image_count(self.pending_images.len())
+                    .with_focused_image(focused_img);
                 if vim_enabled {
                     input = input.with_vim_badge(vim_badge);
                 }
@@ -855,6 +869,8 @@ impl App {
                         None => format!("[Image #{image_num}] attached"),
                     };
                     self.pending_images.push(img);
+                    // Position cursor after all images (start of text).
+                    self.input_cursor = self.pending_images.len();
                     self.notifications.push(Notification::new(
                         msg,
                         crate::widgets::notification::NotificationLevel::Info,
@@ -866,9 +882,17 @@ impl App {
             (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
                 self.open_history_search();
             }
-            // H3 FIX: cursor operates on char count, insert at byte offset
+            // H3 FIX: cursor operates on char count, insert at byte offset.
+            // Virtual cursor: positions 0..image_count are image slots,
+            // positions image_count.. are text characters.
             (_, KeyCode::Char(c)) => {
-                let byte_idx = char_to_byte_index(&self.input_text, self.input_cursor);
+                let img_count = self.pending_images.len();
+                // If cursor is on an image, move to text start before inserting.
+                if self.input_cursor < img_count {
+                    self.input_cursor = img_count;
+                }
+                let text_pos = self.input_cursor - img_count;
+                let byte_idx = char_to_byte_index(&self.input_text, text_pos);
                 self.input_text.insert(byte_idx, c);
                 self.input_cursor += 1;
                 self.update_ghost_text();
@@ -879,11 +903,24 @@ impl App {
                 }
             }
             (_, KeyCode::Backspace) => {
+                let img_count = self.pending_images.len();
                 if self.input_cursor > 0 {
-                    self.input_cursor -= 1;
-                    let start = char_to_byte_index(&self.input_text, self.input_cursor);
-                    let end = char_to_byte_index(&self.input_text, self.input_cursor + 1);
-                    self.input_text.replace_range(start..end, "");
+                    if self.input_cursor <= img_count {
+                        // Cursor is on an image — delete that image.
+                        let idx = self.input_cursor - 1;
+                        self.pending_images.remove(idx);
+                        self.input_cursor -= 1;
+                    } else {
+                        // Cursor is in text region — delete text character.
+                        let text_pos = self.input_cursor - img_count;
+                        if text_pos > 0 {
+                            self.input_cursor -= 1;
+                            let new_text_pos = text_pos - 1;
+                            let start = char_to_byte_index(&self.input_text, new_text_pos);
+                            let end = char_to_byte_index(&self.input_text, new_text_pos + 1);
+                            self.input_text.replace_range(start..end, "");
+                        }
+                    }
                 }
                 self.update_ghost_text();
             }
@@ -898,8 +935,8 @@ impl App {
                 self.input_cursor = self.input_cursor.saturating_sub(1);
             }
             (_, KeyCode::Right) => {
-                let char_count = self.input_text.chars().count();
-                if self.input_cursor < char_count {
+                let max_pos = self.pending_images.len() + self.input_text.chars().count();
+                if self.input_cursor < max_pos {
                     self.input_cursor += 1;
                 } else {
                     self.accept_ghost_text();
@@ -921,7 +958,7 @@ impl App {
                 self.input_cursor = 0;
             }
             (_, KeyCode::End) => {
-                self.input_cursor = self.input_text.chars().count();
+                self.input_cursor = self.pending_images.len() + self.input_text.chars().count();
             }
             // Tab: accept ghost completion → select first suggestion → toggle panel.
             (_, KeyCode::Tab) => {
@@ -1641,7 +1678,7 @@ impl App {
             return;
         }
 
-        if !self.input_text.is_empty() {
+        if !self.input_text.is_empty() || !self.pending_images.is_empty() {
             let text = std::mem::take(&mut self.input_text);
             self.input_cursor = 0;
             self.history_index = None;

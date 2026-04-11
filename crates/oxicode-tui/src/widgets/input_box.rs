@@ -25,8 +25,10 @@ pub struct InputBox<'a> {
     ghost_text: Option<&'a str>,
     /// Input metrics: (char_count, line_count). Shown in right title when set.
     metrics: Option<(usize, usize)>,
-    /// Number of pending image attachments to show as a pill.
+    /// Number of pending image attachments to show as inline tags.
     image_count: usize,
+    /// Index of the focused/selected image (for highlight), None if cursor is in text.
+    focused_image: Option<usize>,
 }
 
 impl<'a> InputBox<'a> {
@@ -40,6 +42,7 @@ impl<'a> InputBox<'a> {
             ghost_text: None,
             metrics: None,
             image_count: 0,
+            focused_image: None,
         }
     }
 
@@ -70,6 +73,12 @@ impl<'a> InputBox<'a> {
     /// Set the number of pending image attachments.
     pub fn with_image_count(mut self, count: usize) -> Self {
         self.image_count = count;
+        self
+    }
+
+    /// Set which image tag is focused/selected (for highlight on arrow key navigation).
+    pub fn with_focused_image(mut self, idx: Option<usize>) -> Self {
+        self.focused_image = idx;
         self
     }
 
@@ -139,12 +148,19 @@ impl Widget for InputBox<'_> {
                 // Show inline [Image #N] tags when images are pending with empty text.
                 let mut spans: Vec<Span<'_>> = Vec::new();
                 for i in 1..=self.image_count {
-                    spans.push(Span::styled(
-                        format!("[Image #{i}]"),
+                    let idx = i - 1;
+                    let style = if self.focused_image == Some(idx) {
+                        // Inverted highlight for selected image.
+                        Style::default()
+                            .fg(Color::White)
+                            .bg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
                         Style::default()
                             .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD),
-                    ));
+                            .add_modifier(Modifier::BOLD)
+                    };
+                    spans.push(Span::styled(format!("[Image #{i}]"), style));
                     spans.push(Span::raw(" "));
                 }
                 let display_text = Line::from(spans);
@@ -158,10 +174,9 @@ impl Widget for InputBox<'_> {
                 let paragraph = Paragraph::new(display_text).block(block);
                 paragraph.render(area, buf);
             }
-            // Render cursor at start (or after image tags).
-            if area.width > 2 && area.height > 2 {
+            // Render cursor after image tags (only when no image is focused).
+            if self.focused_image.is_none() && area.width > 2 && area.height > 2 {
                 let cursor_x = if self.image_count > 0 {
-                    // Position cursor after all image tags: each is "[Image #N] " chars.
                     let total_chars: usize = (1..=self.image_count)
                         .map(|i| format!("[Image #{i}]").len() + 1)
                         .sum();
@@ -169,13 +184,15 @@ impl Widget for InputBox<'_> {
                 } else {
                     area.x + 1
                 };
-                if let Some(cell) = buf.cell_mut((cursor_x, area.y + 1)) {
-                    cell.set_style(
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(render::TRANSCRIPT_TEXT)
-                            .add_modifier(Modifier::BOLD),
-                    );
+                if cursor_x < area.x + area.width - 1 {
+                    if let Some(cell) = buf.cell_mut((cursor_x, area.y + 1)) {
+                        cell.set_style(
+                            Style::default()
+                                .fg(Color::Black)
+                                .bg(render::TRANSCRIPT_TEXT)
+                                .add_modifier(Modifier::BOLD),
+                        );
+                    }
                 }
             }
             return;
@@ -185,23 +202,37 @@ impl Widget for InputBox<'_> {
         // Append ghost text to the last line if present.
         // Prepend [Image #N] tags to the first line if images are pending.
         let mut lines: Vec<Line<'_>> = self.text.split('\n').map(Line::from).collect();
-        if self.image_count > 0 {
+        let image_prefix_len: usize = if self.image_count > 0 {
             if let Some(first_line) = lines.first_mut() {
                 let mut image_spans: Vec<Span<'_>> = Vec::new();
+                let mut prefix_chars: usize = 0;
                 for i in 1..=self.image_count {
-                    image_spans.push(Span::styled(
-                        format!("[Image #{i}]"),
+                    let idx = i - 1;
+                    let tag = format!("[Image #{i}]");
+                    prefix_chars += tag.len() + 1; // +1 for space separator
+                    let style = if self.focused_image == Some(idx) {
+                        Style::default()
+                            .fg(Color::White)
+                            .bg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
                         Style::default()
                             .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD),
-                    ));
+                            .add_modifier(Modifier::BOLD)
+                    };
+                    image_spans.push(Span::styled(tag, style));
                     image_spans.push(Span::raw(" "));
                 }
                 let mut new_spans = image_spans;
                 new_spans.append(&mut first_line.spans);
                 first_line.spans = new_spans;
+                prefix_chars
+            } else {
+                0
             }
-        }
+        } else {
+            0
+        };
         if let Some(ghost) = self.ghost_text {
             if let Some(last_line) = lines.last_mut() {
                 last_line.spans.push(Span::styled(
@@ -216,18 +247,33 @@ impl Widget for InputBox<'_> {
         paragraph.render(area, buf);
 
         // Render cursor — compute row/col from byte offset.
-        if self.focused && area.width > 2 && area.height > 2 {
+        // Skip cursor rendering if an image tag is focused (image gets highlight instead).
+        if self.focused_image.is_some() {
+            // Image is highlighted via span styling above — no text cursor needed.
+        } else if self.focused && area.width > 2 && area.height > 2 {
             let (cursor_row, cursor_col) = cursor_row_col(self.text, self.cursor);
             let inner_width = (area.width - 2) as usize;
             // Account for line wrapping within each row.
             let mut visual_row: u16 = 0;
             for (i, line_text) in self.text.split('\n').enumerate() {
-                let wrapped_lines = (line_text.len() / inner_width.max(1)) as u16 + 1;
+                // On first line, account for image tag prefix width.
+                let line_display_len = if i == 0 {
+                    image_prefix_len + line_text.len()
+                } else {
+                    line_text.len()
+                };
+                let wrapped_lines = (line_display_len / inner_width.max(1)) as u16 + 1;
                 if i == cursor_row {
                     // Cursor is in this line — add offset within wrapping.
                     let col_in_line = cursor_col.min(line_text.len());
-                    visual_row += (col_in_line / inner_width.max(1)) as u16;
-                    let visual_col = col_in_line % inner_width.max(1);
+                    // On first line, offset by image prefix.
+                    let display_col = if i == 0 {
+                        image_prefix_len + col_in_line
+                    } else {
+                        col_in_line
+                    };
+                    visual_row += (display_col / inner_width.max(1)) as u16;
+                    let visual_col = display_col % inner_width.max(1);
                     let cx = area.x + 1 + visual_col as u16;
                     let cy = area.y + 1 + visual_row;
                     if cy < area.y + area.height - 1 && cx < area.x + area.width - 1 {
