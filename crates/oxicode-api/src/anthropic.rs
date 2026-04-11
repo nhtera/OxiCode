@@ -198,13 +198,18 @@ impl LlmProvider for AnthropicProvider {
                     }
                 };
 
+                // Stream read timeout: 90s with no data = stall.
+                // Normal thinking pauses (extended thinking) can take 30-60s,
+                // so 90s gives headroom while catching true hangs.
+                const STREAM_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+
                 loop {
-                    match es.next().await {
-                        Some(Ok(Event::Open)) => {
+                    match tokio::time::timeout(STREAM_READ_TIMEOUT, es.next()).await {
+                        Ok(Some(Ok(Event::Open))) => {
                             tracing::debug!("SSE connection opened");
                             retry_count = 0;
                         }
-                        Some(Ok(Event::Message(msg))) => {
+                        Ok(Some(Ok(Event::Message(msg)))) => {
                             match serde_json::from_str::<RawSseEvent>(&msg.data) {
                                 Ok(raw) => {
                                     let events = raw.into_stream_events();
@@ -222,7 +227,7 @@ impl LlmProvider for AnthropicProvider {
                                 }
                             }
                         }
-                        Some(Err(e)) => {
+                        Ok(Some(Err(e))) => {
                             es.close();
                             // Check if this is a 429 rate limit error with headers.
                             if let reqwest_eventsource::Error::InvalidStatusCode(status, ref response) = e {
@@ -261,8 +266,39 @@ impl LlmProvider for AnthropicProvider {
                             yield Err(OxiError::api(format!("SSE stream error after {retry_count} retries: {e}")));
                             return;
                         }
-                        None => {
+                        Ok(None) => {
                             es.close();
+                            return;
+                        }
+                        // Stream read timeout — server accepted but stopped sending data.
+                        Err(_elapsed) => {
+                            es.close();
+                            if retry_count < retry_policy.max_retries {
+                                retry_count += 1;
+                                let delay = retry_policy.delay_for(retry_count);
+                                tracing::warn!(
+                                    "SSE stream stalled (no data for {}s), retry {}/{} in {:?}",
+                                    STREAM_READ_TIMEOUT.as_secs(),
+                                    retry_count,
+                                    retry_policy.max_retries,
+                                    delay
+                                );
+                                yield Ok(StreamEvent::Retrying {
+                                    message: format!(
+                                        "Stream stalled (no data for {}s)",
+                                        STREAM_READ_TIMEOUT.as_secs()
+                                    ),
+                                    attempt: retry_count,
+                                    max_retries: retry_policy.max_retries,
+                                    retry_in_secs: delay.as_secs_f64(),
+                                });
+                                tokio::time::sleep(delay).await;
+                                continue 'retry;
+                            }
+                            yield Err(OxiError::api(format!(
+                                "SSE stream stalled after {retry_count} retries (no data for {}s)",
+                                STREAM_READ_TIMEOUT.as_secs()
+                            )));
                             return;
                         }
                     }

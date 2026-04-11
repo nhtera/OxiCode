@@ -662,6 +662,9 @@ async fn run_tui(
                         }
                         Err(e) => {
                             let _ = core_tx_clone.send(CoreEvent::Error(e.to_string())).await;
+                            // Safety net: always send MessageComplete after Error so TUI
+                            // resets is_turn_active even if Error handler has a bug.
+                            let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
                         }
                     }
                 }
