@@ -1429,7 +1429,7 @@ impl App {
 
         let inner_top = area.y + 1;
         let inner_left = area.x + 1;
-        let abs_line = (row - inner_top) as usize + self.scroll_offset as usize;
+        let abs_line = row.saturating_sub(inner_top) as usize + self.scroll_offset as usize;
 
         let state = self.state_rx.borrow();
         let msg_count = state.messages.len();
@@ -1453,6 +1453,10 @@ impl App {
                 cumulative += if is_turn { 3 } else { 1 };
             }
             if abs_line < cumulative + entry.len() {
+                // Click landed on a separator line (between messages), not content.
+                if abs_line < cumulative {
+                    return None;
+                }
                 found_msg_idx = Some(i);
                 line_in_msg = abs_line - cumulative;
                 break;
@@ -1467,7 +1471,7 @@ impl App {
 
         // Scan spans to find which image tag the column falls within.
         let line = &entries[msg_idx][line_in_msg];
-        let click_col = (col - inner_left) as usize;
+        let click_col = col.saturating_sub(inner_left) as usize;
         let mut span_offset: usize = 0;
         for span in &line.spans {
             let content = span.content.as_ref();
