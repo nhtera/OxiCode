@@ -32,17 +32,19 @@ impl Widget for SuggestionChips<'_> {
             if i > 0 {
                 spans.push(Span::raw(" "));
             }
-            // Number prefix: bold cyan.
+            // Number prefix: bold accent.
             spans.push(Span::styled(
                 format!(" {}:", i + 1),
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(crate::render::STATUS_CYAN)
                     .add_modifier(Modifier::BOLD),
             ));
-            // Label text: white on dark background.
+            // Label text: warm cream on subtle dark background.
             spans.push(Span::styled(
                 format!(" {} ", suggestion.label),
-                Style::default().fg(Color::White).bg(Color::DarkGray),
+                Style::default()
+                    .fg(crate::render::CHROME_TEXT)
+                    .bg(Color::Rgb(40, 34, 30)),
             ));
         }
 

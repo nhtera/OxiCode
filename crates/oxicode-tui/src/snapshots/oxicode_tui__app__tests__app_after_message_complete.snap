@@ -1,6 +1,5 @@
 ---
 source: crates/oxicode-tui/src/app.rs
-assertion_line: 2291
 expression: after_complete.as_str()
 ---
 " ○ Ready  anthropic  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  0s [ask]         "

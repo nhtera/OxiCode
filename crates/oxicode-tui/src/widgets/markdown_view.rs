@@ -8,10 +8,11 @@ use ratatui::widgets::Widget;
 use super::highlight;
 
 /// Default width for box-drawing code block borders.
-const CODE_BLOCK_WIDTH: usize = 60;
+/// Fits comfortably in 80-col terminal with 2-space indent.
+const CODE_BLOCK_WIDTH: usize = 72;
 
 /// Width used when rendering horizontal rules.
-const HORIZONTAL_RULE_WIDTH: usize = 60;
+const HORIZONTAL_RULE_WIDTH: usize = 72;
 
 /// Detect `http://` / `https://` URL byte ranges within `text`.
 ///
@@ -41,7 +42,7 @@ fn detect_urls(text: &str) -> Vec<(usize, usize)> {
 /// Style applied to auto-detected bare URLs.
 fn url_style() -> Style {
     Style::default()
-        .fg(Color::Cyan)
+        .fg(crate::render::STATUS_CYAN)
         .add_modifier(Modifier::UNDERLINED)
 }
 
@@ -71,7 +72,7 @@ fn spans_from_text_with_urls(text: &str, base_style: Style) -> Vec<Span<'static>
 fn horizontal_rule_line() -> Line<'static> {
     Line::from(Span::styled(
         "\u{2500}".repeat(HORIZONTAL_RULE_WIDTH),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(crate::render::TRANSCRIPT_MUTED),
     ))
 }
 
@@ -137,7 +138,7 @@ impl<'a> MarkdownView<'a> {
                     }
                     Tag::Item => {
                         current_spans
-                            .push(Span::styled("• ", Style::default().fg(Color::DarkGray)));
+                            .push(Span::styled("• ", Style::default().fg(crate::render::TRANSCRIPT_MUTED)));
                     }
                     _ => {}
                 },
@@ -178,7 +179,7 @@ impl<'a> MarkdownView<'a> {
                 }
                 Event::Code(code) => {
                     let code_style = Style::default()
-                        .fg(Color::Yellow)
+                        .fg(crate::render::STATUS_YELLOW)
                         .bg(Color::Rgb(40, 40, 40));
                     current_spans.push(Span::styled(format!("`{code}`"), code_style));
                 }
@@ -215,13 +216,13 @@ impl<'a> MarkdownView<'a> {
 fn heading_style(level: HeadingLevel) -> Style {
     match level {
         HeadingLevel::H1 => Style::default()
-            .fg(Color::Magenta)
+            .fg(crate::render::CLAUDE_ORANGE)
             .add_modifier(Modifier::BOLD),
         HeadingLevel::H2 => Style::default()
-            .fg(Color::Cyan)
+            .fg(crate::render::STATUS_CYAN)
             .add_modifier(Modifier::BOLD),
         HeadingLevel::H3 => Style::default()
-            .fg(Color::Green)
+            .fg(crate::render::STATUS_GREEN)
             .add_modifier(Modifier::BOLD),
         _ => Style::default().add_modifier(Modifier::BOLD),
     }
@@ -275,7 +276,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                 Tag::Item => {
                     current_spans.push(Span::styled(
                         "• ".to_string(),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                     ));
                 }
                 _ => {}
@@ -316,7 +317,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
             }
             Event::Code(code) => {
                 let code_style = Style::default()
-                    .fg(Color::Yellow)
+                    .fg(crate::render::STATUS_YELLOW)
                     .bg(Color::Rgb(40, 40, 40));
                 current_spans.push(Span::styled(format!("`{code}`"), code_style));
             }
@@ -359,9 +360,9 @@ fn render_code_block_boxed(
     lang: &str,
     output: &mut Vec<Line<'static>>,
 ) {
-    let border_style = Style::default().fg(Color::DarkGray);
-    let label_style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
-    let code_bg = Style::default().fg(Color::White).bg(Color::Rgb(40, 40, 40));
+    let border_style = Style::default().fg(crate::render::CHROME_MUTED);
+    let label_style = Style::default().fg(crate::render::TRANSCRIPT_TEXT).add_modifier(Modifier::BOLD);
+    let code_bg = Style::default().fg(crate::render::TRANSCRIPT_TEXT).bg(Color::Rgb(40, 40, 40));
 
     // Top border: ┌─ lang ──...──┐
     let label = if lang.is_empty() { String::new() } else { format!(" {lang} ") };
@@ -547,25 +548,25 @@ mod tests {
         let raw = text_of(&lines);
         assert!(raw.contains("Heading 1"), "Should contain heading text");
 
-        // H1 should use Magenta color.
+        // H1 should use CLAUDE_ORANGE color.
         let colored: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(Color::Magenta))
+            .filter(|s| s.style.fg == Some(crate::render::CLAUDE_ORANGE))
             .collect();
-        assert!(!colored.is_empty(), "H1 should use Magenta color");
+        assert!(!colored.is_empty(), "H1 should use CLAUDE_ORANGE color");
     }
 
     #[test]
-    fn h2_renders_with_cyan() {
+    fn h2_renders_with_status_cyan() {
         let v = MarkdownView::new("## Sub Heading");
         let lines = v.to_lines();
         let colored: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(Color::Cyan))
+            .filter(|s| s.style.fg == Some(crate::render::STATUS_CYAN))
             .collect();
-        assert!(!colored.is_empty(), "H2 should use Cyan color");
+        assert!(!colored.is_empty(), "H2 should use STATUS_CYAN color");
     }
 
     #[test]
@@ -598,13 +599,13 @@ mod tests {
         let raw = text_of(&lines);
         assert!(raw.contains("`cargo test`"), "Inline code should render");
 
-        // Inline code should have yellow foreground.
+        // Inline code should have STATUS_YELLOW foreground.
         let code_spans: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(Color::Yellow))
+            .filter(|s| s.style.fg == Some(crate::render::STATUS_YELLOW))
             .collect();
-        assert!(!code_spans.is_empty(), "Inline code should be yellow");
+        assert!(!code_spans.is_empty(), "Inline code should be STATUS_YELLOW");
     }
 
     #[test]
@@ -691,34 +692,34 @@ mod tests {
     }
 
     #[test]
-    fn url_in_plain_text_renders_cyan_underline() {
+    fn url_in_plain_text_renders_styled() {
         let v = MarkdownView::new("Go to https://example.com now");
         let lines = v.to_lines();
         let url_spans: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
             .filter(|s| {
-                s.style.fg == Some(Color::Cyan)
+                s.style.fg == Some(crate::render::STATUS_CYAN)
                     && s.style.add_modifier.contains(Modifier::UNDERLINED)
             })
             .collect();
-        assert!(!url_spans.is_empty(), "URL should be Cyan + Underlined");
+        assert!(!url_spans.is_empty(), "URL should be STATUS_CYAN + Underlined");
         let url_text: String = url_spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(url_text.contains("https://example.com"));
     }
 
     #[test]
-    fn url_parse_owned_lines_cyan_underline() {
+    fn url_parse_owned_lines_styled() {
         let lines = parse_to_owned_lines("See https://rust-lang.org for docs.");
         let url_spans: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
             .filter(|s| {
-                s.style.fg == Some(Color::Cyan)
+                s.style.fg == Some(crate::render::STATUS_CYAN)
                     && s.style.add_modifier.contains(Modifier::UNDERLINED)
             })
             .collect();
-        assert!(!url_spans.is_empty(), "URL should be Cyan + Underlined");
+        assert!(!url_spans.is_empty(), "URL should be STATUS_CYAN + Underlined");
     }
 
     // --- Horizontal rules ---
@@ -731,7 +732,7 @@ mod tests {
         let rule_spans: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.content.contains('\u{2500}') && s.style.fg == Some(Color::DarkGray))
+            .filter(|s| s.content.contains('\u{2500}') && s.style.fg == Some(crate::render::TRANSCRIPT_MUTED))
             .collect();
         assert!(!rule_spans.is_empty(), "Horizontal rule should render as ─ chars");
     }

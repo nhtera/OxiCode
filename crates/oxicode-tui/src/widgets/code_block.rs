@@ -36,10 +36,10 @@ impl<'a> CodeBlockWidget<'a> {
                     Span::styled(
                         line_num,
                         Style::default()
-                            .fg(Color::DarkGray)
+                            .fg(crate::render::TRANSCRIPT_MUTED)
                             .bg(Color::Rgb(30, 30, 30)),
                     ),
-                    Span::styled(line.to_string(), bg.fg(Color::White)),
+                    Span::styled(line.to_string(), bg.fg(crate::render::TRANSCRIPT_TEXT)),
                 ])
             })
             .collect()
@@ -57,11 +57,11 @@ impl Widget for CodeBlockWidget<'_> {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray))
+            .border_style(Style::default().fg(crate::render::CHROME_MUTED))
             .title(Span::styled(
                 title,
                 Style::default()
-                    .fg(Color::White)
+                    .fg(crate::render::TRANSCRIPT_TEXT)
                     .add_modifier(Modifier::BOLD),
             ));
 
@@ -90,11 +90,11 @@ mod tests {
     }
 
     #[test]
-    fn line_numbers_are_dark_gray() {
+    fn line_numbers_are_muted() {
         let cb = CodeBlockWidget::new("hello", "");
         let lines = cb.to_lines();
         let num_span = &lines[0].spans[0];
-        assert_eq!(num_span.style.fg, Some(Color::DarkGray));
+        assert_eq!(num_span.style.fg, Some(crate::render::TRANSCRIPT_MUTED));
     }
 
     #[test]

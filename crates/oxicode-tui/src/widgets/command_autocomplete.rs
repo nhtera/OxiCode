@@ -220,21 +220,27 @@ impl Widget for CommandAutocomplete<'_> {
             let show_category = !cmd.category.is_empty()
                 && prev_category.map_or(true, |prev| prev != cmd.category);
 
-            // Styling
+            // Styling — selected vs normal.
             let (name_style, desc_style, bg) = if is_selected {
                 (
                     Style::default()
-                        .fg(Color::Cyan)
-                        .bg(Color::Rgb(30, 40, 60))
+                        .fg(crate::render::STATUS_CYAN)
+                        .bg(Color::Rgb(45, 38, 32))
                         .add_modifier(Modifier::BOLD),
-                    Style::default().fg(Color::White).bg(Color::Rgb(30, 40, 60)),
-                    Color::Rgb(30, 40, 60),
+                    Style::default()
+                        .fg(crate::render::TRANSCRIPT_TEXT)
+                        .bg(Color::Rgb(45, 38, 32)),
+                    Color::Rgb(45, 38, 32),
                 )
             } else {
                 (
-                    Style::default().fg(Color::Cyan).bg(Color::Rgb(20, 20, 30)),
-                    Style::default().fg(Color::Gray).bg(Color::Rgb(20, 20, 30)),
-                    Color::Rgb(20, 20, 30),
+                    Style::default()
+                        .fg(crate::render::STATUS_CYAN)
+                        .bg(Color::Rgb(25, 22, 20)),
+                    Style::default()
+                        .fg(crate::render::TRANSCRIPT_MUTED)
+                        .bg(Color::Rgb(25, 22, 20)),
+                    Color::Rgb(25, 22, 20),
                 )
             };
 
@@ -276,7 +282,7 @@ impl Widget for CommandAutocomplete<'_> {
                 let cat_label = format!("  [{cat}]", cat = cmd.category);
                 spans.push(Span::styled(
                     cat_label,
-                    Style::default().fg(Color::DarkGray).bg(bg),
+                    Style::default().fg(crate::render::CHROME_MUTED).bg(bg),
                 ));
             }
 
@@ -406,11 +412,11 @@ mod tests {
 
         // Selected row (row 1) should have highlight background.
         let cell = buf.cell((2, 1)).unwrap();
-        assert_eq!(cell.bg, Color::Rgb(30, 40, 60));
+        assert_eq!(cell.bg, Color::Rgb(45, 38, 32));
 
         // Non-selected row (row 0) should have normal background.
         let cell0 = buf.cell((2, 0)).unwrap();
-        assert_eq!(cell0.bg, Color::Rgb(20, 20, 30));
+        assert_eq!(cell0.bg, Color::Rgb(25, 22, 20));
     }
 
     #[test]

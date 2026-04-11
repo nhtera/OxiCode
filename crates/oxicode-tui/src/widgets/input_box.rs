@@ -4,6 +4,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
 
+use crate::render;
+
 /// Maximum input box height in lines (excluding borders).
 pub const MAX_INPUT_LINES: u16 = 10;
 
@@ -64,9 +66,9 @@ impl<'a> InputBox<'a> {
 impl Widget for InputBox<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let border_style = if self.focused {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(render::FOCUS_BORDER)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(render::BORDER_COLOR)
         };
 
         // Build title with optional vim badge and multiline hint.
@@ -85,9 +87,9 @@ impl Widget for InputBox<'_> {
         // In command mode, show the command buffer instead of input text.
         if let Some(cmd) = self.command_line {
             let display_text = Line::from(vec![
-                Span::styled(":", Style::default().fg(Color::Yellow)),
-                Span::styled(cmd, Style::default().fg(Color::White)),
-                Span::styled("_", Style::default().fg(Color::Gray)),
+                Span::styled(":", Style::default().fg(render::STATUS_YELLOW)),
+                Span::styled(cmd, Style::default().fg(render::TRANSCRIPT_TEXT)),
+                Span::styled("_", Style::default().fg(render::CHROME_MUTED)),
             ]);
             let paragraph = Paragraph::new(display_text).block(block);
             paragraph.render(area, buf);
@@ -97,7 +99,7 @@ impl Widget for InputBox<'_> {
         if self.text.is_empty() && self.focused {
             let display_text = Line::from(Span::styled(
                 "Type your message...",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(render::CHROME_MUTED),
             ));
             let paragraph = Paragraph::new(display_text).block(block);
             paragraph.render(area, buf);
@@ -107,7 +109,7 @@ impl Widget for InputBox<'_> {
                     cell.set_style(
                         Style::default()
                             .fg(Color::Black)
-                            .bg(Color::White)
+                            .bg(render::TRANSCRIPT_TEXT)
                             .add_modifier(Modifier::BOLD),
                     );
                 }
@@ -122,7 +124,7 @@ impl Widget for InputBox<'_> {
             if let Some(last_line) = lines.last_mut() {
                 last_line
                     .spans
-                    .push(Span::styled(ghost, Style::default().fg(Color::DarkGray)));
+                    .push(Span::styled(ghost, Style::default().fg(render::CHROME_MUTED)));
             }
         }
         let paragraph = Paragraph::new(lines)
@@ -150,7 +152,7 @@ impl Widget for InputBox<'_> {
                             cell.set_style(
                                 Style::default()
                                     .fg(Color::Black)
-                                    .bg(Color::White)
+                                    .bg(render::TRANSCRIPT_TEXT)
                                     .add_modifier(Modifier::BOLD),
                             );
                         }

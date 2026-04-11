@@ -7,6 +7,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Widget;
 
+use crate::render;
+
 /// Status bar showing model info, provider, token count, cost, streaming state, and auth.
 pub struct StatusBar<'a> {
     model: &'a str,
@@ -114,88 +116,117 @@ impl<'a> StatusBar<'a> {
 /// Map provider name to a color for visual distinction.
 fn provider_color(provider: &str) -> Color {
     match provider {
-        "anthropic" => Color::Rgb(217, 119, 62), // Orange (Claude brand)
-        "openai" => Color::Rgb(116, 170, 156),   // Teal
-        "ollama" => Color::Rgb(150, 150, 150),   // Gray (local)
-        "deepseek" => Color::Rgb(100, 149, 237), // Cornflower blue
-        "azure" => Color::Rgb(0, 120, 212),      // Azure blue
-        "openrouter" => Color::Rgb(168, 85, 247), // Purple
-        _ => Color::White,
+        "anthropic" => Color::Rgb(200, 90, 23),    // Burnt orange (brand)
+        "openai" => Color::Rgb(116, 170, 156),     // Teal
+        "ollama" => Color::Rgb(150, 140, 135),      // Warm gray (local)
+        "deepseek" => Color::Rgb(100, 149, 237),    // Cornflower blue
+        "azure" => Color::Rgb(0, 120, 212),         // Azure blue
+        "openrouter" => Color::Rgb(168, 85, 247),   // Purple
+        _ => render::CHROME_TEXT,
     }
 }
 
 impl Widget for StatusBar<'_> {
     #[allow(clippy::too_many_lines)] // render method with sequential layout sections
     fn render(self, area: Rect, buf: &mut Buffer) {
+        // Fill entire status bar row with dark background.
+        for x in area.x..area.x + area.width {
+            if let Some(cell) = buf.cell_mut((x, area.y)) {
+                cell.set_bg(render::STATUS_BAR_BG);
+            }
+        }
+
         // Streaming indicator.
         let status = if self.is_streaming {
             Span::styled(
-                " \u{25cf} Streaming ",
+                " ● Streaming ",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(render::STATUS_GREEN)
+                    .bg(render::STATUS_BAR_BG)
                     .add_modifier(Modifier::BOLD),
             )
         } else {
-            Span::styled(" \u{25cb} Ready ", Style::default().fg(Color::DarkGray))
+            Span::styled(
+                " ○ Ready ",
+                Style::default()
+                    .fg(render::CHROME_MUTED)
+                    .bg(render::STATUS_BAR_BG),
+            )
         };
 
-        // Provider badge (color-coded).
-        let provider_label = if self.provider.is_empty() {
-            String::new()
+        // Provider badge — subtle colored text (no inverted bg).
+        let provider_span = if self.provider.is_empty() {
+            Span::raw("")
         } else {
-            format!(" {} ", self.provider)
+            Span::styled(
+                format!(" {} ", self.provider),
+                Style::default()
+                    .fg(provider_color(self.provider))
+                    .bg(render::STATUS_BAR_BG)
+                    .add_modifier(Modifier::BOLD),
+            )
         };
-        let provider_span = Span::styled(
-            &provider_label,
-            Style::default()
-                .fg(Color::Black)
-                .bg(provider_color(self.provider)),
-        );
 
-        // Model name.
+        // Model name — muted badge style.
         let model = Span::styled(
             format!(" {} ", self.model),
-            Style::default().fg(Color::White).bg(Color::DarkGray),
+            Style::default()
+                .fg(render::CHROME_TEXT)
+                .bg(Color::Rgb(45, 38, 34)),
         );
 
-        // Token count (compact format: 1500 → "1.5K").
+        // Token count (compact format).
         let tokens = Span::styled(
             format!(
-                " \u{2191}{} \u{2193}{} ",
+                " ↑{} ↓{} ",
                 format_tokens(self.usage.input_tokens),
                 format_tokens(self.usage.output_tokens),
             ),
-            Style::default().fg(Color::Yellow),
+            Style::default()
+                .fg(render::STATUS_YELLOW)
+                .bg(render::STATUS_BAR_BG),
         );
 
-        // Cache token display (only when cache tokens are present).
+        // Cache token display.
         let cache_read = self.usage.cache_read_input_tokens.unwrap_or(0);
         let cache_write = self.usage.cache_creation_input_tokens.unwrap_or(0);
         let cache_span = if cache_read > 0 || cache_write > 0 {
-            let mut parts = String::from(" \u{26a1}");
+            let mut parts = String::from(" ⚡");
             if cache_read > 0 {
                 parts.push_str(&format_tokens(cache_read));
             }
             if cache_write > 0 {
                 use std::fmt::Write;
-                let _ = write!(parts, " \u{2191}{}", format_tokens(cache_write));
+                let _ = write!(parts, " ↑{}", format_tokens(cache_write));
             }
             parts.push(' ');
-            Span::styled(parts, Style::default().fg(Color::Cyan))
+            Span::styled(
+                parts,
+                Style::default()
+                    .fg(render::STATUS_CYAN)
+                    .bg(render::STATUS_BAR_BG),
+            )
         } else {
             Span::raw("")
         };
 
-        // Cost estimate (rough, based on Claude Sonnet pricing).
+        // Cost estimate.
         let cost = f64::from(self.usage.input_tokens) * 3.0 / 1_000_000.0
             + f64::from(self.usage.output_tokens) * 15.0 / 1_000_000.0;
-        let cost_span = Span::styled(format!(" ${cost:.4} "), Style::default().fg(Color::Cyan));
+        let cost_span = Span::styled(
+            format!(" ${cost:.4} "),
+            Style::default()
+                .fg(render::STATUS_CYAN)
+                .bg(render::STATUS_BAR_BG),
+        );
 
         // MCP indicator.
         let mcp_span = if self.mcp_server_count > 0 {
             Span::styled(
                 format!(" MCP:{} ", self.mcp_server_count),
-                Style::default().fg(Color::Magenta),
+                Style::default()
+                    .fg(Color::Rgb(180, 120, 80))
+                    .bg(render::STATUS_BAR_BG),
             )
         } else {
             Span::raw("")
@@ -206,25 +237,30 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         } else {
             let short: String = self.session_name.chars().take(8).collect();
-            Span::styled(format!(" [{short}] "), Style::default().fg(Color::DarkGray))
+            Span::styled(
+                format!(" [{short}] "),
+                Style::default()
+                    .fg(render::CHROME_MUTED)
+                    .bg(render::STATUS_BAR_BG),
+            )
         };
 
-        // Vim mode badge.
+        // Vim mode badge — colored text on subtle bg, not inverted.
         let vim_span = if self.vim_badge.is_empty() {
             Span::raw("")
         } else {
             let badge_color = match self.vim_badge {
-                "N" => Color::Blue,
-                "I" => Color::Green,
-                "V" | "VL" => Color::Magenta,
-                "C" => Color::Yellow,
-                _ => Color::White,
+                "N" => Color::Rgb(180, 130, 80),      // Warm amber for Normal
+                "I" => render::STATUS_GREEN,            // Green for Insert
+                "V" | "VL" => Color::Rgb(180, 100, 60), // Warm rust for Visual
+                "C" => render::STATUS_YELLOW,           // Amber for Command
+                _ => render::CHROME_TEXT,
             };
             Span::styled(
                 format!(" VIM:{} ", self.vim_badge),
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(badge_color)
+                    .fg(badge_color)
+                    .bg(Color::Rgb(40, 34, 30))
                     .add_modifier(Modifier::BOLD),
             )
         };
@@ -233,14 +269,16 @@ impl Widget for StatusBar<'_> {
         let auth_span = if self.auth_label.is_empty() {
             Span::raw("")
         } else {
-            let auth_color = if self.auth_label.contains('\u{26a1}') {
-                Color::Green // OAuth
+            let auth_color = if self.auth_label.contains('⚡') {
+                render::STATUS_GREEN
             } else {
-                Color::Yellow // API key
+                render::STATUS_YELLOW
             };
             Span::styled(
                 format!(" {} ", self.auth_label),
-                Style::default().fg(auth_color),
+                Style::default()
+                    .fg(auth_color)
+                    .bg(render::STATUS_BAR_BG),
             )
         };
 
@@ -249,33 +287,38 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         } else {
             let (icon, color) = match self.voice_status {
-                "listening" => ("\u{1f3a4}", Color::Red), // 🎤 red when recording
-                "processing" => ("\u{1f3a4}", Color::Yellow), // 🎤 yellow when processing
-                _ => ("\u{1f3a4}", Color::DarkGray),
+                "listening" => ("🎤", render::STATUS_RED),
+                "processing" => ("🎤", render::STATUS_YELLOW),
+                _ => ("🎤", render::CHROME_MUTED),
             };
             Span::styled(
                 format!(" {icon} {}", self.voice_status),
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(color)
+                    .bg(render::STATUS_BAR_BG)
+                    .add_modifier(Modifier::BOLD),
             )
         };
 
-        // Context window usage — visual progress bar + percentage.
+        // Context window usage — visual progress bar.
         let ctx_span = match self.context_pct {
             Some(pct) if pct > 0.0 => {
                 let color = if pct >= 85.0 {
-                    Color::Red
+                    render::STATUS_RED
                 } else if pct >= 60.0 {
-                    Color::Yellow
+                    render::STATUS_YELLOW
                 } else {
-                    Color::Green
+                    render::STATUS_GREEN
                 };
-                // 10-char bar: filled = █, empty = ░
-                #[allow(clippy::cast_sign_loss)] // pct is always > 0.0 in this branch
+                #[allow(clippy::cast_sign_loss)]
                 let filled = ((pct / 100.0) * 10.0).round() as usize;
                 let filled = filled.min(10);
                 let empty = 10 - filled;
-                let bar: String = "\u{2588}".repeat(filled) + &"\u{2591}".repeat(empty);
-                Span::styled(format!(" {bar} {pct:.0}%"), Style::default().fg(color))
+                let bar: String = "█".repeat(filled) + &"░".repeat(empty);
+                Span::styled(
+                    format!(" {bar} {pct:.0}%"),
+                    Style::default().fg(color).bg(render::STATUS_BAR_BG),
+                )
             }
             _ => Span::raw(""),
         };
@@ -285,13 +328,15 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         } else {
             let perm_color = match self.permission_mode {
-                "auto" => Color::Green,
-                "bypass" => Color::Red,
-                _ => Color::Yellow, // "ask" and others
+                "auto" => render::STATUS_GREEN,
+                "bypass" => render::STATUS_RED,
+                _ => render::STATUS_YELLOW,
             };
             Span::styled(
                 format!(" [{}]", self.permission_mode),
-                Style::default().fg(perm_color),
+                Style::default()
+                    .fg(perm_color)
+                    .bg(render::STATUS_BAR_BG),
             )
         };
 
@@ -306,7 +351,12 @@ impl Widget for StatusBar<'_> {
                 } else {
                     format!(" {}h{}m", secs / 3600, (secs % 3600) / 60)
                 };
-                Span::styled(display, Style::default().fg(Color::DarkGray))
+                Span::styled(
+                    display,
+                    Style::default()
+                        .fg(render::CHROME_MUTED)
+                        .bg(render::STATUS_BAR_BG),
+                )
             }
             None => Span::raw(""),
         };
@@ -316,7 +366,12 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         } else {
             let short = shorten_cwd(self.cwd);
-            Span::styled(format!(" {short}"), Style::default().fg(Color::DarkGray))
+            Span::styled(
+                format!(" {short}"),
+                Style::default()
+                    .fg(render::CHROME_MUTED)
+                    .bg(render::STATUS_BAR_BG),
+            )
         };
 
         let line = Line::from(vec![

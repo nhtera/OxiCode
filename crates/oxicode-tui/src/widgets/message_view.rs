@@ -280,7 +280,7 @@ impl<'a> MessageView<'a> {
                 lines.push(Line::from(Span::styled(
                     "\u{25c6} Assistant", // ◆ Assistant
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(crate::render::STATUS_GREEN)
                         .add_modifier(Modifier::BOLD),
                 )));
             }
@@ -307,7 +307,7 @@ impl<'a> MessageView<'a> {
                 // Show accumulated thinking text (max 5 lines) if available.
                 if let Some(thinking) = self.streaming_thinking.filter(|t| !t.is_empty()) {
                     let dim_italic = Style::default()
-                        .fg(Color::DarkGray)
+                        .fg(crate::render::TRANSCRIPT_MUTED)
                         .add_modifier(Modifier::ITALIC);
                     lines.push(Line::from(vec![
                         Span::styled(format!("  {spinner} "), Style::default().fg(color)),
@@ -323,14 +323,14 @@ impl<'a> MessageView<'a> {
                     let shown = all_lines.len().min(MAX_THINK_LINES);
                     for think_line in &all_lines[..shown] {
                         lines.push(Line::from(vec![
-                            Span::styled("  \u{2502} ", Style::default().fg(Color::DarkGray)),
+                            Span::styled("  \u{2502} ", Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
                             Span::styled((*think_line).to_string(), dim_italic),
                         ]));
                     }
                     if total > MAX_THINK_LINES {
                         lines.push(Line::from(Span::styled(
                             format!("  \u{2502} ... ({} more lines)", total - MAX_THINK_LINES),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                         )));
                     }
                 } else {
@@ -339,7 +339,7 @@ impl<'a> MessageView<'a> {
                         Span::styled(
                             format!("Thinking... ({elapsed})"),
                             Style::default()
-                                .fg(Color::DarkGray)
+                                .fg(crate::render::TRANSCRIPT_MUTED)
                                 .add_modifier(Modifier::ITALIC),
                         ),
                     ]));
@@ -370,7 +370,7 @@ impl<'a> MessageView<'a> {
             let elapsed = tool_display::format_elapsed(started);
             lines.push(Line::from(vec![
                 Span::styled(format!("  {spinner} "), Style::default().fg(color)),
-                Span::styled(elapsed, Style::default().fg(Color::DarkGray)),
+                Span::styled(elapsed, Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
             ]));
         } else {
             lines.push(Line::from(Span::styled(
@@ -381,7 +381,11 @@ impl<'a> MessageView<'a> {
     }
 
     fn render_active_tools(&self, lines: &mut Vec<Line<'a>>) {
-        for tool in self.active_tools {
+        for (i, tool) in self.active_tools.iter().enumerate() {
+            if i > 0 {
+                // Breathing room between consecutive tools.
+                lines.push(Line::from(""));
+            }
             match tool.result {
                 None => {
                     lines.push(tool_display::running_tool_line_animated(
@@ -410,10 +414,10 @@ impl<'a> MessageView<'a> {
 
     /// Render the welcome screen shown when no messages exist.
     fn render_welcome_screen(&self, lines: &mut Vec<Line<'a>>) {
-        let dim = Style::default().fg(Color::DarkGray);
-        let green = Style::default().fg(Color::Green);
+        let dim = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
+        let accent = Style::default().fg(crate::render::CLAUDE_ORANGE);
 
-        // ASCII art logo — alternate Cyan / Blue per row for gradient effect.
+        // ASCII art logo — gradient from brand magenta to soft blue.
         let logo_lines = [
             "   \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2557}  \u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}",
             "  \u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557}\u{255a}\u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2551}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}",
@@ -422,14 +426,14 @@ impl<'a> MessageView<'a> {
             "  \u{255a}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2554}\u{255d} \u{2588}\u{2588}\u{2557}\u{2588}\u{2588}\u{2551}\u{255a}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}\u{255a}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2554}\u{255d}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2557}",
             "   \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{255d}  \u{255a}\u{2550}\u{255d}\u{255a}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d} \u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}",
         ];
-        // Gradient colors alternating Cyan / Blue per line.
+        // Gradient: deep rust red → burnt orange → warm orange for depth.
         let gradient = [
-            Color::Cyan,
-            Color::Blue,
-            Color::Cyan,
-            Color::Blue,
-            Color::Cyan,
-            Color::Blue,
+            Color::Rgb(139, 37, 0),   // Deep rust red
+            Color::Rgb(180, 70, 15),  // Dark burnt orange
+            Color::Rgb(200, 90, 23),  // Brand burnt orange
+            Color::Rgb(220, 120, 40), // Warm amber
+            Color::Rgb(232, 160, 64), // Golden orange
+            Color::Rgb(210, 140, 80), // Muted warm
         ];
 
         lines.push(Line::from(""));
@@ -447,14 +451,14 @@ impl<'a> MessageView<'a> {
             info_spans.push(Span::styled(" • ", dim));
             info_spans.push(Span::styled(
                 model.to_string(),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(crate::render::TRANSCRIPT_MUTED),
             ));
         }
         if let Some(cwd) = self.cwd {
             info_spans.push(Span::styled(" • ", dim));
             info_spans.push(Span::styled(
                 cwd.to_string(),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(crate::render::TRANSCRIPT_MUTED),
             ));
         }
         lines.push(Line::from(info_spans));
@@ -462,52 +466,62 @@ impl<'a> MessageView<'a> {
 
         // Quick shortcuts.
         lines.push(Line::from(vec![
-            Span::styled("  Enter  ", green),
+            Span::styled("  Enter  ", accent),
             Span::styled("— send message    ", dim),
-            Span::styled("Ctrl+C  ", green),
+            Span::styled("Ctrl+C  ", accent),
             Span::styled("— interrupt/quit", dim),
         ]));
         lines.push(Line::from(vec![
-            Span::styled("  Tab    ", green),
+            Span::styled("  Tab    ", accent),
             Span::styled("— toggle panel    ", dim),
-            Span::styled("/help   ", green),
+            Span::styled("/help   ", accent),
             Span::styled("— commands", dim),
         ]));
         lines.push(Line::from(""));
     }
 }
 
-/// Render a horizontal separator line between messages.
+/// Render a compact separator between messages — single empty line.
 fn render_separator(lines: &mut Vec<Line<'_>>) {
-    lines.push(Line::from(""));
-    // Use dim thin line separator — 60 chars wide to look clean.
-    lines.push(Line::from(Span::styled(
-        " \u{2500}".to_string() + &"\u{2500}".repeat(59),
-        Style::default().fg(Color::Rgb(50, 50, 50)),
-    )));
     lines.push(Line::from(""));
 }
 
 /// Apply user block style: orange `▏` left border + dark background.
 ///
 /// Makes user messages visually distinct from assistant replies.
-fn apply_user_block_style(line: Line<'static>, _width: u16) -> Line<'static> {
-    let mut spans = Vec::with_capacity(line.spans.len() + 1);
+fn apply_user_block_style(line: Line<'static>, width: u16) -> Line<'static> {
+    let bg = crate::render::TRANSCRIPT_USER_BG;
+    let mut spans = Vec::with_capacity(line.spans.len() + 2);
     // Orange left border character.
     spans.push(Span::styled(
         "\u{258f} ".to_string(), // ▏ (left 1/8 block)
         Style::default()
             .fg(crate::render::CLAUDE_ORANGE)
-            .bg(crate::render::TRANSCRIPT_USER_BG),
+            .bg(bg),
     ));
     // Re-style existing spans with dark background.
     for span in line.spans {
         spans.push(Span::styled(
             span.content.to_string(),
-            span.style.bg(crate::render::TRANSCRIPT_USER_BG),
+            span.style.bg(bg),
         ));
     }
-    Line::from(spans)
+    // Fill remaining width with background to create a solid block.
+    // Use inner width (accounting for Block borders) to avoid triggering
+    // unwanted line wrapping inside the bordered Paragraph.
+    let built = Line::from(spans);
+    let used = built.width();
+    let inner_width = (width as usize).saturating_sub(2); // subtract Block borders
+    if used < inner_width {
+        let mut spans = built.spans;
+        spans.push(Span::styled(
+            " ".repeat(inner_width - used),
+            Style::default().bg(bg),
+        ));
+        Line::from(spans)
+    } else {
+        built
+    }
 }
 
 /// Render a message header into owned lines (for caching).
@@ -527,7 +541,7 @@ fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
             let mut spans = vec![Span::styled(
                 "\u{25c6} Assistant".to_string(), // ◆ Assistant
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(crate::render::STATUS_GREEN)
                     .add_modifier(Modifier::BOLD),
             )];
             // Shortened model name (e.g. "claude-sonnet-4-20250514" → "sonnet-4").
@@ -549,7 +563,7 @@ fn render_message_header_static(msg: &Message, lines: &mut Vec<Line<'static>>) {
         Role::System => {
             lines.push(Line::from(Span::styled(
                 "\u{2699} System".to_string(),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(crate::render::STATUS_YELLOW),
             )));
         }
     }
@@ -603,16 +617,16 @@ fn render_content_blocks_static(
             ContentBlock::ToolUse { name, input, .. } => {
                 let summary = tool_input_summary(input);
                 lines.push(Line::from(vec![
-                    Span::styled("  \u{27f3} ", Style::default().fg(Color::Yellow)),
+                    Span::styled("  \u{27f3} ", Style::default().fg(crate::render::STATUS_YELLOW)),
                     Span::styled(
                         name.clone(),
                         Style::default()
-                            .fg(Color::Yellow)
+                            .fg(crate::render::STATUS_YELLOW)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         format!(" \u{2500} {summary}"),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(crate::render::TRANSCRIPT_SECONDARY),
                     ),
                 ]));
             }
@@ -622,9 +636,9 @@ fn render_content_blocks_static(
                 is_error,
             } => {
                 let (icon, color) = if *is_error {
-                    ("\u{2717}", Color::Red) // ✗
+                    ("\u{2717}", crate::render::STATUS_RED) // ✗
                 } else {
-                    ("\u{2713}", Color::Green) // ✓
+                    ("\u{2713}", crate::render::STATUS_GREEN) // ✓
                 };
                 // Show tool name if available, otherwise generic tag.
                 let tool_label = tool_names
@@ -641,12 +655,12 @@ fn render_content_blocks_static(
                     ),
                 ]));
                 let result_fg = if *is_error {
-                    Color::Red
+                    crate::render::STATUS_RED
                 } else {
-                    Color::DarkGray
+                    crate::render::TRANSCRIPT_SECONDARY
                 };
                 let result_style = Style::default().fg(result_fg);
-                let pipe_style = Style::default().fg(Color::DarkGray);
+                let pipe_style = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
                 let total_lines = content.lines().count();
                 for (i, line) in content.lines().enumerate() {
                     if i >= MAX_RESULT_LINES {
@@ -670,20 +684,20 @@ fn render_content_blocks_static(
                         Span::styled(
                             "  \u{25bc} Thinking ".to_string(), // ▼
                             Style::default()
-                                .fg(Color::DarkGray)
+                                .fg(crate::render::TRANSCRIPT_MUTED)
                                 .add_modifier(Modifier::ITALIC),
                         ),
                         Span::styled(
                             format!("({line_count} lines)"),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                         ),
                     ]));
                     let dim_italic = Style::default()
-                        .fg(Color::DarkGray)
+                        .fg(crate::render::TRANSCRIPT_MUTED)
                         .add_modifier(Modifier::ITALIC);
                     for think_line in thinking.lines() {
                         lines.push(Line::from(vec![
-                            Span::styled("  \u{2502} ".to_string(), Style::default().fg(Color::DarkGray)),
+                            Span::styled("  \u{2502} ".to_string(), Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
                             Span::styled(think_line.to_string(), dim_italic),
                         ]));
                     }
@@ -693,12 +707,12 @@ fn render_content_blocks_static(
                         Span::styled(
                             "  \u{25b6} Thinking ".to_string(), // ▶
                             Style::default()
-                                .fg(Color::DarkGray)
+                                .fg(crate::render::TRANSCRIPT_MUTED)
                                 .add_modifier(Modifier::ITALIC),
                         ),
                         Span::styled(
                             format!("({line_count} lines)"),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                         ),
                     ]));
                 }
@@ -735,7 +749,7 @@ impl Widget for MessageView<'_> {
     fn render(mut self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray))
+            .border_style(Style::default().fg(crate::render::BORDER_COLOR))
             .title(" Conversation ");
 
         // Set viewport height for message limiting optimization.
@@ -771,8 +785,8 @@ impl Widget for MessageView<'_> {
                 .end_symbol(None)
                 .track_symbol(Some("│"))
                 .thumb_symbol("█")
-                .track_style(Style::default().fg(Color::DarkGray))
-                .thumb_style(Style::default().fg(Color::Gray));
+                .track_style(Style::default().fg(crate::render::BORDER_COLOR))
+                .thumb_style(Style::default().fg(crate::render::CHROME_MUTED));
             // Use max scrollable range as content_length so the thumb reaches
             // the very bottom when fully scrolled down.
             let mut scrollbar_state =
@@ -869,12 +883,12 @@ mod tests {
             0,
         );
         let text = view.format_messages();
-        // Should contain separator character.
-        let has_separator = text
+        // Compact separator: single empty line between messages.
+        let has_empty = text
             .lines
             .iter()
-            .any(|line| line.spans.iter().any(|s| s.content.contains('\u{2500}')));
-        assert!(has_separator, "Should have separator between messages");
+            .any(|line| line.spans.is_empty());
+        assert!(has_empty, "Should have empty-line separator between messages");
     }
 
     #[test]

@@ -129,7 +129,7 @@ pub fn highlight_code(code: &str, lang: &str) -> Option<Vec<Line<'static>>> {
         let mut spans = vec![Span::styled(
             line_num,
             Style::default()
-                .fg(Color::DarkGray)
+                .fg(crate::render::TRANSCRIPT_MUTED)
                 .bg(Color::Rgb(30, 30, 30)),
         )];
 

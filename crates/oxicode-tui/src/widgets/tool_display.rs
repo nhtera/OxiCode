@@ -60,20 +60,20 @@ pub fn running_tool_line(name: &str, input_summary: &str, started_at: Instant) -
     let frame = spinner_frame(started_at);
     let elapsed = format_elapsed(started_at);
     Line::from(vec![
-        Span::styled(format!("  {frame} "), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("  {frame} "), Style::default().fg(crate::render::STATUS_CYAN)),
         Span::styled(
             name.to_string(),
             Style::default()
-                .fg(Color::White)
+                .fg(crate::render::TRANSCRIPT_TEXT)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" \u{2014} {input_summary}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
         Span::styled(
             format!(" ({elapsed})"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
     ])
 }
@@ -96,16 +96,16 @@ pub fn running_tool_line_animated(
         Span::styled(
             name.to_string(),
             Style::default()
-                .fg(Color::White)
+                .fg(crate::render::TRANSCRIPT_TEXT)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" \u{2014} {input_summary}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
         Span::styled(
             format!(" ({elapsed})"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
     ])
 }
@@ -157,13 +157,13 @@ fn tool_header(icon: &str, color: Color, name: &str, summary: &str, started_at: 
         Span::styled(format!("  {icon} "), Style::default().fg(color)),
         Span::styled(
             name.to_string(),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default().fg(crate::render::TRANSCRIPT_TEXT).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" \u{2014} {summary}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
-        Span::styled(elapsed_str, Style::default().fg(Color::DarkGray)),
+        Span::styled(elapsed_str, Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
     ])
 }
 
@@ -174,7 +174,7 @@ fn append_output_lines(
     max: usize,
     style: Style,
 ) {
-    let pipe_style = Style::default().fg(Color::DarkGray);
+    let pipe_style = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
     let total = content.lines().count();
     for (i, line) in content.lines().enumerate() {
         if i >= max {
@@ -193,9 +193,9 @@ fn append_output_lines(
 
 fn status_icon(is_error: bool) -> (&'static str, Color) {
     if is_error {
-        ("\u{2717}", Color::Red)
+        ("\u{2717}", crate::render::STATUS_RED)
     } else {
-        ("\u{2713}", Color::Green)
+        ("\u{2713}", crate::render::STATUS_GREEN)
     }
 }
 
@@ -229,9 +229,9 @@ fn render_bash(
     // Output with error coloring.
     if !content.is_empty() {
         let result_style = if is_error {
-            Style::default().fg(Color::Red)
+            Style::default().fg(crate::render::STATUS_RED)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(crate::render::TRANSCRIPT_SECONDARY)
         };
         append_output_lines(&mut lines, content, max, result_style);
     }
@@ -266,14 +266,14 @@ fn render_file_read(
             &mut lines,
             content,
             preview_max,
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_SECONDARY),
         );
     } else if is_error {
         append_output_lines(
             &mut lines,
             content,
             max,
-            Style::default().fg(Color::Red),
+            Style::default().fg(crate::render::STATUS_RED),
         );
     }
     lines
@@ -304,7 +304,7 @@ fn render_file_write(
     lines.push(tool_header(icon, color, "Write", &summary, started_at));
 
     if is_error && !content.is_empty() {
-        append_output_lines(&mut lines, content, 3, Style::default().fg(Color::Red));
+        append_output_lines(&mut lines, content, 3, Style::default().fg(crate::render::STATUS_RED));
     }
     lines
 }
@@ -333,9 +333,9 @@ fn render_edit(
         let old = input.get("old_string").and_then(Value::as_str);
         let new = input.get("new_string").and_then(Value::as_str);
         if let (Some(old_str), Some(new_str)) = (old, new) {
-            let pipe_style = Style::default().fg(Color::DarkGray);
-            let del_style = Style::default().fg(Color::Red);
-            let add_style = Style::default().fg(Color::Green);
+            let pipe_style = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
+            let del_style = Style::default().fg(crate::render::STATUS_RED);
+            let add_style = Style::default().fg(crate::render::STATUS_GREEN);
 
             // Show up to 3 old lines and 3 new lines.
             for line in old_str.lines().take(3) {
@@ -366,7 +366,7 @@ fn render_edit(
     }
 
     if is_error && !content.is_empty() {
-        append_output_lines(&mut lines, content, 3, Style::default().fg(Color::Red));
+        append_output_lines(&mut lines, content, 3, Style::default().fg(crate::render::STATUS_RED));
     }
     lines
 }
@@ -410,10 +410,10 @@ fn render_search(
             &mut lines,
             content,
             max,
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_SECONDARY),
         );
     } else if is_error {
-        append_output_lines(&mut lines, content, max, Style::default().fg(Color::Red));
+        append_output_lines(&mut lines, content, max, Style::default().fg(crate::render::STATUS_RED));
     }
     lines
 }
@@ -434,9 +434,9 @@ fn render_generic(
 
     if !content.is_empty() {
         let result_style = if is_error {
-            Style::default().fg(Color::Red)
+            Style::default().fg(crate::render::STATUS_RED)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(crate::render::TRANSCRIPT_SECONDARY)
         };
         append_output_lines(&mut lines, content, max, result_style);
     }

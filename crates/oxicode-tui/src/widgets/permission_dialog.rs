@@ -34,9 +34,9 @@ impl RiskLevel {
     /// Border / title color for this risk level.
     pub fn border_color(self) -> Color {
         match self {
-            Self::Low => Color::Green,
-            Self::Moderate => Color::Yellow,
-            Self::High => Color::Red,
+            Self::Low => crate::render::STATUS_GREEN,
+            Self::Moderate => crate::render::STATUS_YELLOW,
+            Self::High => crate::render::STATUS_RED,
         }
     }
 }
@@ -140,14 +140,14 @@ impl Widget for PermissionDialog<'_> {
 
         lines.push(Line::from(Span::styled(
             format!("  {preview_label}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         )));
 
         // Top border of nested preview box.
         let box_fill = inner_width.saturating_sub(2);
         lines.push(Line::from(Span::styled(
             format!("  \u{250c}{}\u{2510}", "\u{2500}".repeat(box_fill)),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         )));
 
         // Preview content — truncate to 3 lines max.
@@ -160,8 +160,8 @@ impl Widget for PermissionDialog<'_> {
                 (*pline).to_string()
             };
             lines.push(Line::from(vec![
-                Span::styled("  \u{2502} ".to_string(), Style::default().fg(Color::DarkGray)),
-                Span::styled(display, Style::default().fg(Color::White)),
+                Span::styled("  \u{2502} ".to_string(), Style::default().fg(crate::render::TRANSCRIPT_MUTED)),
+                Span::styled(display, Style::default().fg(crate::render::TRANSCRIPT_TEXT)),
             ]));
         }
         // Show truncation indicator if input has more lines.
@@ -169,14 +169,14 @@ impl Widget for PermissionDialog<'_> {
         if total_input_lines > 3 {
             lines.push(Line::from(Span::styled(
                 format!("  \u{2502} ... ({} more lines)", total_input_lines - 3),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(crate::render::TRANSCRIPT_MUTED),
             )));
         }
 
         // Bottom border of nested preview box.
         lines.push(Line::from(Span::styled(
             format!("  \u{2514}{}\u{2518}", "\u{2500}".repeat(box_fill)),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         )));
 
         lines.push(Line::from(""));
@@ -184,11 +184,11 @@ impl Widget for PermissionDialog<'_> {
         // Danger warning — shown for High risk level.
         if self.risk_level == RiskLevel::High {
             lines.push(Line::from(vec![
-                Span::styled("  \u{26a0} ", Style::default().fg(Color::Red)),
+                Span::styled("  \u{26a0} ", Style::default().fg(crate::render::STATUS_RED)),
                 Span::styled(
                     self.risk_description,
                     Style::default()
-                        .fg(Color::Red)
+                        .fg(crate::render::STATUS_RED)
                         .add_modifier(Modifier::BOLD),
                 ),
             ]));
@@ -196,22 +196,23 @@ impl Widget for PermissionDialog<'_> {
         }
 
         // Options with hotkey badges.
+        let selected_bg = crate::render::CLAUDE_ORANGE;
         for (i, (option, hotkey)) in OPTIONS.iter().zip(HOTKEYS.iter()).enumerate() {
             let (prefix, style) = if i == self.selected {
                 ("\u{25b8} ", Style::default()
                     .fg(Color::Black)
-                    .bg(Color::Yellow)
+                    .bg(selected_bg)
                     .add_modifier(Modifier::BOLD))
             } else {
-                ("  ", Style::default())
+                ("  ", Style::default().fg(crate::render::TRANSCRIPT_TEXT))
             };
             let hotkey_style = if i == self.selected {
                 Style::default()
                     .fg(Color::Black)
-                    .bg(Color::Yellow)
+                    .bg(selected_bg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Green)
+                Style::default().fg(crate::render::STATUS_GREEN)
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("  {prefix}"), style),
@@ -223,22 +224,25 @@ impl Widget for PermissionDialog<'_> {
         lines.push(Line::from(""));
 
         // Footer: explicit keybinding hints so users know all options at a glance.
+        let muted = crate::render::TRANSCRIPT_MUTED;
+        let confirm_color = crate::render::STATUS_GREEN;
+        let deny_color = crate::render::STATUS_RED;
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled("\u{2191}\u{2193}", Style::default().fg(Color::DarkGray)),
-            Span::styled(" nav  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Enter", Style::default().fg(Color::Green)),
-            Span::styled(" confirm  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("y", Style::default().fg(Color::Green)),
-            Span::styled("/", Style::default().fg(Color::DarkGray)),
-            Span::styled("a", Style::default().fg(Color::Green)),
-            Span::styled("/", Style::default().fg(Color::DarkGray)),
-            Span::styled("n", Style::default().fg(Color::Red)),
-            Span::styled("/", Style::default().fg(Color::DarkGray)),
-            Span::styled("N", Style::default().fg(Color::Red)),
-            Span::styled("  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Esc", Style::default().fg(Color::Red)),
-            Span::styled(" deny", Style::default().fg(Color::DarkGray)),
+            Span::styled("\u{2191}\u{2193}", Style::default().fg(muted)),
+            Span::styled(" nav  ", Style::default().fg(muted)),
+            Span::styled("Enter", Style::default().fg(confirm_color)),
+            Span::styled(" confirm  ", Style::default().fg(muted)),
+            Span::styled("y", Style::default().fg(confirm_color)),
+            Span::styled("/", Style::default().fg(muted)),
+            Span::styled("a", Style::default().fg(confirm_color)),
+            Span::styled("/", Style::default().fg(muted)),
+            Span::styled("n", Style::default().fg(deny_color)),
+            Span::styled("/", Style::default().fg(muted)),
+            Span::styled("N", Style::default().fg(deny_color)),
+            Span::styled("  ", Style::default().fg(muted)),
+            Span::styled("Esc", Style::default().fg(deny_color)),
+            Span::styled(" deny", Style::default().fg(muted)),
         ]));
 
         let paragraph = Paragraph::new(lines)
@@ -314,9 +318,9 @@ mod tests {
 
     #[test]
     fn risk_level_border_colors() {
-        assert_eq!(RiskLevel::Low.border_color(), Color::Green);
-        assert_eq!(RiskLevel::Moderate.border_color(), Color::Yellow);
-        assert_eq!(RiskLevel::High.border_color(), Color::Red);
+        assert_eq!(RiskLevel::Low.border_color(), crate::render::STATUS_GREEN);
+        assert_eq!(RiskLevel::Moderate.border_color(), crate::render::STATUS_YELLOW);
+        assert_eq!(RiskLevel::High.border_color(), crate::render::STATUS_RED);
     }
 
     #[test]

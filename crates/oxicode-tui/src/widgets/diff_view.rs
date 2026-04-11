@@ -1,6 +1,6 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
 
@@ -30,11 +30,11 @@ impl<'a> DiffView<'a> {
         // Header.
         lines.push(Line::from(Span::styled(
             format!("--- a/{}", self.file_path),
-            Style::default().fg(Color::Red),
+            Style::default().fg(crate::render::STATUS_RED),
         )));
         lines.push(Line::from(Span::styled(
             format!("+++ b/{}", self.file_path),
-            Style::default().fg(Color::Green),
+            Style::default().fg(crate::render::STATUS_GREEN),
         )));
 
         // Simple line-by-line diff (not a proper LCS diff, but sufficient for display).
@@ -52,11 +52,11 @@ impl<'a> DiffView<'a> {
                     // Show removal then addition.
                     lines.push(Line::from(Span::styled(
                         format!("-{}", old_lines[i]),
-                        Style::default().fg(Color::Red),
+                        Style::default().fg(crate::render::STATUS_RED),
                     )));
                     lines.push(Line::from(Span::styled(
                         format!("+{}", new_lines[j]),
-                        Style::default().fg(Color::Green),
+                        Style::default().fg(crate::render::STATUS_GREEN),
                     )));
                     i += 1;
                     j += 1;
@@ -64,13 +64,13 @@ impl<'a> DiffView<'a> {
             } else if i < old_lines.len() {
                 lines.push(Line::from(Span::styled(
                     format!("-{}", old_lines[i]),
-                    Style::default().fg(Color::Red),
+                    Style::default().fg(crate::render::STATUS_RED),
                 )));
                 i += 1;
             } else if j < new_lines.len() {
                 lines.push(Line::from(Span::styled(
                     format!("+{}", new_lines[j]),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(crate::render::STATUS_GREEN),
                 )));
                 j += 1;
             }
@@ -79,7 +79,7 @@ impl<'a> DiffView<'a> {
             if lines.len() > max_len + 100 {
                 lines.push(Line::from(Span::styled(
                     "... diff truncated",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                 )));
                 break;
             }
@@ -93,7 +93,7 @@ impl Widget for DiffView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
             .borders(Borders::LEFT)
-            .border_style(Style::default().fg(Color::DarkGray))
+            .border_style(Style::default().fg(crate::render::CHROME_MUTED))
             .title(format!(" Diff: {} ", self.file_path));
 
         let lines = self.diff_lines();
@@ -144,12 +144,12 @@ mod tests {
         let red_lines: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(Color::Red) && s.content.starts_with('-'))
+            .filter(|s| s.style.fg == Some(crate::render::STATUS_RED) && s.content.starts_with('-'))
             .collect();
         let green_lines: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(Color::Green) && s.content.starts_with('+'))
+            .filter(|s| s.style.fg == Some(crate::render::STATUS_GREEN) && s.content.starts_with('+'))
             .collect();
 
         assert!(!red_lines.is_empty(), "Should have red (removal) lines");
@@ -166,7 +166,7 @@ mod tests {
         let green: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(Color::Green) && s.content.contains("line2"))
+            .filter(|s| s.style.fg == Some(crate::render::STATUS_GREEN) && s.content.contains("line2"))
             .collect();
         assert!(!green.is_empty(), "Added line should be green");
     }
@@ -178,7 +178,7 @@ mod tests {
         let red: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(Color::Red) && s.content.contains("line2"))
+            .filter(|s| s.style.fg == Some(crate::render::STATUS_RED) && s.content.contains("line2"))
             .collect();
         assert!(!red.is_empty(), "Removed line should be red");
     }

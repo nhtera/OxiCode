@@ -1,7 +1,7 @@
 //! Reusable modal overlay helpers — centering, darkening, dialog background.
 //!
 //! These primitives are shared by all overlay widgets (help, search, permission, etc.)
-//! following the pattern from claurst: darken screen → clear dialog area → fill background → render content.
+//! Pattern: darken screen → clear dialog area → fill background → render content.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -11,20 +11,20 @@ use ratatui::widgets::{Clear, Widget};
 
 // ── Color palette ────────────────────────────────────────────────────────────
 
-/// Semi-transparent overlay background (darkened).
-pub const OVERLAY_BG: Color = Color::Rgb(10, 10, 15);
+/// Semi-transparent overlay background (darkened warm charcoal).
+pub const OVERLAY_BG: Color = Color::Rgb(12, 10, 8);
 
-/// Dialog panel background.
-pub const PANEL_BG: Color = Color::Rgb(20, 22, 30);
+/// Dialog panel background — warm dark charcoal.
+pub const PANEL_BG: Color = Color::Rgb(25, 22, 20);
 
-/// Primary text color inside dialogs.
-pub const DIALOG_TEXT: Color = Color::Rgb(220, 220, 230);
+/// Primary text color inside dialogs — warm cream.
+pub const DIALOG_TEXT: Color = Color::Rgb(240, 232, 224);
 
-/// Muted/secondary text color.
-pub const DIALOG_MUTED: Color = Color::Rgb(100, 105, 120);
+/// Muted/secondary text color — rose-gray.
+pub const DIALOG_MUTED: Color = Color::Rgb(140, 120, 115);
 
-/// Accent color for headers and highlights.
-pub const DIALOG_ACCENT: Color = Color::Cyan;
+/// Accent color for headers and highlights — warm amber.
+pub const DIALOG_ACCENT: Color = Color::Rgb(210, 140, 70);
 
 // ── Geometry helpers ─────────────────────────────────────────────────────────
 
@@ -183,7 +183,7 @@ pub fn shortcut_line(key: &str, desc: &str) -> Line<'static> {
         Span::styled(
             format!(" {key:<14}"),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(DIALOG_ACCENT)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(desc.to_string(), Style::default().fg(DIALOG_TEXT)),
