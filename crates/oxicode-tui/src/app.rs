@@ -280,9 +280,6 @@ impl App {
         terminal: &mut Terminal<impl Backend>,
         term_rx: &mut mpsc::Receiver<Event>,
     ) -> io::Result<()> {
-        let mut tick_interval = tokio::time::interval(Duration::from_millis(100));
-        tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
         // Draw the initial frame before entering the event loop.
         self.draw(terminal)?;
 
@@ -290,6 +287,13 @@ impl App {
             if self.should_quit {
                 break;
             }
+
+            // Dynamic tick: 50ms during active streaming for smooth spinner,
+            // 100ms when idle (notifications, permission countdown).
+            let tick_ms = if self.is_turn_active { 50 } else { 100 };
+            let needs_tick = self.is_turn_active
+                || !self.notifications.is_empty()
+                || self.pending_permission.is_some();
 
             tokio::select! {
                 Some(ev) = term_rx.recv() => {
@@ -310,7 +314,7 @@ impl App {
                     self.draw(terminal)?;
                 }
                 // Tick for spinner animation, notification expiry, and permission countdown.
-                _ = tick_interval.tick(), if self.is_turn_active || !self.notifications.is_empty() || self.pending_permission.is_some() => {
+                _ = tokio::time::sleep(Duration::from_millis(tick_ms)), if needs_tick => {
                     // Auto-deny permission if countdown expired (30s).
                     if let Some(ref perm) = self.pending_permission {
                         if perm.created_at.elapsed().as_secs() >= 30 {

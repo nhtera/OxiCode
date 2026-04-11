@@ -12,14 +12,14 @@ use ratatui::style::Color;
 
 // ── Spinner ─────────────────────────────────────────────────────────
 
-/// 12-frame Unicode spinner with forward + reverse mirrored pulse effect.
+/// 10-frame braille spinner — smooth rotation effect, widely supported.
 #[cfg(not(target_os = "windows"))]
 pub const SPINNER_FRAMES: &[char] = &[
-    '·', '✢', '✳', '✶', '✻', '✽', '✽', '✻', '✶', '✳', '✢', '·',
+    '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏',
 ];
 #[cfg(target_os = "windows")]
 pub const SPINNER_FRAMES: &[char] = &[
-    '·', '✢', '*', '✶', '✻', '✽', '✽', '✻', '✶', '*', '✢', '·',
+    '|', '/', '-', '\\', '|', '/', '-', '\\', '|', '/',
 ];
 
 // ── Brand & accent ─────────────────────────────────────────────────
