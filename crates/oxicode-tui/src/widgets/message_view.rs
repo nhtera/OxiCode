@@ -685,33 +685,22 @@ fn render_content_blocks_static(
         })
         .collect();
 
-    let mut pending_image_spans: Vec<Span<'static>> = Vec::new();
+    let mut image_numbers: Vec<usize> = Vec::new();
 
     for block in blocks {
         match block {
             ContentBlock::Text { text } => {
                 // Render text through markdown parser for styled output.
                 let md_lines = markdown_view::parse_to_owned_lines(text);
-                for (line_idx, md_line) in md_lines.into_iter().enumerate() {
+                for md_line in md_lines {
                     let mut spans = vec![Span::raw("  ")];
-                    // Prepend buffered image tags to the first text line.
-                    if line_idx == 0 && !pending_image_spans.is_empty() {
-                        spans.append(&mut pending_image_spans);
-                    }
                     spans.extend(md_line.spans);
                     lines.push(Line::from(spans));
                 }
             }
             ContentBlock::Image { .. } => {
                 *image_counter += 1;
-                // Buffer image spans — they'll be prepended to the next text block's first line.
-                pending_image_spans.push(Span::styled(
-                    format!("[Image #{}]", *image_counter),
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                ));
-                pending_image_spans.push(Span::raw(" "));
+                image_numbers.push(*image_counter);
             }
             ContentBlock::ToolUse { name, input, .. } => {
                 let summary = tool_input_summary(input);
@@ -855,12 +844,72 @@ fn render_content_blocks_static(
             }
         }
     }
-    // Flush any remaining image spans (images at end without following text block).
-    if !pending_image_spans.is_empty() {
-        let mut spans = vec![Span::raw("  ")];
-        spans.append(&mut pending_image_spans);
-        lines.push(Line::from(spans));
+    // Render image gallery row with bordered boxes below the text content.
+    if !image_numbers.is_empty() {
+        render_image_gallery(&image_numbers, lines);
     }
+}
+
+/// Render a gallery row of bordered image cards below the message text.
+///
+/// ```text
+///   ┌─────────────┐ ┌─────────────┐
+///   │ 🖼 Image #1  │ │ 🖼 Image #2  │
+///   └─────────────┘ └─────────────┘
+/// ```
+fn render_image_gallery(image_numbers: &[usize], lines: &mut Vec<Line<'static>>) {
+    let box_style = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
+    let label_style = Style::default()
+        .fg(Color::Magenta)
+        .add_modifier(Modifier::BOLD);
+
+    // Build per-image labels to compute box widths.
+    let labels: Vec<String> = image_numbers
+        .iter()
+        .map(|n| format!("\u{1f5bc} Image #{n}"))
+        .collect();
+
+    // Top border row: ┌─────────────┐ ┌─────────────┐
+    let mut top_spans: Vec<Span<'static>> = vec![Span::raw("  ")];
+    for (i, label) in labels.iter().enumerate() {
+        if i > 0 {
+            top_spans.push(Span::raw(" "));
+        }
+        let inner_width = label.chars().count() + 2; // 1 space padding each side
+        let border = "\u{2500}".repeat(inner_width);
+        top_spans.push(Span::styled(
+            format!("\u{250c}{border}\u{2510}"),
+            box_style,
+        ));
+    }
+    lines.push(Line::from(top_spans));
+
+    // Middle row: │ 🖼 Image #1  │ │ 🖼 Image #2  │
+    let mut mid_spans: Vec<Span<'static>> = vec![Span::raw("  ")];
+    for (i, label) in labels.iter().enumerate() {
+        if i > 0 {
+            mid_spans.push(Span::raw(" "));
+        }
+        mid_spans.push(Span::styled("\u{2502} ".to_string(), box_style));
+        mid_spans.push(Span::styled(label.clone(), label_style));
+        mid_spans.push(Span::styled(" \u{2502}".to_string(), box_style));
+    }
+    lines.push(Line::from(mid_spans));
+
+    // Bottom border row: └─────────────┘ └─────────────┘
+    let mut bot_spans: Vec<Span<'static>> = vec![Span::raw("  ")];
+    for (i, label) in labels.iter().enumerate() {
+        if i > 0 {
+            bot_spans.push(Span::raw(" "));
+        }
+        let inner_width = label.chars().count() + 2;
+        let border = "\u{2500}".repeat(inner_width);
+        bot_spans.push(Span::styled(
+            format!("\u{2514}{border}\u{2518}"),
+            box_style,
+        ));
+    }
+    lines.push(Line::from(bot_spans));
 }
 
 /// Summarize tool input JSON for inline display.
@@ -990,48 +1039,44 @@ fn overlay_image_hyperlinks(area: Rect, buf: &mut Buffer, image_paths: &HashMap<
 
     for row in inner_y..inner_bottom {
         // Collect cell symbols for this row into (col, symbol) pairs.
-        // Each cell has exactly one symbol (single char for ASCII).
         let cells: Vec<(u16, String)> = (inner_x..inner_right)
             .map(|col| (col, buf[(col, row)].symbol().to_string()))
             .collect();
 
-        // Build the row text from cell symbols to find [Image #N] patterns.
+        // Build the row text from cell symbols to find Image #N patterns.
         let row_text: String = cells.iter().map(|(_, s)| s.as_str()).collect();
 
-        // Find all [Image #N] occurrences using character-level scanning.
+        // Find all "Image #N" occurrences (works for both gallery "🖼 Image #N"
+        // and legacy "[Image #N]" patterns).
         let chars: Vec<char> = row_text.chars().collect();
         let mut i = 0;
-        while i + 9 < chars.len() {
-            // Look for '[Image #'
-            if chars[i] == '['
-                && chars.get(i + 1) == Some(&'I')
-                && chars.get(i + 2) == Some(&'m')
-                && chars.get(i + 3) == Some(&'a')
-                && chars.get(i + 4) == Some(&'g')
-                && chars.get(i + 5) == Some(&'e')
-                && chars.get(i + 6) == Some(&' ')
-                && chars.get(i + 7) == Some(&'#')
+        while i + 7 < chars.len() {
+            // Look for 'Image #'
+            if chars[i] == 'I'
+                && chars.get(i + 1) == Some(&'m')
+                && chars.get(i + 2) == Some(&'a')
+                && chars.get(i + 3) == Some(&'g')
+                && chars.get(i + 4) == Some(&'e')
+                && chars.get(i + 5) == Some(&' ')
+                && chars.get(i + 6) == Some(&'#')
             {
-                // Extract the number and find closing ']'.
-                let num_start = i + 8;
+                // Extract the number.
+                let num_start = i + 7;
                 let mut num_end = num_start;
                 while num_end < chars.len() && chars[num_end].is_ascii_digit() {
                     num_end += 1;
                 }
-                if num_end > num_start && num_end < chars.len() && chars[num_end] == ']' {
+                if num_end > num_start {
                     let num_str: String = chars[num_start..num_end].iter().collect();
                     if let Ok(n) = num_str.parse::<usize>() {
                         if let Some(path) = image_paths.get(&n) {
                             let file_url = format!("file://{}", path.display());
-                            let tag_len = num_end - i + 1; // includes ']'
-                                                           // Overwrite each cell with OSC 8 hyperlink wrapping
-                                                           // 2 characters at a time (ratatui example technique).
+                            let tag_len = num_end - i; // "Image #N"
                             let tag_chars: Vec<char> = chars[i..i + tag_len].to_vec();
                             for (ci, chunk) in tag_chars.chunks(2).enumerate() {
                                 let chunk_text: String = chunk.iter().collect();
                                 let hyperlink =
                                     format!("\x1B]8;;{file_url}\x07{chunk_text}\x1B]8;;\x07");
-                                // Map char index back to cell column.
                                 let cell_idx = i + ci * 2;
                                 if cell_idx < cells.len() {
                                     let col = cells[cell_idx].0;
@@ -1040,7 +1085,7 @@ fn overlay_image_hyperlinks(area: Rect, buf: &mut Buffer, image_paths: &HashMap<
                             }
                         }
                     }
-                    i = num_end + 1;
+                    i = num_end;
                     continue;
                 }
             }

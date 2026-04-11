@@ -86,6 +86,37 @@ pub fn open_file_in_viewer(path: &Path) {
     }
 }
 
+/// Get the session-scoped image cache directory.
+///
+/// Creates `~/.oxicode/image-cache/{session_id}/` if it doesn't exist.
+/// Returns the directory path.
+pub fn image_cache_dir(session_id: &str) -> PathBuf {
+    let home = std::env::var("HOME")
+        .map_or_else(|_| std::env::temp_dir(), PathBuf::from);
+    let cache_dir = home.join(".oxicode").join("image-cache").join(session_id);
+    let _ = std::fs::create_dir_all(&cache_dir);
+    cache_dir
+}
+
+/// Move or copy a pasted image to the session cache with a numbered filename.
+///
+/// Stores as `~/.oxicode/image-cache/{session_id}/{image_number}.png`.
+/// Returns the new cached path, or the original path if the move fails.
+pub fn cache_image(session_id: &str, image_number: usize, src: &Path) -> PathBuf {
+    let cache_dir = image_cache_dir(session_id);
+    let dest = cache_dir.join(format!("{image_number}.png"));
+    // Try rename (same filesystem) first, fall back to copy + delete.
+    if std::fs::rename(src, &dest).is_ok() {
+        return dest;
+    }
+    if std::fs::copy(src, &dest).is_ok() {
+        let _ = std::fs::remove_file(src);
+        return dest;
+    }
+    // Fallback: keep original temp path.
+    src.to_path_buf()
+}
+
 /// Generate a unique temp file path for a pasted PNG.
 fn make_temp_png() -> PathBuf {
     let tmp_dir = std::env::temp_dir();

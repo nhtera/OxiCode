@@ -854,10 +854,14 @@ impl App {
             }
             // Ctrl+V: try image paste first, then let crossterm bracketed paste handle text.
             (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
-                if let Some(img) = crate::image_paste::read_clipboard_image() {
+                if let Some(mut img) = crate::image_paste::read_clipboard_image() {
                     // Use global image counter for session-wide numbering.
                     let image_num =
                         self.message_cache.image_counter() + self.pending_images.len() + 1;
+                    // Cache image to session-scoped directory.
+                    let session_id = self.state_rx.borrow().session_id.clone();
+                    img.path =
+                        crate::image_paste::cache_image(&session_id, image_num, &img.path);
                     let msg = match img.dimensions {
                         Some((w, h)) => {
                             format!("[Image #{image_num}] attached ({w}x{h})")
@@ -1370,9 +1374,9 @@ impl App {
         false
     }
 
-    /// Find an `[Image #N]` tag at a screen position.
+    /// Find an image tag at a screen position (gallery box or legacy inline).
     ///
-    /// Returns hit info if the position maps to an `[Image #N]` span.
+    /// Returns hit info if the position maps to an image span.
     fn find_image_tag_at(&self, col: u16, row: u16) -> Option<ImageTagHit> {
         let area = self.message_area;
         if col <= area.x
@@ -1431,7 +1435,16 @@ impl App {
         let mut span_offset: usize = 0;
         for span in &line.spans {
             let content = span.content.as_ref();
-            let span_width = content.len();
+            let span_width = content.chars().count();
+            // Gallery format: "🖼 Image #N"
+            if let Some(rest) = content.strip_prefix("\u{1f5bc} Image #") {
+                if click_col >= span_offset && click_col < span_offset + span_width {
+                    if let Ok(n) = rest.parse::<usize>() {
+                        return Some(ImageTagHit { image_number: n });
+                    }
+                }
+            }
+            // Legacy format: "[Image #N]"
             if content.starts_with("[Image #")
                 && content.ends_with(']')
                 && click_col >= span_offset
@@ -1797,8 +1810,8 @@ impl App {
                 };
                 let _ = self.ui_tx.send(UiEvent::SlashCommand { name, args }).await;
             } else {
-                // Strip [Image #N] placeholders from text before sending.
-                let clean_text = strip_image_tags(&text);
+                // Keep [Image #N] tags in text — they render inline in the message
+                // and the API (Claude) can see both images and text references.
                 // Retain image paths for click-to-open in message view.
                 // Use global image counter from cache so numbering is session-wide.
                 if !self.pending_images.is_empty() {
@@ -1811,7 +1824,7 @@ impl App {
                 let _ = self
                     .ui_tx
                     .send(UiEvent::UserInput {
-                        text: clean_text,
+                        text,
                         images,
                     })
                     .await;
@@ -2328,32 +2341,6 @@ fn summarize_input(input: &serde_json::Value) -> String {
 /// Convert a character index to a byte index in a UTF-8 string.
 fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
     s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i)
-}
-
-/// Strip `[Image #N]` placeholder tags from input text, collapsing extra whitespace.
-fn strip_image_tags(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut remaining = text;
-    while let Some(start) = remaining.find("[Image #") {
-        if let Some(end_offset) = remaining[start..].find(']') {
-            let end = start + end_offset + 1;
-            let inner = &remaining[start + 8..start + end_offset];
-            if !inner.is_empty() && inner.chars().all(|c| c.is_ascii_digit()) {
-                result.push_str(&remaining[..start]);
-                remaining = &remaining[end..];
-                // Skip trailing space after tag.
-                if remaining.starts_with(' ') {
-                    remaining = &remaining[1..];
-                }
-                continue;
-            }
-        }
-        let chunk_end = start + 8;
-        result.push_str(&remaining[..chunk_end]);
-        remaining = &remaining[chunk_end..];
-    }
-    result.push_str(remaining);
-    result.trim().to_string()
 }
 
 /// Format a `DateTime<Utc>` as a human-readable relative time string.
