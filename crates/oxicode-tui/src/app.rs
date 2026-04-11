@@ -45,6 +45,18 @@ struct ActiveToolCall {
     result: Option<(String, bool)>,
 }
 
+/// Result from `find_image_tag_at()` — identifies an `[Image #N]` span hit.
+struct ImageTagHit {
+    /// Message index in state.messages.
+    msg_index: usize,
+    /// Image number (1-based, from `[Image #N]`).
+    image_number: usize,
+    /// Column start within the line (relative to inner area left edge).
+    col_start: usize,
+    /// Column end (exclusive) within the line.
+    col_end: usize,
+}
+
 /// A pending permission request awaiting user response.
 struct PendingPermission {
     tool_name: String,
@@ -137,6 +149,9 @@ pub struct App {
     session_browser: SessionBrowserState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     message_area: Rect,
+    /// Screen row where a hovered `[Image #N]` tag starts (for underline styling).
+    /// Stores (row, col_start, col_end) of the hovered image tag.
+    hovered_image_tag: Option<(u16, u16, u16)>,
     /// Frame counter — incremented each draw call, drives spinner animation.
     frame_count: u64,
     /// Session start time for elapsed display in status bar.
@@ -207,6 +222,7 @@ impl App {
             model_picker: ModelPickerState::new(),
             session_browser: SessionBrowserState::new(),
             message_area: Rect::default(),
+            hovered_image_tag: None,
             frame_count: 0,
             session_start: Instant::now(),
             stall_start: None,
@@ -585,6 +601,19 @@ impl App {
             .with_last_turn_duration(self.last_turn_duration)
             .with_message_roles(message_roles);
             frame.render_widget(message_view, left_area);
+
+            // Apply underline hover style to [Image #N] tag under mouse cursor.
+            if let Some((hover_row, col_start, col_end)) = self.hovered_image_tag {
+                let buf = frame.buffer_mut();
+                for cx in col_start..col_end {
+                    if let Some(cell) = buf.cell_mut((cx, hover_row)) {
+                        cell.set_style(
+                            cell.style()
+                                .add_modifier(ratatui::style::Modifier::UNDERLINED),
+                        );
+                    }
+                }
+            }
 
             // Read back the actual max scroll offset computed during rendering.
             self.max_scroll_offset = scroll_report.get();
@@ -1296,19 +1325,25 @@ impl App {
         }
     }
 
-    /// Handle mouse events: scroll wheel, scrollbar click/drag, image click.
+    /// Handle mouse events: scroll wheel, scrollbar click/drag, Cmd+click image, hover.
     fn handle_mouse(&mut self, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollUp => self.scroll_up_by(3),
             MouseEventKind::ScrollDown => self.scroll_down_by(3),
             MouseEventKind::Down(MouseButton::Left) => {
-                // Try image click first; fall through to scrollbar if not an image.
-                if !self.handle_image_click(mouse.column, mouse.row) {
-                    self.handle_scrollbar_click(mouse.column, mouse.row);
+                // Cmd+Click (macOS) or Ctrl+Click (Linux/Windows) to open image.
+                let has_modifier = mouse.modifiers.contains(KeyModifiers::SUPER)
+                    || mouse.modifiers.contains(KeyModifiers::CONTROL);
+                if has_modifier && self.handle_image_click(mouse.column, mouse.row) {
+                    return;
                 }
+                self.handle_scrollbar_click(mouse.column, mouse.row);
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 self.handle_scrollbar_click(mouse.column, mouse.row);
+            }
+            MouseEventKind::Moved => {
+                self.update_image_hover(mouse.column, mouse.row);
             }
             _ => {}
         }
@@ -1347,30 +1382,55 @@ impl App {
         self.auto_scroll = self.scroll_offset >= self.max_scroll_offset;
     }
 
-    /// Handle click on an `[Image #N]` tag in the message view.
-    ///
-    /// Maps the clicked screen position to an absolute content line, walks the
-    /// render cache to find which message was clicked, then scans the line's
-    /// spans for an `[Image #N]` pattern. If found, opens the corresponding
-    /// image file in the system's default viewer.
+    /// Handle Cmd+Click (macOS) / Ctrl+Click on `[Image #N]` in message view.
     ///
     /// Returns `true` if an image was opened (click consumed).
     fn handle_image_click(&self, col: u16, row: u16) -> bool {
+        if let Some(hit) = self.find_image_tag_at(col, row) {
+            if let Some(paths) = self.sent_image_paths.get(&hit.msg_index) {
+                if let Some(path) = paths.get(hit.image_number.wrapping_sub(1)) {
+                    crate::image_paste::open_file_in_viewer(path);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Update hover state: underline `[Image #N]` tag under the mouse cursor.
+    fn update_image_hover(&mut self, col: u16, row: u16) {
+        if let Some(hit) = self.find_image_tag_at(col, row) {
+            if self.sent_image_paths.contains_key(&hit.msg_index) {
+                let area = self.message_area;
+                let inner_left = area.x + 1;
+                self.hovered_image_tag = Some((
+                    row,
+                    inner_left + hit.col_start as u16,
+                    inner_left + hit.col_end as u16,
+                ));
+                return;
+            }
+        }
+        self.hovered_image_tag = None;
+    }
+
+    /// Find an `[Image #N]` tag at a screen position.
+    ///
+    /// Returns hit info if the position maps to an `[Image #N]` span.
+    fn find_image_tag_at(&self, col: u16, row: u16) -> Option<ImageTagHit> {
         let area = self.message_area;
-        // Must be inside the message area inner bounds (exclude borders + scrollbar).
         if col <= area.x
             || col >= area.right().saturating_sub(2)
             || row <= area.y
             || row >= area.bottom().saturating_sub(1)
         {
-            return false;
+            return None;
         }
 
-        // Absolute content line = (clicked row − inner top) + scroll offset.
         let inner_top = area.y + 1;
+        let inner_left = area.x + 1;
         let abs_line = (row - inner_top) as usize + self.scroll_offset as usize;
 
-        // Gather message roles to determine separator sizes.
         let state = self.state_rx.borrow();
         let msg_count = state.messages.len();
         let msg_roles: Vec<oxicode_common::Role> = state.messages.iter().map(|m| m.role).collect();
@@ -1378,15 +1438,14 @@ impl App {
 
         let entries = self.message_cache.lines(msg_count);
         if entries.is_empty() {
-            return false;
+            return None;
         }
 
-        // Walk cached entries to locate the message index + line within it.
+        // Walk cached entries to locate message index + line within it.
         let mut cumulative: usize = 0;
         let mut found_msg_idx: Option<usize> = None;
         let mut line_in_msg: usize = 0;
         for (i, entry) in entries.iter().enumerate() {
-            // Account for separators between messages.
             if i > 0 {
                 let is_turn = msg_roles
                     .get(i)
@@ -1401,33 +1460,36 @@ impl App {
             cumulative += entry.len();
         }
 
-        let Some(msg_idx) = found_msg_idx else {
-            return false;
-        };
-
-        // Check if this message has stored image paths.
-        let Some(paths) = self.sent_image_paths.get(&msg_idx) else {
-            return false;
-        };
-
-        // Scan the clicked line's spans for an [Image #N] pattern.
+        let msg_idx = found_msg_idx?;
         if line_in_msg >= entries[msg_idx].len() {
-            return false;
+            return None;
         }
+
+        // Scan spans to find which image tag the column falls within.
         let line = &entries[msg_idx][line_in_msg];
+        let click_col = (col - inner_left) as usize;
+        let mut span_offset: usize = 0;
         for span in &line.spans {
             let content = span.content.as_ref();
-            if content.starts_with("[Image #") && content.ends_with(']') {
+            let span_width = content.len();
+            if content.starts_with("[Image #")
+                && content.ends_with(']')
+                && click_col >= span_offset
+                && click_col < span_offset + span_width
+            {
                 let num_str = &content[8..content.len() - 1];
                 if let Ok(n) = num_str.parse::<usize>() {
-                    if let Some(path) = paths.get(n.wrapping_sub(1)) {
-                        crate::image_paste::open_file_in_viewer(path);
-                        return true;
-                    }
+                    return Some(ImageTagHit {
+                        msg_index: msg_idx,
+                        image_number: n,
+                        col_start: span_offset,
+                        col_end: span_offset + span_width,
+                    });
                 }
             }
+            span_offset += span_width;
         }
-        false
+        None
     }
 
     /// Handle bracketed paste — insert text at cursor in bulk,
