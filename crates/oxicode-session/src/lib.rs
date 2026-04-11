@@ -5,6 +5,7 @@ pub mod memory_freshness;
 pub mod memory_scanner;
 pub mod memory_selector;
 pub mod memory_types;
+pub mod prompt_history;
 
 #[cfg(feature = "team_memory_sync")]
 pub mod team_memory_sync;

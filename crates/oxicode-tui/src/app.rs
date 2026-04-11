@@ -25,9 +25,9 @@ use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
     permission_dialog::RiskLevel, ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState,
-    CommandAutocomplete, InputBox, MessageRenderCache, MessageView, ModelPickerState, Notification,
-    NotificationWidget, PastePreview, PermissionDialog, SearchBar, SearchOverlay,
-    SessionBrowserState, SessionEntry,
+    CommandAutocomplete, HistorySearchState, HistorySearchWidget, InputBox, MessageRenderCache,
+    MessageView, ModelPickerState, Notification, NotificationWidget, PastePreview,
+    PermissionDialog, SearchBar, SearchOverlay, SessionBrowserState, SessionEntry,
     ShortcutsState, SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
     PASTE_PREVIEW_THRESHOLD,
 };
@@ -99,11 +99,13 @@ pub struct App {
     /// Shortcuts panel visibility.
     shortcuts: ShortcutsState,
     /// Command history (most recent last).
-    history: Vec<String>,
+    history: oxicode_session::prompt_history::PersistentHistory,
     /// Current position in history navigation (-1 = not navigating).
     history_index: Option<usize>,
     /// Saved input before history navigation started.
     history_saved_input: String,
+    /// Reverse history search overlay state (Ctrl+R).
+    history_search: Option<HistorySearchState>,
     /// Timestamp of last interrupt (for double Ctrl+C force quit).
     last_interrupt: Option<Instant>,
     /// Per-message render cache — avoids re-parsing markdown for unchanged messages.
@@ -179,9 +181,10 @@ impl App {
             keybindings,
             search: SearchOverlay::new(),
             shortcuts: ShortcutsState::new(),
-            history: Vec::new(),
+            history: oxicode_session::prompt_history::PersistentHistory::load(None),
             history_index: None,
             history_saved_input: String::new(),
+            history_search: None,
             last_interrupt: None,
             message_cache: MessageRenderCache::new(),
             ghost_text: None,
@@ -605,6 +608,12 @@ impl App {
                 frame.render_widget(browser, content_area);
             }
 
+            // History search overlay (Ctrl+R reverse search).
+            if let Some(ref search_state) = self.history_search {
+                let search_widget = HistorySearchWidget::new(search_state);
+                frame.render_widget(search_widget, content_area);
+            }
+
             // Permission dialog overlay (drawn on top of everything).
             if let Some(ref perm) = self.pending_permission {
                 let remaining = 30u32.saturating_sub(perm.created_at.elapsed().as_secs() as u32);
@@ -650,6 +659,11 @@ impl App {
                 if let Some(g) = ghost_ref {
                     input = input.with_ghost_text(g);
                 }
+                if !self.input_text.is_empty() {
+                    let chars = self.input_text.chars().count();
+                    let lines = self.input_text.lines().count().max(1);
+                    input = input.with_metrics(chars, lines);
+                }
                 frame.render_widget(input, input_chunks[0]);
 
                 let search_bar = SearchBar::new(&self.search);
@@ -666,6 +680,11 @@ impl App {
                 if let Some(g) = ghost_ref {
                     input = input.with_ghost_text(g);
                 }
+                if !self.input_text.is_empty() {
+                    let chars = self.input_text.chars().count();
+                    let lines = self.input_text.lines().count().max(1);
+                    input = input.with_metrics(chars, lines);
+                }
                 frame.render_widget(input, chunks[4]);
             }
         })?;
@@ -678,6 +697,12 @@ impl App {
         // Paste preview modal takes highest priority.
         if self.pending_paste.is_some() {
             self.handle_paste_preview_key(key);
+            return;
+        }
+
+        // History search overlay captures keys when active.
+        if self.history_search.is_some() {
+            self.handle_history_search_key(key);
             return;
         }
 
@@ -794,6 +819,10 @@ impl App {
             // `?` toggles help overlay when input is empty (no conflict with typing).
             (_, KeyCode::Char('?')) if self.input_text.is_empty() => {
                 self.shortcuts.toggle();
+            }
+            // Ctrl+R: open reverse history search.
+            (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
+                self.open_history_search();
             }
             // H3 FIX: cursor operates on char count, insert at byte offset
             (_, KeyCode::Char(c)) => {
@@ -1542,8 +1571,7 @@ impl App {
                 self.history_next();
             }
             Action::HistorySearch => {
-                // Future: Ctrl+R search overlay. For now, just navigate history.
-                self.history_prev();
+                self.open_history_search();
             }
             Action::OpenModelPicker => {
                 let state = self.state_rx.borrow();
@@ -1574,9 +1602,7 @@ impl App {
             self.history_index = None;
 
             // Save to history (dedup consecutive duplicates).
-            if self.history.last().map_or(true, |last| *last != text) {
-                self.history.push(text.clone());
-            }
+            self.history.add(&text, None);
 
             if let Some(trimmed) = text.strip_prefix('/') {
                 let trimmed = trimmed.trim();
@@ -1624,8 +1650,10 @@ impl App {
             Some(i) => i - 1,
         };
         self.history_index = Some(idx);
-        self.input_text = self.history[idx].clone();
-        self.input_cursor = self.input_text.chars().count();
+        if let Some(content) = self.history.get(idx) {
+            self.input_text = content.to_string();
+            self.input_cursor = self.input_text.chars().count();
+        }
     }
 
     /// Navigate to next history entry.
@@ -1640,8 +1668,10 @@ impl App {
             self.input_cursor = self.input_text.chars().count();
         } else {
             self.history_index = Some(idx + 1);
-            self.input_text = self.history[idx + 1].clone();
-            self.input_cursor = self.input_text.chars().count();
+            if let Some(content) = self.history.get(idx + 1) {
+                self.input_text = content.to_string();
+                self.input_cursor = self.input_text.chars().count();
+            }
         }
     }
 
@@ -1658,6 +1688,101 @@ impl App {
             true
         } else {
             false
+        }
+    }
+
+    /// Open the reverse history search overlay (Ctrl+R).
+    fn open_history_search(&mut self) {
+        let mut state = HistorySearchState::new(
+            self.input_text.clone(),
+            self.input_cursor,
+        );
+        // Initialize with all entries (newest-first).
+        let items: Vec<(usize, String)> = self
+            .history
+            .search("")
+            .into_iter()
+            .map(|i| (i, self.history.get(i).unwrap_or_default().to_string()))
+            .collect();
+        state.update_results(items);
+        self.history_search = Some(state);
+    }
+
+    /// Handle key events in the history search overlay.
+    fn handle_history_search_key(&mut self, key: KeyEvent) {
+        let Some(ref mut search) = self.history_search else {
+            return;
+        };
+        match (key.modifiers, key.code) {
+            // Enter: accept selected match.
+            (_, KeyCode::Enter) => {
+                if let Some(content) = search.selected_content() {
+                    self.input_text = content.to_string();
+                    self.input_cursor = self.input_text.chars().count();
+                }
+                self.history_search = None;
+            }
+            // Esc: cancel search, restore original input.
+            (_, KeyCode::Esc) => {
+                self.input_text = search.saved_input.clone();
+                self.input_cursor = search.saved_cursor;
+                self.history_search = None;
+            }
+            // Ctrl+R again: cycle to next match.
+            (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
+                search.select_next();
+                // Preview the selected match in the input.
+                if let Some(content) = search.selected_content() {
+                    self.input_text = content.to_string();
+                    self.input_cursor = self.input_text.chars().count();
+                }
+            }
+            // Up/Down: navigate results.
+            (_, KeyCode::Up) => {
+                search.select_prev();
+                if let Some(content) = search.selected_content() {
+                    self.input_text = content.to_string();
+                    self.input_cursor = self.input_text.chars().count();
+                }
+            }
+            (_, KeyCode::Down) => {
+                search.select_next();
+                if let Some(content) = search.selected_content() {
+                    self.input_text = content.to_string();
+                    self.input_cursor = self.input_text.chars().count();
+                }
+            }
+            // Backspace: delete from query.
+            (_, KeyCode::Backspace) => {
+                search.pop_char();
+                self.refresh_history_search();
+            }
+            // Typing: add to query.
+            (_, KeyCode::Char(c)) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                search.push_char(c);
+                self.refresh_history_search();
+            }
+            _ => {}
+        }
+    }
+
+    /// Refresh history search results based on current query.
+    fn refresh_history_search(&mut self) {
+        let Some(ref mut search) = self.history_search else {
+            return;
+        };
+        let query = search.query.clone();
+        let items: Vec<(usize, String)> = self
+            .history
+            .search(&query)
+            .into_iter()
+            .map(|i| (i, self.history.get(i).unwrap_or_default().to_string()))
+            .collect();
+        search.update_results(items);
+        // Preview the first match.
+        if let Some(content) = search.selected_content() {
+            self.input_text = content.to_string();
+            self.input_cursor = self.input_text.chars().count();
         }
     }
 
@@ -3144,6 +3269,8 @@ mod tests {
     async fn test_submit_input_history_dedup() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
 
+        let initial_len = app.history.len();
+
         app.input_text = "cargo build".to_string();
         app.submit_input().await;
 
@@ -3151,8 +3278,16 @@ mod tests {
         app.input_text = "cargo build".to_string();
         app.submit_input().await;
 
-        assert_eq!(app.history.len(), 1, "consecutive duplicates deduped");
-        assert_eq!(app.history[0], "cargo build");
+        assert_eq!(
+            app.history.len() - initial_len,
+            1,
+            "consecutive duplicates deduped"
+        );
+        // The last entry should be "cargo build".
+        assert_eq!(
+            app.history.get(app.history.len() - 1),
+            Some("cargo build")
+        );
     }
 
     /// /vim is handled inline — no UiEvent sent.

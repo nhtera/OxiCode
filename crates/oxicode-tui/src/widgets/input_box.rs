@@ -23,6 +23,8 @@ pub struct InputBox<'a> {
     command_line: Option<&'a str>,
     /// Ghost text completion shown after cursor (dimmed).
     ghost_text: Option<&'a str>,
+    /// Input metrics: (char_count, line_count). Shown in right title when set.
+    metrics: Option<(usize, usize)>,
 }
 
 impl<'a> InputBox<'a> {
@@ -34,6 +36,7 @@ impl<'a> InputBox<'a> {
             vim_badge: None,
             command_line: None,
             ghost_text: None,
+            metrics: None,
         }
     }
 
@@ -52,6 +55,12 @@ impl<'a> InputBox<'a> {
     /// Set ghost text completion (dimmed text shown after cursor).
     pub fn with_ghost_text(mut self, text: &'a str) -> Self {
         self.ghost_text = Some(text);
+        self
+    }
+
+    /// Set input metrics (char count, line count) for display in right title.
+    pub fn with_metrics(mut self, chars: usize, lines: usize) -> Self {
+        self.metrics = Some((chars, lines));
         self
     }
 
@@ -79,10 +88,26 @@ impl Widget for InputBox<'_> {
             None => " Input (Enter to send, Alt+Enter for newline) ".to_string(),
         };
 
-        let block = Block::default()
+        let mut block = Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
             .title(title);
+
+        // Show input metrics on the right side of the border.
+        if let Some((chars, lines)) = self.metrics {
+            let metrics_text = if lines > 1 {
+                format!(" {chars}c · {lines}L ")
+            } else {
+                format!(" {chars}c ")
+            };
+            block = block.title_bottom(
+                Line::from(Span::styled(
+                    metrics_text,
+                    Style::default().fg(render::CHROME_MUTED),
+                ))
+                .alignment(ratatui::layout::Alignment::Right),
+            );
+        }
 
         // In command mode, show the command buffer instead of input text.
         if let Some(cmd) = self.command_line {
@@ -283,5 +308,31 @@ mod tests {
             content.contains("[N]"),
             "Should show vim badge in title: {content}"
         );
+    }
+
+    #[test]
+    fn render_metrics_single_line() {
+        let area = Rect::new(0, 0, 60, 3);
+        let mut buf = Buffer::empty(area);
+        let widget = InputBox::new("hello", 5, true).with_metrics(5, 1);
+        widget.render(area, &mut buf);
+        // Metrics on bottom border row.
+        let bottom: String = (0..60)
+            .map(|x| buf.cell((x, 2)).unwrap().symbol().to_string())
+            .collect();
+        assert!(bottom.contains("5c"), "Should show char count: {bottom}");
+    }
+
+    #[test]
+    fn render_metrics_multiline() {
+        let area = Rect::new(0, 0, 60, 5);
+        let mut buf = Buffer::empty(area);
+        let widget = InputBox::new("line1\nline2\nline3", 17, true).with_metrics(17, 3);
+        widget.render(area, &mut buf);
+        let bottom: String = (0..60)
+            .map(|x| buf.cell((x, 4)).unwrap().symbol().to_string())
+            .collect();
+        assert!(bottom.contains("17c"), "Should show char count: {bottom}");
+        assert!(bottom.contains("3L"), "Should show line count: {bottom}");
     }
 }
