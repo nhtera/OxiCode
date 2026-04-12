@@ -71,6 +71,8 @@ pub struct App {
     state_rx: watch::Receiver<AppState>,
     ui_tx: mpsc::Sender<UiEvent>,
     core_rx: mpsc::Receiver<CoreEvent>,
+    /// Direct cancel flag shared with engine task for immediate Esc interrupt.
+    cancel_flag: Option<Arc<AtomicBool>>,
     input_text: String,
     /// Cursor position as character index (not byte index).
     input_cursor: usize,
@@ -81,7 +83,7 @@ pub struct App {
     /// Last computed max scroll offset for the current viewport/content.
     max_scroll_offset: u16,
     streaming_text: String,
-    /// Newline-gated markdown stream collector (Codex-rs pattern).
+    /// Newline-gated markdown stream collector for incremental rendering.
     streaming_collector: MarkdownStreamCollector,
     /// Pre-rendered committed lines from streaming collector.
     streaming_committed_lines: Vec<ratatui::text::Line<'static>>,
@@ -218,7 +220,27 @@ impl App {
             stall_start: None,
             streaming_thinking: String::new(),
             last_turn_duration: None,
+            cancel_flag: None,
         }
+    }
+
+    /// Set the cancel flag shared with the engine task.
+    pub fn set_cancel_flag(&mut self, flag: Arc<AtomicBool>) {
+        self.cancel_flag = Some(flag);
+    }
+
+    /// Signal an interrupt: set cancel flag directly (engine sees it
+    /// immediately even while blocked on streaming) and send InterruptTurn.
+    /// Immediately resets is_turn_active so the TUI accepts input without
+    /// waiting for the engine's Error/MessageComplete round-trip.
+    async fn signal_interrupt(&mut self) {
+        if let Some(flag) = &self.cancel_flag {
+            flag.store(true, Ordering::SeqCst);
+        }
+        let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+        self.is_turn_active = false;
+        self.turn_started_at = None;
+        self.stall_start = None;
     }
 
     /// Enable vim mode at runtime.
@@ -358,7 +380,7 @@ impl App {
                                 self.streaming_committed_lines.clear();
                                 self.streaming_thinking.clear();
                                 self.active_tools.clear();
-                                let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                                self.signal_interrupt().await;
                                 self.notifications.push(Notification::new(
                                     "Stream stalled — auto-interrupted after 2m".to_string(),
                                     crate::widgets::notification::NotificationLevel::Warning,
@@ -806,7 +828,7 @@ impl App {
                         self.should_quit = true;
                     } else {
                         self.last_interrupt = Some(Instant::now());
-                        let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                        self.signal_interrupt().await;
                         self.notifications.push(Notification::new(
                             "Interrupting... (Ctrl+C again to quit)".to_string(),
                             crate::widgets::notification::NotificationLevel::Info,
@@ -818,7 +840,7 @@ impl App {
                 }
             }
             (_, KeyCode::Esc) if self.is_turn_active => {
-                let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                self.signal_interrupt().await;
                 self.last_interrupt = Some(Instant::now());
                 self.notifications.push(Notification::new(
                     "Interrupting...".to_string(),
@@ -984,7 +1006,7 @@ impl App {
                             self.should_quit = true;
                         } else {
                             self.last_interrupt = Some(Instant::now());
-                            let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                            self.signal_interrupt().await;
                             self.notifications.push(Notification::new(
                                 "Interrupting... (Ctrl+C again to quit)".to_string(),
                                 crate::widgets::notification::NotificationLevel::Info,
@@ -2140,7 +2162,7 @@ impl App {
                     let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
                 }
                 if self.is_turn_active {
-                    let _ = self.ui_tx.send(UiEvent::InterruptTurn).await;
+                    self.signal_interrupt().await;
                     self.notifications.push(Notification::new(
                         "Permission denied, interrupting...".to_string(),
                         crate::widgets::notification::NotificationLevel::Info,
@@ -3448,7 +3470,7 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.handle_core_event(CoreEvent::StreamStart);
         app.handle_core_event(CoreEvent::TextDelta("partial text".to_string()));
-        // abort_streaming() emits Error then TurnEnd (→ StreamEnd).
+        // Error followed by StreamEnd — TUI must handle gracefully.
         app.handle_core_event(CoreEvent::Error("API error".to_string()));
         assert!(!app.is_turn_active);
         assert!(app.streaming_text.is_empty());

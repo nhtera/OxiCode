@@ -127,8 +127,8 @@ impl QueryEngine {
             if let Some(flag) = cancel_flag {
                 if flag.load(Ordering::SeqCst) {
                     flag.store(false, Ordering::SeqCst);
-                    self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into()))
-                        .await;
+                    self.state_store.set_streaming(false);
+                    emit(event_tx, TurnEvent::TurnEnd).await;
                     return Err(OxiError::Other("Interrupted by user".into()));
                 }
             }
@@ -154,7 +154,9 @@ impl QueryEngine {
                 }
             }
 
-            let assistant_msg = self.stream_one_turn(conversation, event_tx).await?;
+            let assistant_msg = self
+                .stream_one_turn(conversation, event_tx, cancel_flag)
+                .await?;
             let stop_reason = assistant_msg.stop_reason.unwrap_or(StopReason::EndTurn);
 
             // Extract tool use blocks from the assistant message.
@@ -181,11 +183,8 @@ impl QueryEngine {
                 if let Some(flag) = cancel_flag {
                     if flag.load(Ordering::SeqCst) {
                         flag.store(false, Ordering::SeqCst);
-                        self.abort_streaming(
-                            event_tx,
-                            &OxiError::Other("Interrupted by user".into()),
-                        )
-                        .await;
+                        self.state_store.set_streaming(false);
+                        emit(event_tx, TurnEvent::TurnEnd).await;
                         return Err(OxiError::Other("Interrupted by user".into()));
                     }
                 }
@@ -230,8 +229,8 @@ impl QueryEngine {
                         },
                     )
                     .await;
-                    self.abort_streaming(event_tx, &OxiError::Other("Interrupted by user".into()))
-                        .await;
+                    self.state_store.set_streaming(false);
+                    emit(event_tx, TurnEvent::TurnEnd).await;
                     return Err(OxiError::Other("Interrupted by user".into()));
                 }
             }
@@ -305,6 +304,7 @@ impl QueryEngine {
         &self,
         conversation: &mut Conversation,
         event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
+        cancel_flag: Option<&Arc<AtomicBool>>,
     ) -> OxiResult<Message> {
         let request = self.build_request(conversation);
 
@@ -327,7 +327,59 @@ impl QueryEngine {
         let mut current_tool_name = String::new();
         let mut current_tool_input_json = String::new();
 
-        while let Some(event_result) = stream.next().await {
+        loop {
+            // Eager cancel check before blocking on stream. During rapid
+            // SSE events, select! may always pick the stream branch, so
+            // this ensures the flag is checked at least once per iteration.
+            if let Some(flag) = cancel_flag {
+                if flag.load(Ordering::SeqCst) {
+                    flag.store(false, Ordering::SeqCst);
+                    if !current_text.is_empty() {
+                        assistant_msg.content.push(ContentBlock::Text {
+                            text: std::mem::take(&mut current_text),
+                        });
+                    }
+                    assistant_msg.stop_reason = Some(StopReason::EndTurn);
+                    self.state_store.set_streaming(false);
+                    self.state_store.push_message(assistant_msg.clone());
+                    conversation.push(assistant_msg.clone());
+                    emit(event_tx, TurnEvent::TurnEnd).await;
+                    return Err(OxiError::Other("Interrupted by user".into()));
+                }
+            }
+
+            // Race stream.next() against a 50ms cancel-flag poll so Esc
+            // interrupts even when the server is slow to send events.
+            let event_result = if let Some(flag) = cancel_flag {
+                loop {
+                    tokio::select! {
+                        item = stream.next() => break item,
+                        () = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                            if flag.load(Ordering::SeqCst) {
+                                flag.store(false, Ordering::SeqCst);
+                                if !current_text.is_empty() {
+                                    assistant_msg.content.push(ContentBlock::Text {
+                                        text: std::mem::take(&mut current_text),
+                                    });
+                                }
+                                assistant_msg.stop_reason = Some(StopReason::EndTurn);
+                                self.state_store.set_streaming(false);
+                                self.state_store.push_message(assistant_msg.clone());
+                                conversation.push(assistant_msg.clone());
+                                emit(event_tx, TurnEvent::TurnEnd).await;
+                                return Err(OxiError::Other("Interrupted by user".into()));
+                            }
+                        }
+                    }
+                }
+            } else {
+                stream.next().await
+            };
+
+            let Some(event_result) = event_result else {
+                break;
+            };
+
             let event = match event_result {
                 Ok(ev) => ev,
                 Err(e) => {

@@ -26,3 +26,6 @@ chrono = { workspace = true }
 [dev-dependencies]
 chrono = { workspace = true }
 insta = "1"
+tempfile = "3"
+serde_json = { workspace = true }
+crossterm = { workspace = true }

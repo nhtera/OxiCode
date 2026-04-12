@@ -105,7 +105,7 @@ async fn test_cancel_flag_resets_after_interrupt() {
 }
 
 #[tokio::test]
-async fn test_cancel_emits_error_and_turn_end_events() {
+async fn test_cancel_emits_turn_end_without_error_event() {
     let provider = MockLlmProvider::with_text("should not stream");
     let (engine, _, cancel_flag) = make_cancel_engine(provider);
 
@@ -124,10 +124,11 @@ async fn test_cancel_emits_error_and_turn_end_events() {
         events.push(e);
     }
 
-    // Should emit Error + TurnEnd.
+    // Cancel emits only TurnEnd (no Error) — the single Error message is
+    // produced by the caller (main.rs) from the Err return value.
     let has_error = events.iter().any(|e| matches!(e, TurnEvent::Error(_)));
     let has_turn_end = events.iter().any(|e| matches!(e, TurnEvent::TurnEnd));
-    assert!(has_error, "should emit Error event on cancel");
+    assert!(!has_error, "cancel should NOT emit Error via TurnEvent (caller handles it)");
     assert!(has_turn_end, "should emit TurnEnd event on cancel");
 }
 

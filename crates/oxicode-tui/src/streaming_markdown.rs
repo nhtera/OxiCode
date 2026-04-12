@@ -10,7 +10,7 @@
 //! via `StreamParserState` so fenced blocks spanning multiple deltas render
 //! correctly.
 //!
-//! Inspired by the Codex-rs `MarkdownStreamCollector` pattern.
+//! Uses a newline-gated incremental parsing approach for flicker-free output.
 
 use ratatui::text::Line;
 

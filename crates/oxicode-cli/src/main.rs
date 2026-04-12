@@ -612,6 +612,11 @@ async fn run_tui(
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let cancel_flag_engine = cancel_flag.clone();
 
+    // Give the TUI direct access to the cancel flag so Esc/Ctrl+C sets it
+    // immediately, bypassing the channel queue that the engine task cannot
+    // drain while blocked inside execute_turn_with_cancel.
+    app.set_cancel_flag(cancel_flag.clone());
+
     // Engine task: owns conversation, calls execute_turn(), forwards events to TUI.
     let engine_handle = tokio::spawn(async move {
         let mut conversation = Conversation::new();
@@ -673,6 +678,10 @@ async fn run_tui(
                     // Drop sender to close forwarder, then wait for it.
                     drop(turn_tx);
                     let _ = forwarder.await;
+
+                    // Clear any stale cancel flag so the NEXT turn doesn't
+                    // auto-cancel from a leftover InterruptTurn event.
+                    cancel_flag_engine.store(false, std::sync::atomic::Ordering::SeqCst);
 
                     // execute_turn already pushed messages to state_store and conversation.
                     match result {
@@ -813,7 +822,10 @@ async fn run_tui(
                     }
                 }
                 UiEvent::InterruptTurn => {
-                    cancel_flag_engine.store(true, std::sync::atomic::Ordering::SeqCst);
+                    // No-op: the TUI sets cancel_flag directly via the shared
+                    // Arc<AtomicBool> (signal_interrupt), so the engine sees it
+                    // immediately. Processing this queued event would re-arm the
+                    // flag AFTER it was cleared, poisoning the next turn.
                 }
                 UiEvent::Quit => break,
                 _ => {}
