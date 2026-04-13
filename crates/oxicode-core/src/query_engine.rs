@@ -272,7 +272,7 @@ impl QueryEngine {
     /// Build a MessageRequest with all tool schemas (built-in + MCP).
     ///
     /// Dynamically injects mode-specific system prompt sections (advisor, sandbox)
-    /// based on current `active_skills` in the state store.
+    /// and environment info based on current state.
     fn build_request(&self, conversation: &Conversation) -> MessageRequest {
         let model = self.model();
         let mut tool_schemas = self.tool_registry.schemas_json();
@@ -283,14 +283,18 @@ impl QueryEngine {
             ));
         }
 
-        // Append mode injection (advisor/sandbox) to system prompt per-turn.
+        // Append mode injection (advisor/sandbox) and env info to system prompt.
         let active_skills = self.state_store.current().active_skills;
-        let effective_prompt =
-            if let Some(modes) = crate::system_prompt::mode_injection_text(&active_skills) {
-                format!("{}{modes}", self.system_prompt)
-            } else {
-                self.system_prompt.clone()
-            };
+        let mut effective_prompt = self.system_prompt.clone();
+
+        // Inject environment info (working dir, platform, shell, date).
+        let cwd_str = self.tool_context.working_dir.to_string_lossy();
+        let env_info = crate::system_prompt::build_env_info_section(Some(&cwd_str));
+        effective_prompt.push_str(&env_info);
+
+        if let Some(modes) = crate::system_prompt::mode_injection_text(&active_skills) {
+            effective_prompt.push_str(&modes);
+        }
 
         let mut request = MessageRequest::new(&model, conversation.api_messages().to_vec())
             .with_system(&effective_prompt)

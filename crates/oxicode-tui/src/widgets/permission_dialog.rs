@@ -78,6 +78,7 @@ impl PermissionDialogKind {
     pub fn option_count(&self) -> usize {
         match self {
             Self::FileRead { .. } => 3, // allow once, allow session, deny
+            Self::Bash { .. } => 5,     // allow once, allow session, prefix allow, deny, always deny
             _ => 4,                     // allow once, allow session, deny, always deny
         }
     }
@@ -86,6 +87,13 @@ impl PermissionDialogKind {
     fn options(&self) -> &[&str] {
         match self {
             Self::FileRead { .. } => &["Allow once", "Allow for session", "Deny"],
+            Self::Bash { .. } => &[
+                "Allow once",
+                "Allow for session",
+                "Allow prefix for session",
+                "Deny",
+                "Always deny",
+            ],
             _ => &["Allow once", "Allow for session", "Deny", "Always deny"],
         }
     }
@@ -94,6 +102,7 @@ impl PermissionDialogKind {
     fn hotkeys(&self) -> &[&str] {
         match self {
             Self::FileRead { .. } => &["y", "a", "n"],
+            Self::Bash { .. } => &["y", "a", "p", "n", "N"],
             _ => &["y", "a", "n", "N"],
         }
     }
@@ -569,11 +578,11 @@ mod tests {
     }
 
     #[test]
-    fn bash_has_4_options() {
+    fn bash_has_5_options() {
         let kind = PermissionDialogKind::Bash {
             command: "echo hi".to_string(),
         };
-        assert_eq!(kind.option_count(), 4);
+        assert_eq!(kind.option_count(), 5);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 ---
 source: crates/oxicode-tui/src/app.rs
+assertion_line: 3173
 expression: rendered.as_str()
 ---
 " ○ Ready  anthropic  claude-sonnet-4-20250514  ↑0 ↓0  $0.0000  0s [ask]         "
@@ -15,12 +16,12 @@ expression: rendered.as_str()
 "│  v0│                                                                    │    │"
 "│    │  ▸ [y] Allow once                                                  │    │"
 "│  En│    [a] Allow for session                                           │    │"
-"│  Ta│    [n] Deny                                                        │    │"
+"│  Ta│    [p] Allow prefix for session                                    │    │"
+"│    │    [n] Deny                                                        │    │"
 "│    │    [N] Always deny                                                 │    │"
 "│    │                                                                    │    │"
 "│    │  Auto-deny in 30s                                                  │    │"
 "│    │  ↑↓ nav  Enter confirm  y/a/n/N  Esc deny                          │    │"
-"│    │                                                                    │    │"
 "│    └────────────────────────────────────────────────────────────────────┘    │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
 "┌ Input (Enter to send, Alt+Enter for newline) ────────────────────────────────┐"

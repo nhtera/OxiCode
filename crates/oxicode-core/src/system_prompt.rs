@@ -16,6 +16,72 @@ pub fn assemble_system_prompt(
     )
 }
 
+/// Build the dynamic environment-info section.
+///
+/// Injects platform, OS version, shell, working directory, and git status.
+pub fn build_env_info_section(working_dir: Option<&str>) -> String {
+    let platform = if cfg!(target_os = "windows") {
+        "win32"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        "linux"
+    };
+
+    let os_version = {
+        #[cfg(target_os = "windows")]
+        {
+            let ver = std::process::Command::new("cmd")
+                .args(["/c", "ver"])
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let arch = std::env::var("PROCESSOR_ARCHITECTURE").unwrap_or_default();
+            match ver {
+                Some(v) => format!("{v} ({arch})"),
+                None => format!("Windows ({arch})"),
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::process::Command::new("uname")
+                .args(["-s", "-r"])
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| platform.to_string())
+        }
+    };
+
+    let shell_env = std::env::var("SHELL").unwrap_or_default();
+    let shell_name = if shell_env.contains("zsh") {
+        "zsh"
+    } else if shell_env.contains("bash") {
+        "bash"
+    } else if shell_env.contains("fish") {
+        "fish"
+    } else if cfg!(target_os = "windows") {
+        "powershell"
+    } else if shell_env.is_empty() {
+        "unknown"
+    } else {
+        &shell_env
+    };
+
+    let cwd = working_dir.unwrap_or(".");
+    let is_git = std::path::Path::new(cwd).join(".git").exists();
+
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+    format!(
+        "\n<env>\nWorking directory: {cwd}\nIs git repo: {is_git}\nPlatform: {platform}\n\
+         OS: {os_version}\nShell: {shell_name}\nDate: {date}\n</env>"
+    )
+}
+
 /// Generate the mode-injection text for active skills.
 ///
 /// Returns `Some(text)` if any mode is active, `None` otherwise.
@@ -50,6 +116,12 @@ pub fn assemble_system_prompt_with_modes(
     active_skills: &[String],
 ) -> String {
     let mut parts = vec![BASE_SYSTEM_PROMPT.to_string()];
+
+    // Core capability and tool-use instruction sections.
+    parts.push(CORE_CAPABILITIES.to_string());
+    parts.push(TOOL_USE_GUIDELINES.to_string());
+    parts.push(ACTIONS_SECTION.to_string());
+    parts.push(SAFETY_GUIDELINES.to_string());
 
     // Inject mode-specific directives.
     let mut mode_parts = Vec::new();
@@ -90,15 +162,63 @@ pub fn assemble_system_prompt_with_modes(
     parts.join("\n")
 }
 
-const BASE_SYSTEM_PROMPT: &str = r"You are OxiCode, a Rust-powered CLI assistant for software engineering tasks.
+const BASE_SYSTEM_PROMPT: &str = r"You are OxiCode, a Rust-powered CLI agent for software engineering tasks.
 
-You help users with:
-- Writing, reviewing, and debugging code
-- Navigating and understanding codebases
-- Running commands and managing files
-- Answering technical questions
+You are an interactive agentic coding assistant. You have access to tools that let you read files, write files, execute shell commands, search the web, and more. You are operating as an autonomous agent — use your tools proactively to accomplish tasks rather than just describing what to do.
 
-Be concise and direct. Prefer action over explanation.";
+When the user asks you to do something, DO it using your tools. Don't just explain how — actually perform the action.";
+
+const CORE_CAPABILITIES: &str = r"
+## Capabilities
+
+You have access to powerful tools for software engineering tasks:
+- **Read/Write files**: Read any file, write new files, edit existing files with precise diffs
+- **Execute commands**: Run bash commands, PowerShell scripts, background processes
+- **Search**: Glob patterns, regex grep, web search, file content search
+- **Web**: Fetch URLs, search the internet
+- **Agents**: Spawn parallel sub-agents for complex multi-step work
+- **Memory**: Persistent notes across sessions via the memory system
+- **MCP servers**: Connect to external tools and APIs via Model Context Protocol
+- **Jupyter notebooks**: Read and edit notebook cells
+
+## How to approach tasks
+
+1. **Understand before acting**: Read relevant files before making changes
+2. **Minimal changes**: Only modify what's needed. Don't refactor unrequested code.
+3. **Verify**: Check your work with tests or by reading the result
+4. **Communicate blockers**: If stuck, ask the user rather than guessing
+";
+
+const TOOL_USE_GUIDELINES: &str = r"
+## Tool use guidelines
+
+- **ALWAYS use tools** to read files, run commands, and search — never guess file contents
+- Use dedicated tools (file_read, file_edit, glob, grep) instead of bash equivalents
+- For searches, prefer grep tool over `grep` command; prefer glob tool over `find` command
+- Parallelize independent tool calls in a single response when possible
+- For file edits: always read the file first, then make targeted edits
+- Bash commands timeout after 2 minutes; use background mode for long operations
+";
+
+const ACTIONS_SECTION: &str = r"
+## Executing actions with care
+
+Carefully consider the reversibility and blast radius of actions. For actions
+that are hard to reverse, affect shared systems, or could be risky or
+destructive, check with the user before proceeding. Authorization stands for
+the scope specified, not beyond. Match the scope of your actions to what was
+actually requested.
+";
+
+const SAFETY_GUIDELINES: &str = r"
+## Safety guidelines
+
+- Never delete files without explicit user confirmation
+- Don't modify protected config files (.gitconfig, .bashrc, .zshrc) unless asked
+- Be careful with destructive operations (rm -rf, DROP TABLE, etc.)
+- Don't commit secrets, credentials, or API keys
+- For ambiguous destructive actions, ask before proceeding
+";
 
 const ADVISOR_MODE_PROMPT: &str = "\
 You are in **advisor mode**. In this mode:
@@ -119,6 +239,9 @@ mod tests {
     fn test_base_prompt_only() {
         let prompt = assemble_system_prompt(None, None, None, None);
         assert!(prompt.contains("OxiCode"));
+        assert!(prompt.contains("Capabilities"));
+        assert!(prompt.contains("Tool use guidelines"));
+        assert!(prompt.contains("Safety guidelines"));
         assert!(!prompt.contains("Global Instructions"));
     }
 
