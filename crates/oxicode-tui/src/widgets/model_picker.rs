@@ -275,8 +275,8 @@ impl<'a> ModelPicker<'a> {
 #[allow(clippy::similar_names)]
 fn build_model_lines(state: &ModelPickerState) -> Vec<Line<'static>> {
     let filtered = state.filtered_models();
-    let active_bg = Color::Rgb(233, 30, 99); // Pink selection
-    let active_fg = Color::White;
+    let active_bg = Color::Rgb(80, 45, 15); // Warm dark amber
+    let active_fg = Color::Rgb(255, 235, 210); // Warm white
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     if filtered.is_empty() {
@@ -303,7 +303,7 @@ fn build_model_lines(state: &ModelPickerState) -> Vec<Line<'static>> {
         if model.is_current {
             spans.push(Span::styled(
                 " \u{25cf} ",
-                Style::default().fg(Color::Green).bg(bg),
+                Style::default().fg(DIALOG_ACCENT).bg(bg),
             ));
         } else {
             spans.push(Span::styled("   ", Style::default().bg(bg)));
@@ -327,14 +327,14 @@ fn build_model_lines(state: &ModelPickerState) -> Vec<Line<'static>> {
                     state.effort_level.symbol(),
                     state.effort_level.label()
                 ),
-                Style::default().fg(Color::Rgb(200, 255, 200)).bg(bg),
+                Style::default().fg(DIALOG_ACCENT).bg(bg),
             ));
         }
 
         // Description
         if !model.description.is_empty() {
             let desc_fg = if is_selected {
-                Color::Rgb(200, 200, 200)
+                Color::Rgb(200, 192, 185)
             } else {
                 DIALOG_MUTED
             };
