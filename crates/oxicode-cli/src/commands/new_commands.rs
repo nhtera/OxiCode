@@ -311,7 +311,7 @@ impl SlashCommand for RewindCommand {
         "rewind"
     }
     fn description(&self) -> &str {
-        "Rewind conversation by N turns (default: 1)"
+        "Rewind conversation by N turns (no args = interactive selector)"
     }
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         let n: usize = args.trim().parse().unwrap_or(1);
