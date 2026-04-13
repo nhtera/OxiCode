@@ -25,11 +25,12 @@ use crate::vim_mode::{self, VimAction, VimState};
 use crate::vim_text_objects;
 use crate::widgets::{
     permission_dialog::RiskLevel, ActiveToolInfo, AgentInfo, AgentPanel, AutocompleteState,
-    CommandAutocomplete, HistorySearchState, HistorySearchWidget, InputBox, MessageRenderCache,
-    MessageView, ModelPickerState, Notification, NotificationWidget, PastePreview,
-    PermissionDialog, SearchBar, SearchOverlay, SessionBrowserState, SessionEntry, ShortcutsState,
-    SlashCommandMeta, SplitPane, StatusBar, SuggestionChips, TaskInfo, TaskPanel,
-    PASTE_PREVIEW_THRESHOLD,
+    CommandAutocomplete, DiffViewerState, DiffViewerWidget, HistorySearchState,
+    HistorySearchWidget, InputBox, MessageRenderCache, MessageView, ModelPickerState, Notification,
+    NotificationWidget, PastePreview, PermissionDialog, RewindOverlay, RewindOverlayState,
+    SearchBar, SearchOverlay, SessionBrowserState, SessionEntry, ShortcutsState, SlashCommandMeta,
+    SplitPane, StatsDashboard, StatsDashboardState, StatusBar, SuggestionChips, TaskInfo,
+    TaskPanel, PASTE_PREVIEW_THRESHOLD,
 };
 
 /// A tool call in progress (between ToolUseStart and ToolResult events).
@@ -143,6 +144,12 @@ pub struct App {
     model_picker: ModelPickerState,
     /// Session browser overlay state.
     session_browser: SessionBrowserState,
+    /// Rewind overlay state (interactive turn selector for /rewind).
+    rewind_overlay: RewindOverlayState,
+    /// Stats dashboard overlay state (session cost/token overview).
+    stats_dashboard: StatsDashboardState,
+    /// Interactive diff viewer overlay state (two-pane file diff review).
+    diff_viewer: DiffViewerState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     message_area: Rect,
     /// Frame counter — incremented each draw call, drives spinner animation.
@@ -156,6 +163,10 @@ pub struct App {
     streaming_thinking: String,
     /// Duration of the last completed turn (set on MessageComplete).
     last_turn_duration: Option<Duration>,
+    /// Session-local bash command prefix allowlist. When a user approves a
+    /// command with the 'p' (prefix) option, the first word is stored here.
+    /// Future bash commands starting with that word are auto-approved.
+    bash_prefix_allowlist: std::collections::HashSet<String>,
 }
 
 impl App {
@@ -214,6 +225,9 @@ impl App {
             autocomplete: AutocompleteState::new(),
             model_picker: ModelPickerState::new(),
             session_browser: SessionBrowserState::new(),
+            rewind_overlay: RewindOverlayState::new(),
+            stats_dashboard: StatsDashboardState::new(),
+            diff_viewer: DiffViewerState::new(),
             message_area: Rect::default(),
             frame_count: 0,
             session_start: Instant::now(),
@@ -221,6 +235,7 @@ impl App {
             streaming_thinking: String::new(),
             last_turn_duration: None,
             cancel_flag: None,
+            bash_prefix_allowlist: std::collections::HashSet::new(),
         }
     }
 
@@ -438,6 +453,7 @@ impl App {
             context_window_max,
             permission_mode,
             cwd,
+            cost_usd,
         ) = {
             let state = self.state_rx.borrow();
             // Update render cache with new messages (incremental — only renders new ones).
@@ -482,6 +498,7 @@ impl App {
                 state.context_window_max,
                 state.permission_mode.clone(),
                 state.cwd.clone(),
+                state.cost_tracker.total_cost(),
             )
         }; // state borrow dropped here — no deep clone of messages
 
@@ -540,7 +557,8 @@ impl App {
                 .with_context_pct(context_pct)
                 .with_permission_mode(&permission_mode)
                 .with_cwd(&cwd)
-                .with_session_start(Some(self.session_start));
+                .with_session_start(Some(self.session_start))
+                .with_cost(cost_usd);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
@@ -660,6 +678,31 @@ impl App {
             if self.session_browser.is_visible() {
                 let browser = crate::widgets::SessionBrowser::new(&self.session_browser);
                 frame.render_widget(browser, content_area);
+            }
+
+            // Rewind overlay (interactive turn selector).
+            if self.rewind_overlay.is_visible() {
+                let rewind = RewindOverlay::new(&self.rewind_overlay);
+                frame.render_widget(rewind, content_area);
+            }
+
+            // Stats dashboard overlay (session cost/token overview).
+            if self.stats_dashboard.is_visible() {
+                let state = self.state_rx.borrow();
+                let elapsed = self.session_start.elapsed();
+                let dashboard = StatsDashboard::new(
+                    &self.stats_dashboard,
+                    &state.cost_tracker,
+                    &state.messages,
+                    elapsed,
+                );
+                frame.render_widget(dashboard, content_area);
+            }
+
+            // Interactive diff viewer overlay (two-pane file diff review).
+            if self.diff_viewer.is_visible() {
+                let viewer = DiffViewerWidget::new(&self.diff_viewer);
+                frame.render_widget(viewer, content_area);
             }
 
             // History search overlay (Ctrl+R reverse search).
@@ -794,6 +837,24 @@ impl App {
         // Session browser captures keys when visible: navigate, rename, resume, close.
         if self.session_browser.is_visible() {
             self.handle_session_browser_key(key).await;
+            return;
+        }
+
+        // Rewind overlay captures keys when visible: navigate, confirm, close.
+        if self.rewind_overlay.is_visible() {
+            self.handle_rewind_key(key).await;
+            return;
+        }
+
+        // Stats dashboard captures keys when visible: tab switch, close.
+        if self.stats_dashboard.is_visible() {
+            self.handle_stats_key(key);
+            return;
+        }
+
+        // Diff viewer captures keys when visible: navigate, scroll, collapse, close.
+        if self.diff_viewer.is_visible() {
+            self.handle_diff_viewer_key(key);
             return;
         }
 
@@ -1638,6 +1699,115 @@ impl App {
         self.session_browser.open(entries);
     }
 
+    /// Handle key events when the rewind overlay is visible.
+    async fn handle_rewind_key(&mut self, key: KeyEvent) {
+        use crate::widgets::rewind_overlay::RewindOverlayMode;
+
+        match self.rewind_overlay.mode() {
+            RewindOverlayMode::Selecting => match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => self.rewind_overlay.cancel(),
+                // List is rendered reversed (newest at top), so Up moves toward
+                // newer turns (higher idx) and Down toward older (lower idx).
+                (_, KeyCode::Up) => self.rewind_overlay.select_next(),
+                (_, KeyCode::Down) => self.rewind_overlay.select_prev(),
+                (_, KeyCode::Enter) => self.rewind_overlay.begin_confirm(),
+                _ => {}
+            },
+            RewindOverlayMode::Confirming => match (key.modifiers, key.code) {
+                (_, KeyCode::Char('y') | KeyCode::Char('Y')) => {
+                    if let Some(turns) = self.rewind_overlay.confirm_rewind() {
+                        let _ = self
+                            .ui_tx
+                            .send(UiEvent::SlashCommand {
+                                name: "rewind".to_string(),
+                                args: turns.to_string(),
+                            })
+                            .await;
+                        self.notifications.push(Notification::new(
+                            format!("Rewinding {turns} turn(s)..."),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                        // Reset scroll to bottom after rewind.
+                        self.auto_scroll = true;
+                    }
+                }
+                (_, KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc) => {
+                    self.rewind_overlay.cancel();
+                }
+                _ => {}
+            },
+        }
+    }
+
+    /// Open the rewind overlay, populated from current messages.
+    fn open_rewind_overlay(&mut self) {
+        let state = self.state_rx.borrow();
+        if state.is_streaming {
+            drop(state);
+            self.notifications.push(Notification::new(
+                "Cannot rewind while streaming.".to_string(),
+                crate::widgets::notification::NotificationLevel::Warning,
+            ));
+            return;
+        }
+        let messages = state.messages.clone();
+        drop(state);
+        if messages.is_empty() {
+            self.notifications.push(Notification::new(
+                "No messages to rewind.".to_string(),
+                crate::widgets::notification::NotificationLevel::Warning,
+            ));
+            return;
+        }
+        self.rewind_overlay.open(&messages);
+    }
+
+    /// Handle key events when the stats dashboard is visible.
+    fn handle_stats_key(&mut self, key: KeyEvent) {
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) => self.stats_dashboard.cancel(),
+            (_, KeyCode::Left) => self.stats_dashboard.prev_tab(),
+            (_, KeyCode::Right) => self.stats_dashboard.next_tab(),
+            (_, KeyCode::Tab) => self.stats_dashboard.next_tab(),
+            _ => {}
+        }
+    }
+
+    /// Handle keyboard input for the diff viewer overlay.
+    fn handle_diff_viewer_key(&mut self, key: KeyEvent) {
+        use super::widgets::diff_viewer::DiffPane;
+
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) | (_, KeyCode::Char('q')) => self.diff_viewer.close(),
+            (_, KeyCode::Tab) | (_, KeyCode::Left) | (_, KeyCode::Right) => {
+                self.diff_viewer.toggle_pane();
+            }
+            (_, KeyCode::Up) => {
+                if self.diff_viewer.active_pane == DiffPane::FileList {
+                    self.diff_viewer.prev_file();
+                } else {
+                    self.diff_viewer.scroll_up(3);
+                }
+            }
+            (_, KeyCode::Down) => {
+                if self.diff_viewer.active_pane == DiffPane::FileList {
+                    self.diff_viewer.next_file();
+                } else {
+                    // Estimate visible height from last draw area.
+                    let visible = self.message_area.height.saturating_sub(6);
+                    self.diff_viewer.scroll_down(3, visible);
+                }
+            }
+            (_, KeyCode::PageUp) => self.diff_viewer.scroll_up(10),
+            (_, KeyCode::PageDown) => {
+                let visible = self.message_area.height.saturating_sub(6);
+                self.diff_viewer.scroll_down(10, visible);
+            }
+            (_, KeyCode::Char(' ')) => self.diff_viewer.toggle_collapse(),
+            _ => {}
+        }
+    }
+
     fn scroll_up_by(&mut self, lines: u16) {
         if lines == 0 {
             return;
@@ -1824,6 +1994,24 @@ impl App {
                     let current_model = state.current_model.clone();
                     drop(state);
                     self.model_picker.open(&current_model);
+                    return;
+                }
+                // Handle /rewind with no args — open interactive rewind overlay.
+                if trimmed == "rewind" {
+                    self.open_rewind_overlay();
+                    return;
+                }
+                // Handle /stats, /cost, /dashboard — open stats dashboard overlay.
+                if trimmed == "stats" || trimmed == "cost" || trimmed == "dashboard" {
+                    self.stats_dashboard.open();
+                    return;
+                }
+                // Handle /diff, /review — open interactive diff viewer overlay.
+                if trimmed == "diff" || trimmed == "review" {
+                    let state = self.state_rx.borrow();
+                    let cwd = state.cwd.clone();
+                    drop(state);
+                    self.diff_viewer.open(&cwd);
                     return;
                 }
                 let (name, args) = match trimmed.split_once(char::is_whitespace) {
@@ -2110,19 +2298,85 @@ impl App {
             (_, KeyCode::Enter) => {
                 // Map selected index to response based on dialog kind.
                 // FileRead (3 opts): 0=AllowOnce, 1=AlwaysAllow, 2=Deny
+                // Bash    (5 opts): 0=AllowOnce, 1=AlwaysAllow, 2=PrefixAllow, 3=Deny, 4=AlwaysDeny
                 // Others  (4 opts): 0=AllowOnce, 1=AlwaysAllow, 2=Deny, 3=AlwaysDeny
-                let response = match perm.selected {
-                    0 => oxicode_common::PermissionResponse::AllowOnce,
-                    1 => oxicode_common::PermissionResponse::AlwaysAllow,
-                    2 => oxicode_common::PermissionResponse::Deny,
-                    _ => oxicode_common::PermissionResponse::AlwaysDeny,
-                };
-                if let Some(perm) = self.pending_permission.take() {
-                    let _ = perm.reply_tx.send(response);
+                let is_bash = matches!(
+                    perm.kind,
+                    crate::widgets::PermissionDialogKind::Bash { .. }
+                );
+                let selected = perm.selected;
+
+                if is_bash && selected == 2 {
+                    // Prefix allow selected via Enter on Bash dialog.
+                    let first_word = perm
+                        .input_summary
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    if !first_word.is_empty() {
+                        self.bash_prefix_allowlist.insert(first_word.clone());
+                        self.notifications.push(Notification::new(
+                            format!("Prefix '{first_word}' added — future commands auto-approved"),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                    }
+                    if let Some(perm) = self.pending_permission.take() {
+                        let _ = perm
+                            .reply_tx
+                            .send(oxicode_common::PermissionResponse::AllowOnce);
+                    }
+                } else {
+                    let response = if is_bash {
+                        // Bash: 0=AllowOnce, 1=AlwaysAllow, 2=PrefixAllow(handled above),
+                        //       3=Deny, 4=AlwaysDeny
+                        match selected {
+                            0 => oxicode_common::PermissionResponse::AllowOnce,
+                            1 => oxicode_common::PermissionResponse::AlwaysAllow,
+                            3 => oxicode_common::PermissionResponse::Deny,
+                            _ => oxicode_common::PermissionResponse::AlwaysDeny,
+                        }
+                    } else {
+                        match selected {
+                            0 => oxicode_common::PermissionResponse::AllowOnce,
+                            1 => oxicode_common::PermissionResponse::AlwaysAllow,
+                            2 => oxicode_common::PermissionResponse::Deny,
+                            _ => oxicode_common::PermissionResponse::AlwaysDeny,
+                        }
+                    };
+                    if let Some(perm) = self.pending_permission.take() {
+                        let _ = perm.reply_tx.send(response);
+                    }
                 }
             }
             // Hotkeys: y = allow once, a = allow session, n = deny, N = always deny
+            // p = approve by prefix (bash only — auto-approves future commands with same first word)
             (_, KeyCode::Char('y')) => {
+                if let Some(perm) = self.pending_permission.take() {
+                    let _ = perm
+                        .reply_tx
+                        .send(oxicode_common::PermissionResponse::AllowOnce);
+                }
+            }
+            (_, KeyCode::Char('p')) => {
+                // Prefix-approve: remember the first word and auto-approve future matches.
+                if let Some(ref perm) = self.pending_permission {
+                    if perm.tool_name == "bash" || perm.tool_name == "Bash" {
+                        let first_word = perm
+                            .input_summary
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
+                        if !first_word.is_empty() {
+                            self.bash_prefix_allowlist.insert(first_word.clone());
+                            self.notifications.push(Notification::new(
+                                format!("Prefix '{first_word}' added — future commands auto-approved"),
+                                crate::widgets::notification::NotificationLevel::Info,
+                            ));
+                        }
+                    }
+                }
                 if let Some(perm) = self.pending_permission.take() {
                     let _ = perm
                         .reply_tx
@@ -2283,6 +2537,23 @@ impl App {
                 prompt,
                 reply_tx,
             } => {
+                // Auto-approve bash commands matching a previously approved prefix.
+                if tool_name == "bash" || tool_name == "Bash" {
+                    let first_word = input_summary
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    if self.bash_prefix_allowlist.contains(&first_word) {
+                        let _ = reply_tx.send(oxicode_common::PermissionResponse::AllowOnce);
+                        self.notifications.push(Notification::new(
+                            format!("Auto-approved: {first_word} (prefix allowlist)"),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                        return;
+                    }
+                }
+
                 // Compute risk level: start from tool name, then escalate if
                 // the input contains dangerous patterns (e.g. rm -rf for Bash).
                 let mut risk_level = RiskLevel::from_tool(&tool_name);

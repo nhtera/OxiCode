@@ -31,6 +31,8 @@ pub struct StatusBar<'a> {
     cwd: &'a str,
     /// Session start time for elapsed display.
     session_start: Option<Instant>,
+    /// Accurate total cost from CostTracker (replaces hardcoded pricing).
+    cost_usd: f64,
 }
 
 impl<'a> StatusBar<'a> {
@@ -49,6 +51,7 @@ impl<'a> StatusBar<'a> {
             permission_mode: "",
             cwd: "",
             session_start: None,
+            cost_usd: 0.0,
         }
     }
 
@@ -109,6 +112,12 @@ impl<'a> StatusBar<'a> {
     /// Set session start time for elapsed display.
     pub fn with_session_start(mut self, start: Option<Instant>) -> Self {
         self.session_start = start;
+        self
+    }
+
+    /// Set total session cost from CostTracker (accurate per-model pricing).
+    pub fn with_cost(mut self, cost_usd: f64) -> Self {
+        self.cost_usd = cost_usd;
         self
     }
 }
@@ -210,9 +219,9 @@ impl Widget for StatusBar<'_> {
             Span::raw("")
         };
 
-        // Cost estimate.
-        let cost = f64::from(self.usage.input_tokens) * 3.0 / 1_000_000.0
-            + f64::from(self.usage.output_tokens) * 15.0 / 1_000_000.0;
+        // Cost from CostTracker (accurate per-model pricing).
+        // Normalize negative zero to positive zero for display.
+        let cost = if self.cost_usd == 0.0 { 0.0 } else { self.cost_usd };
         let cost_span = Span::styled(
             format!(" ${cost:.4} "),
             Style::default()
