@@ -259,13 +259,50 @@ impl LlmProvider for AnthropicProvider {
                                     continue 'retry;
                                 }
                             }
+
+                            // Try to parse error body for non-429 HTTP errors (e.g., 503 overloaded_error).
+                            let (api_status, api_error_type) = if let reqwest_eventsource::Error::InvalidStatusCode(status, response) = e {
+                                let status_code = status.as_u16();
+                                // Read the response body to extract error type.
+                                let body = response.text().await.unwrap_or_default();
+                                let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+                                let error_obj = parsed.as_ref().and_then(|v| v.get("error"));
+                                let error_type = error_obj.and_then(|e| e.get("type")?.as_str().map(String::from));
+                                let error_msg = error_obj.and_then(|e| e.get("message")?.as_str().map(String::from));
+
+                                let is_overloaded = error_type.as_deref() == Some("overloaded_error");
+                                if is_overloaded {
+                                    tracing::warn!(
+                                        "Anthropic API overloaded (503): {}",
+                                        error_msg.as_deref().unwrap_or("API is overloaded")
+                                    );
+                                }
+
+                                // Emit ApiError event for visibility.
+                                yield Ok(StreamEvent::ApiError {
+                                    status: status_code,
+                                    error_type: error_type.clone(),
+                                    message: error_msg.unwrap_or_else(|| format!("HTTP {status_code}")),
+                                });
+
+                                (Some(status_code), error_type)
+                            } else {
+                                (None, None)
+                            };
+
                             if retry_count < retry_policy.max_retries {
                                 retry_count += 1;
-                                let delay = retry_policy.delay_for(retry_count);
-                                tracing::warn!("SSE error (retry {}/{}): {} — reconnecting in {:?}",
-                                    retry_count, retry_policy.max_retries, e, delay);
+                                // Overloaded errors get longer backoff (≥5s).
+                                let delay = if api_error_type.as_deref() == Some("overloaded_error") {
+                                    std::time::Duration::from_secs(5)
+                                        .max(retry_policy.delay_for(retry_count))
+                                } else {
+                                    retry_policy.delay_for(retry_count)
+                                };
+                                tracing::warn!("API error (retry {}/{}): status={:?} type={:?} — reconnecting in {:?}",
+                                    retry_count, retry_policy.max_retries, api_status, api_error_type, delay);
                                 yield Ok(StreamEvent::Retrying {
-                                    message: format!("{e}"),
+                                    message: format!("API error (status={:?}, type={:?})", api_status, api_error_type),
                                     attempt: retry_count,
                                     max_retries: retry_policy.max_retries,
                                     retry_in_secs: delay.as_secs_f64(),
@@ -273,7 +310,7 @@ impl LlmProvider for AnthropicProvider {
                                 tokio::time::sleep(delay).await;
                                 continue 'retry;
                             }
-                            yield Err(OxiError::api(format!("SSE stream error after {retry_count} retries: {e}")));
+                            yield Err(OxiError::api(format!("API error after {retry_count} retries: status={api_status:?} type={api_error_type:?}")));
                             return;
                         }
                         Ok(None) => {

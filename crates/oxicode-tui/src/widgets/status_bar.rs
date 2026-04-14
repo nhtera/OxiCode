@@ -33,6 +33,9 @@ pub struct StatusBar<'a> {
     session_start: Option<Instant>,
     /// Accurate total cost from CostTracker (replaces hardcoded pricing).
     cost_usd: f64,
+    /// Retry/rate-limit state label shown in status bar (e.g. "⟳ Retrying 2/5").
+    /// Empty string when not retrying.
+    retry_status: &'a str,
 }
 
 impl<'a> StatusBar<'a> {
@@ -52,6 +55,7 @@ impl<'a> StatusBar<'a> {
             cwd: "",
             session_start: None,
             cost_usd: 0.0,
+            retry_status: "",
         }
     }
 
@@ -120,6 +124,15 @@ impl<'a> StatusBar<'a> {
         self.cost_usd = cost_usd;
         self
     }
+
+    /// Set retry/rate-limit status label shown in the status bar.
+    ///
+    /// Pass a non-empty string (e.g. `"⟳ Retrying 2/5"`) while a retry is in
+    /// flight; pass `""` to hide the indicator.
+    pub fn with_retry_status(mut self, status: &'a str) -> Self {
+        self.retry_status = status;
+        self
+    }
 }
 
 /// Map provider name to a color for visual distinction.
@@ -145,8 +158,16 @@ impl Widget for StatusBar<'_> {
             }
         }
 
-        // Streaming indicator.
-        let status = if self.is_streaming {
+        // Streaming indicator — shows retry state when active, otherwise streaming/ready.
+        let status = if !self.retry_status.is_empty() {
+            Span::styled(
+                format!(" {} ", self.retry_status),
+                Style::default()
+                    .fg(render::STATUS_YELLOW)
+                    .bg(render::STATUS_BAR_BG)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else if self.is_streaming {
             Span::styled(
                 " ● Streaming ",
                 Style::default()

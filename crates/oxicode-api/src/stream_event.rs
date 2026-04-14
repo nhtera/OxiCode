@@ -46,6 +46,14 @@ pub enum StreamEvent {
         retry_in_secs: f64,
     },
 
+    /// API error with parsed error type from response body.
+    /// Distinguishes `overloaded_error` (503) from generic errors.
+    ApiError {
+        status: u16,
+        error_type: Option<String>,
+        message: String,
+    },
+
     /// Stream error.
     Error { message: String },
 
@@ -381,5 +389,50 @@ mod tests {
             events.is_empty(),
             "signature_delta should produce no stream events"
         );
+    }
+
+    #[test]
+    fn test_api_error_event_serde() {
+        let event = StreamEvent::ApiError {
+            status: 503,
+            error_type: Some("overloaded_error".to_string()),
+            message: "API is temporarily overloaded".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: StreamEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            StreamEvent::ApiError {
+                status,
+                error_type,
+                message,
+            } => {
+                assert_eq!(status, 503);
+                assert_eq!(error_type.as_deref(), Some("overloaded_error"));
+                assert!(message.contains("overloaded"));
+            }
+            _ => panic!("Expected ApiError event"),
+        }
+    }
+
+    #[test]
+    fn test_api_error_without_error_type() {
+        let event = StreamEvent::ApiError {
+            status: 502,
+            error_type: None,
+            message: "Bad Gateway".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: StreamEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            StreamEvent::ApiError {
+                status,
+                error_type,
+                ..
+            } => {
+                assert_eq!(status, 502);
+                assert!(error_type.is_none());
+            }
+            _ => panic!("Expected ApiError event"),
+        }
     }
 }

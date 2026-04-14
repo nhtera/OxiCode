@@ -516,6 +516,21 @@ impl QueryEngine {
                     )
                     .await;
                 }
+                StreamEvent::ApiError {
+                    status,
+                    error_type,
+                    message,
+                } => {
+                    tracing::warn!(
+                        "API error: status={} type={:?} message={}",
+                        status,
+                        error_type,
+                        message
+                    );
+                    // Not emitting TurnEvent::Retrying here — the real Retrying
+                    // event follows immediately from the same error path in the
+                    // provider, with correct attempt/max_retries values.
+                }
             }
         }
 

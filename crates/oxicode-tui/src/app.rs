@@ -167,6 +167,9 @@ pub struct App {
     /// command with the 'p' (prefix) option, the first word is stored here.
     /// Future bash commands starting with that word are auto-approved.
     bash_prefix_allowlist: std::collections::HashSet<String>,
+    /// Current retry/rate-limit label shown in status bar (empty when not retrying).
+    /// Set by CoreEvent::Retrying / CoreEvent::RateLimited, cleared on StreamStart.
+    retry_status_label: String,
 }
 
 impl App {
@@ -236,6 +239,7 @@ impl App {
             last_turn_duration: None,
             cancel_flag: None,
             bash_prefix_allowlist: std::collections::HashSet::new(),
+            retry_status_label: String::new(),
         }
     }
 
@@ -558,7 +562,8 @@ impl App {
                 .with_permission_mode(&permission_mode)
                 .with_cwd(&cwd)
                 .with_session_start(Some(self.session_start))
-                .with_cost(cost_usd);
+                .with_cost(cost_usd)
+                .with_retry_status(&self.retry_status_label);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
@@ -2452,6 +2457,8 @@ impl App {
                 self.streaming_committed_lines.clear();
                 self.streaming_thinking.clear();
                 self.active_tools.clear();
+                // Clear retry label when a new stream starts.
+                self.retry_status_label.clear();
             }
             CoreEvent::StreamEnd => {
                 // Stream finished — finalize remaining buffer but keep committed
@@ -2588,6 +2595,9 @@ impl App {
                     notif_msg,
                     crate::widgets::notification::NotificationLevel::RateLimit,
                 ));
+                // Update status bar indicator so rate-limit state is always visible.
+                self.retry_status_label =
+                    format!("⟳ Rate limited ({attempt}/{max_retries}) …{retry_in_secs:.0}s");
             }
             CoreEvent::Retrying {
                 message,
@@ -2601,6 +2611,9 @@ impl App {
                     notif_msg,
                     crate::widgets::notification::NotificationLevel::Warning,
                 ));
+                // Update status bar indicator.
+                self.retry_status_label =
+                    format!("⟳ Retrying {attempt}/{max_retries} …{retry_in_secs:.0}s");
             }
             CoreEvent::ThinkingDelta(text) => {
                 // Accumulate thinking text for live display during streaming.
