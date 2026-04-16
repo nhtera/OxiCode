@@ -1,15 +1,16 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Widget};
+use ratatui::widgets::{Paragraph, Widget};
 
 use super::highlight;
 
 /// Displays a code block with line numbers and syntax highlighting via `syntect`.
 ///
-/// Falls back to plain white-on-dark when the language is unknown or the input
+/// Falls back to plain text when the language is unknown or the input
 /// exceeds safety limits (> 512 KB or > 10 000 lines).
+/// No background color — terminal's own background shows through (Codex style).
 pub struct CodeBlockWidget<'a> {
     code: &'a str,
     language: &'a str,
@@ -24,9 +25,8 @@ impl<'a> CodeBlockWidget<'a> {
         highlight::highlight_code(self.code, self.language).unwrap_or_else(|| self.plain_lines())
     }
 
-    /// Plain fallback: white text on dark background with line numbers.
+    /// Plain fallback: muted line numbers + default text, no background.
     fn plain_lines(&self) -> Vec<Line<'static>> {
-        let bg = Style::default().bg(Color::Rgb(30, 30, 30));
         self.code
             .lines()
             .enumerate()
@@ -35,11 +35,12 @@ impl<'a> CodeBlockWidget<'a> {
                 Line::from(vec![
                     Span::styled(
                         line_num,
-                        Style::default()
-                            .fg(crate::render::TRANSCRIPT_MUTED)
-                            .bg(Color::Rgb(30, 30, 30)),
+                        Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                     ),
-                    Span::styled(line.to_string(), bg.fg(crate::render::TRANSCRIPT_TEXT)),
+                    Span::styled(
+                        line.to_string(),
+                        Style::default().fg(crate::render::TRANSCRIPT_TEXT),
+                    ),
                 ])
             })
             .collect()
@@ -48,26 +49,21 @@ impl<'a> CodeBlockWidget<'a> {
 
 impl Widget for CodeBlockWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Build language label in the top border: "─── rust ───────────────────────"
-        let title = if self.language.is_empty() {
-            " Code ".to_string()
-        } else {
-            format!(" \u{2500}\u{2500}\u{2500} {} ", self.language)
-        };
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(crate::render::CHROME_MUTED))
-            .title(Span::styled(
-                title,
-                Style::default()
-                    .fg(crate::render::TRANSCRIPT_TEXT)
-                    .add_modifier(Modifier::BOLD),
-            ));
-
         let lines = self.to_lines();
-        let paragraph = Paragraph::new(lines).block(block);
 
+        // Language label (dim, above code).
+        let mut all_lines = Vec::new();
+        if !self.language.is_empty() {
+            all_lines.push(Line::from(Span::styled(
+                format!("  {}", self.language),
+                Style::default()
+                    .fg(crate::render::TRANSCRIPT_MUTED)
+                    .add_modifier(Modifier::DIM),
+            )));
+        }
+        all_lines.extend(lines);
+
+        let paragraph = Paragraph::new(all_lines);
         paragraph.render(area, buf);
     }
 }
@@ -98,11 +94,11 @@ mod tests {
     }
 
     #[test]
-    fn code_text_has_dark_background() {
+    fn code_text_has_no_background() {
         let cb = CodeBlockWidget::new("let x = 1;", "rust");
         let lines = cb.to_lines();
         let code_span = &lines[0].spans[1];
-        assert_eq!(code_span.style.bg, Some(Color::Rgb(30, 30, 30)));
+        assert_eq!(code_span.style.bg, None);
     }
 
     #[test]

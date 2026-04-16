@@ -35,6 +35,8 @@ pub struct MessageRenderCache {
     cached_width: u16,
     /// Set of message indices with expanded thinking blocks.
     expanded_thinking: std::collections::HashSet<usize>,
+    /// Set of message indices that are tool-only user messages (no separator).
+    tool_only_indices: std::collections::HashSet<usize>,
     /// Running image counter across all messages (for session-global numbering).
     image_counter: usize,
 }
@@ -51,6 +53,7 @@ impl MessageRenderCache {
             entries: Vec::new(),
             cached_width: 0,
             expanded_thinking: std::collections::HashSet::new(),
+            tool_only_indices: std::collections::HashSet::new(),
             image_counter: 0,
         }
     }
@@ -85,29 +88,62 @@ impl MessageRenderCache {
         // Invalidate on resize or message shrink.
         if terminal_width != self.cached_width || messages.len() < self.entries.len() {
             self.entries.clear();
+            self.tool_only_indices.clear();
             self.cached_width = terminal_width;
             self.image_counter = 0;
         }
+
+        // Build a global tool_use_id → tool_name map from ALL messages so that
+        // ToolResult blocks (in user messages) can look up the name from the
+        // preceding assistant message's ToolUse blocks.
+        let global_tool_names: HashMap<&str, &str> = messages
+            .iter()
+            .flat_map(|m| m.content.iter())
+            .filter_map(|b| {
+                if let ContentBlock::ToolUse { id, name, .. } = b {
+                    Some((id.as_str(), name.as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         // Render only new messages (append to cache).
         let start = self.entries.len();
         for (idx, msg) in messages[start..].iter().enumerate() {
             let msg_index = start + idx;
             let mut lines = Vec::new();
-            render_message_header_static(msg, &mut lines);
+
+            // Check if user message contains only ToolResult blocks (no real user text).
+            // These are tool results flowing back — don't show "You" header or user bg.
+            let is_tool_only_user = msg.role == Role::User
+                && msg.content.iter().all(|b| {
+                    matches!(
+                        b,
+                        ContentBlock::ToolResult { .. } | ContentBlock::Image { .. }
+                    )
+                });
+
+            if !is_tool_only_user {
+                render_message_header_static(msg, &mut lines);
+            }
             let expanded = self.expanded_thinking.contains(&msg_index);
             render_content_blocks_static(
                 &msg.content,
                 &mut lines,
                 expanded,
                 &mut self.image_counter,
+                &global_tool_names,
             );
-            // Apply user block style: orange left border + dark background.
-            if msg.role == Role::User {
+            // Apply user block style only for actual user text (not tool-only messages).
+            if msg.role == Role::User && !is_tool_only_user {
                 lines = lines
                     .into_iter()
                     .map(|line| apply_user_block_style(line, terminal_width))
                     .collect();
+            }
+            if is_tool_only_user {
+                self.tool_only_indices.insert(msg_index);
             }
             self.entries.push(lines);
         }
@@ -116,6 +152,16 @@ impl MessageRenderCache {
     /// Get cached lines for all messages up to `count`.
     pub fn lines(&self, count: usize) -> &[Vec<Line<'static>>] {
         &self.entries[..count.min(self.entries.len())]
+    }
+
+    /// Check if a message index is a tool-only user message (no separator needed).
+    pub fn is_tool_only(&self, index: usize) -> bool {
+        self.tool_only_indices.contains(&index)
+    }
+
+    /// Borrow the full tool-only indices set (for MessageView separator logic).
+    pub fn tool_only_indices(&self) -> &std::collections::HashSet<usize> {
+        &self.tool_only_indices
     }
 
     /// Total cached line count.
@@ -189,6 +235,8 @@ pub struct MessageView<'a> {
     message_roles: Vec<Role>,
     /// Image file paths keyed by global image number (1-based) for OSC 8 hyperlinks.
     image_paths: Option<&'a HashMap<usize, PathBuf>>,
+    /// Set of message indices that are tool-only user messages (skip separator).
+    tool_only_indices: Option<&'a std::collections::HashSet<usize>>,
 }
 
 impl<'a> MessageView<'a> {
@@ -220,6 +268,7 @@ impl<'a> MessageView<'a> {
             last_turn_duration: None,
             message_roles: Vec::new(),
             image_paths: None,
+            tool_only_indices: None,
         }
     }
 
@@ -289,6 +338,12 @@ impl<'a> MessageView<'a> {
         self
     }
 
+    /// Set tool-only message indices (skip separators before these messages).
+    pub fn with_tool_only_indices(mut self, indices: &'a std::collections::HashSet<usize>) -> Self {
+        self.tool_only_indices = Some(indices);
+        self
+    }
+
     fn format_messages(&self) -> Text<'a> {
         let mut lines: Vec<Line<'a>> = Vec::new();
 
@@ -308,12 +363,22 @@ impl<'a> MessageView<'a> {
         // total line count is accurate for max_scroll_offset computation.
         for (i, entry) in self.cached_lines.iter().enumerate() {
             if i > 0 {
-                // Turn separator: thicker line between turns (User after non-User).
-                let is_turn_boundary = self.message_roles.get(i).is_some_and(|r| *r == Role::User);
-                if is_turn_boundary {
-                    render_turn_separator(&mut lines);
+                // Skip separator for tool-only user messages (ToolResult flows
+                // directly under the preceding ToolUse — no break line).
+                let is_tool_only = self
+                    .tool_only_indices
+                    .is_some_and(|set| set.contains(&i));
+                if is_tool_only {
+                    // No separator — tool result continues from tool call above.
                 } else {
-                    render_separator(&mut lines);
+                    // Turn separator: thicker line between turns (User after non-User).
+                    let is_turn_boundary =
+                        self.message_roles.get(i).is_some_and(|r| *r == Role::User);
+                    if is_turn_boundary {
+                        render_turn_separator(&mut lines);
+                    } else {
+                        render_separator(&mut lines);
+                    }
                 }
             }
             for line in entry {
@@ -672,19 +737,8 @@ fn render_content_blocks_static(
     lines: &mut Vec<Line<'static>>,
     expanded_thinking: bool,
     image_counter: &mut usize,
+    global_tool_names: &HashMap<&str, &str>,
 ) {
-    // Build tool_name map: tool_use_id → tool_name (for result display).
-    let tool_names: std::collections::HashMap<&str, &str> = blocks
-        .iter()
-        .filter_map(|b| {
-            if let ContentBlock::ToolUse { id, name, .. } = b {
-                Some((id.as_str(), name.as_str()))
-            } else {
-                None
-            }
-        })
-        .collect();
-
     let mut image_numbers: Vec<usize> = Vec::new();
 
     for block in blocks {
@@ -703,21 +757,18 @@ fn render_content_blocks_static(
                 image_numbers.push(*image_counter);
             }
             ContentBlock::ToolUse { name, input, .. } => {
+                // Claude Code style: ● ToolName(summary)
                 let summary = tool_input_summary(input);
                 lines.push(Line::from(vec![
                     Span::styled(
-                        "  \u{27f3} ",
+                        "  \u{25cf} ",
                         Style::default().fg(crate::render::STATUS_YELLOW),
                     ),
                     Span::styled(
-                        name.clone(),
+                        format!("{name}({summary})"),
                         Style::default()
                             .fg(crate::render::STATUS_YELLOW)
                             .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        format!(" \u{2500} {summary}"),
-                        Style::default().fg(crate::render::TRANSCRIPT_SECONDARY),
                     ),
                 ]));
             }
@@ -726,50 +777,39 @@ fn render_content_blocks_static(
                 content,
                 is_error,
             } => {
-                let (icon, color) = if *is_error {
-                    ("\u{2717}", crate::render::STATUS_RED) // ✗
-                } else {
-                    ("\u{2713}", crate::render::STATUS_GREEN) // ✓
-                };
-                // Show tool name if available, otherwise generic tag.
-                let tool_label = tool_names.get(tool_use_id.as_str()).map_or_else(
-                    || {
-                        if *is_error {
-                            "error".to_string()
-                        } else {
-                            "result".to_string()
-                        }
-                    },
-                    |name| (*name).to_string(),
-                );
-                lines.push(Line::from(vec![
-                    Span::styled(format!("  {icon} "), Style::default().fg(color)),
-                    Span::styled(
-                        tool_label,
-                        Style::default().fg(color).add_modifier(Modifier::BOLD),
-                    ),
-                ]));
-                let result_fg = if *is_error {
+                let color = if *is_error {
                     crate::render::STATUS_RED
                 } else {
-                    crate::render::TRANSCRIPT_SECONDARY
+                    crate::render::TRANSCRIPT_MUTED
                 };
-                let result_style = Style::default().fg(result_fg);
-                let pipe_style = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
-                let total_lines = content.lines().count();
-                for (i, line) in content.lines().enumerate() {
-                    if i >= MAX_RESULT_LINES {
-                        lines.push(Line::from(Span::styled(
-                            format!("  \u{2502} ... ({} more lines)", total_lines - i),
-                            pipe_style,
-                        )));
-                        break;
-                    }
-                    lines.push(Line::from(vec![
-                        Span::styled("  \u{2502} ".to_string(), pipe_style),
-                        Span::styled(line.to_string(), result_style),
-                    ]));
-                }
+                // Show tool name from global map (cross-message lookup).
+                let tool_label = global_tool_names
+                    .get(tool_use_id.as_str())
+                    .map_or("result", |n| *n);
+
+                // Claude Code style: └ Read N lines / └ error — message
+                let line_count = content.lines().count();
+                let summary = if *is_error {
+                    let first_line = content.lines().next().unwrap_or("error");
+                    let truncated = truncate_str(first_line, 80);
+                    format!("{tool_label} \u{2014} {truncated}")
+                } else {
+                    format!(
+                        "{tool_label} {line_count} {}",
+                        if line_count == 1 { "line" } else { "lines" }
+                    )
+                };
+
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        "  \u{2514} ".to_string(), // └
+                        Style::default().fg(color),
+                    ),
+                    Span::styled(
+                        summary,
+                        Style::default().fg(color),
+                    ),
+                ]));
             }
             ContentBlock::Thinking { thinking } => {
                 let line_count = thinking.lines().count();

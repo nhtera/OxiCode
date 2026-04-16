@@ -635,7 +635,8 @@ impl App {
             .with_streaming_thinking(&self.streaming_thinking)
             .with_last_turn_duration(self.last_turn_duration)
             .with_message_roles(message_roles)
-            .with_image_paths(&self.sent_image_paths);
+            .with_image_paths(&self.sent_image_paths)
+            .with_tool_only_indices(self.message_cache.tool_only_indices());
             frame.render_widget(message_view, left_area);
 
             // Read back the actual max scroll offset computed during rendering.

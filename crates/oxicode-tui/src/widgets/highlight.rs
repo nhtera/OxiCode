@@ -25,7 +25,7 @@ const MAX_BYTES: usize = 512 * 1024;
 const MAX_LINES: usize = 10_000;
 
 fn syntax_set() -> &'static SyntaxSet {
-    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
+    SYNTAX_SET.get_or_init(two_face::syntax::extra_newlines)
 }
 
 fn theme() -> &'static Theme {
@@ -49,30 +49,57 @@ fn theme() -> &'static Theme {
 
 /// Resolve a markdown language tag to a syntect `SyntaxReference`.
 ///
-/// Tries (in order): exact name match, extension match, first-line heuristic.
-/// Falls back to plain text if nothing matches.
+/// Tries (in order): extension match for alias, exact name match, extension
+/// match. Extension-based lookup is preferred because syntect's name matching
+/// is case-sensitive (`"rust"` won't find `"Rust"`), while extension matching
+/// is reliable across grammar sets.
 fn resolve_syntax(lang: &str) -> &'static SyntaxReference {
     let ss = syntax_set();
     if lang.is_empty() {
         return ss.find_syntax_plain_text();
     }
 
-    // Normalize common aliases.
-    let normalized = match lang {
-        "js" => "javascript",
-        "ts" => "typescript",
-        "py" => "python",
-        "rb" => "ruby",
-        "rs" => "rust",
-        "sh" | "bash" | "zsh" => "bash",
-        "yml" => "yaml",
-        "md" => "markdown",
-        "Dockerfile" => "dockerfile",
+    // Map language names/aliases to file extensions for reliable lookup.
+    let ext = match lang {
+        "javascript" | "js" | "jsx" | "mjs" | "cjs" => "js",
+        "typescript" | "ts" | "tsx" | "mts" | "cts" => "ts",
+        "python" | "py" => "py",
+        "ruby" | "rb" => "rb",
+        "rust" | "rs" => "rs",
+        "shell" | "sh" | "bash" | "zsh" => "sh",
+        "yaml" | "yml" => "yml",
+        "markdown" | "md" => "md",
+        "dockerfile" | "Dockerfile" => "Dockerfile",
+        "c++" | "cpp" | "cc" | "cxx" => "cpp",
+        "c#" | "csharp" | "cs" => "cs",
+        "kotlin" | "kt" | "kts" => "kt",
+        "swift" => "swift",
+        "go" | "golang" => "go",
+        "java" => "java",
+        "json" => "json",
+        "toml" => "toml",
+        "xml" | "svg" | "plist" => "xml",
+        "html" | "htm" => "html",
+        "css" => "css",
+        "scss" | "sass" => "scss",
+        "sql" => "sql",
+        "lua" => "lua",
+        "haskell" | "hs" => "hs",
+        "elixir" | "ex" | "exs" => "ex",
+        "erlang" | "erl" => "erl",
+        "ocaml" | "ml" | "mli" => "ml",
+        "php" => "php",
+        "perl" | "pl" => "pl",
+        "scala" => "scala",
+        "clojure" | "clj" | "cljs" => "clj",
+        "dart" => "dart",
+        "r" | "R" => "r",
         other => other,
     };
 
-    ss.find_syntax_by_name(normalized)
-        .or_else(|| ss.find_syntax_by_extension(normalized))
+    // Extension lookup is most reliable across different grammar sets.
+    ss.find_syntax_by_extension(ext)
+        .or_else(|| ss.find_syntax_by_name(lang))
         .or_else(|| ss.find_syntax_by_extension(lang))
         .unwrap_or_else(|| ss.find_syntax_plain_text())
 }
@@ -101,10 +128,64 @@ fn to_ratatui_modifier(fs: FontStyle) -> Modifier {
 
 // ── Public API ─────────────────────────────────────────────────────
 
+/// Resolve a language name from a file extension for syntax highlighting.
+///
+/// Returns `None` if no language can be determined.
+pub fn lang_from_file_path(path: &str) -> Option<&'static str> {
+    let ext = path.rsplit('.').next()?;
+    let lang = match ext {
+        "rs" => "rust",
+        "py" => "python",
+        "js" | "jsx" | "mjs" | "cjs" => "javascript",
+        "ts" | "tsx" | "mts" | "cts" => "typescript",
+        "rb" => "ruby",
+        "go" => "go",
+        "java" => "java",
+        "kt" | "kts" => "kotlin",
+        "swift" => "swift",
+        "c" | "h" => "c",
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => "c++",
+        "cs" => "c#",
+        "sh" | "bash" | "zsh" => "bash",
+        "yml" | "yaml" => "yaml",
+        "json" => "json",
+        "toml" => "toml",
+        "xml" | "svg" | "plist" => "xml",
+        "html" | "htm" => "html",
+        "css" => "css",
+        "scss" | "sass" => "scss",
+        "sql" => "sql",
+        "md" | "markdown" => "markdown",
+        "dockerfile" | "Dockerfile" => "dockerfile",
+        "lua" => "lua",
+        "r" | "R" => "r",
+        "ex" | "exs" => "elixir",
+        "erl" | "hrl" => "erlang",
+        "hs" => "haskell",
+        "ml" | "mli" => "ocaml",
+        "php" => "php",
+        "pl" | "pm" => "perl",
+        "scala" => "scala",
+        "clj" | "cljs" | "cljc" => "clojure",
+        "dart" => "dart",
+        "vim" => "vim",
+        "tf" | "hcl" => "hcl",
+        "proto" => "protobuf",
+        "graphql" | "gql" => "graphql",
+        "zig" => "zig",
+        "nim" => "nim",
+        _ => return None,
+    };
+    Some(lang)
+}
+
 /// Highlight `code` with language `lang`, returning styled lines with line numbers.
 ///
 /// Returns `None` if the input exceeds safety limits (caller should fall back
 /// to plain text rendering).
+///
+/// Background colors are intentionally omitted so the terminal's own
+/// background shows through
 pub fn highlight_code(code: &str, lang: &str) -> Option<Vec<Line<'static>>> {
     if code.is_empty() {
         return Some(Vec::new());
@@ -117,7 +198,6 @@ pub fn highlight_code(code: &str, lang: &str) -> Option<Vec<Line<'static>>> {
     let syntax = resolve_syntax(lang);
     let theme = theme();
     let mut highlighter = HighlightLines::new(syntax, theme);
-    let bg = Style::default().bg(Color::Rgb(30, 30, 30));
 
     let mut lines = Vec::new();
     for (i, line_text) in LinesWithEndings::from(code).enumerate() {
@@ -128,9 +208,7 @@ pub fn highlight_code(code: &str, lang: &str) -> Option<Vec<Line<'static>>> {
         let line_num = format!("{:>4} ", i + 1);
         let mut spans = vec![Span::styled(
             line_num,
-            Style::default()
-                .fg(crate::render::TRANSCRIPT_MUTED)
-                .bg(Color::Rgb(30, 30, 30)),
+            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         )];
 
         for (style, text) in ranges {
@@ -142,7 +220,7 @@ pub fn highlight_code(code: &str, lang: &str) -> Option<Vec<Line<'static>>> {
             let modifier = to_ratatui_modifier(style.font_style);
             spans.push(Span::styled(
                 trimmed.to_string(),
-                bg.fg(fg).add_modifier(modifier),
+                Style::default().fg(fg).add_modifier(modifier),
             ));
         }
 
@@ -155,6 +233,9 @@ pub fn highlight_code(code: &str, lang: &str) -> Option<Vec<Line<'static>>> {
 /// Highlight code for inline use in markdown rendering (no line numbers).
 ///
 /// Returns `None` if input exceeds limits or highlighting fails.
+///
+/// Background colors are intentionally omitted so the terminal's own
+/// background shows through (matching Codex behavior).
 pub fn highlight_code_inline(code: &str, lang: &str) -> Option<Vec<Line<'static>>> {
     if code.is_empty() {
         return Some(Vec::new());
@@ -167,7 +248,6 @@ pub fn highlight_code_inline(code: &str, lang: &str) -> Option<Vec<Line<'static>
     let syntax = resolve_syntax(lang);
     let theme = theme();
     let mut highlighter = HighlightLines::new(syntax, theme);
-    let bg = Style::default().bg(Color::Rgb(40, 40, 40));
 
     let mut lines = Vec::new();
     for line_text in LinesWithEndings::from(code) {
@@ -175,7 +255,7 @@ pub fn highlight_code_inline(code: &str, lang: &str) -> Option<Vec<Line<'static>
             .highlight_line(line_text, ss)
             .unwrap_or_default();
 
-        let mut spans: Vec<Span<'static>> = vec![Span::styled("  ", bg)];
+        let mut spans: Vec<Span<'static>> = Vec::new();
         for (style, text) in ranges {
             let trimmed = text.trim_end_matches('\n').trim_end_matches('\r');
             if trimmed.is_empty() {
@@ -185,7 +265,7 @@ pub fn highlight_code_inline(code: &str, lang: &str) -> Option<Vec<Line<'static>
             let modifier = to_ratatui_modifier(style.font_style);
             spans.push(Span::styled(
                 trimmed.to_string(),
-                bg.fg(fg).add_modifier(modifier),
+                Style::default().fg(fg).add_modifier(modifier),
             ));
         }
         lines.push(Line::from(spans));
@@ -197,6 +277,16 @@ pub fn highlight_code_inline(code: &str, lang: &str) -> Option<Vec<Line<'static>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lang_from_file_path_resolves_extensions() {
+        assert_eq!(lang_from_file_path("main.rs"), Some("rust"));
+        assert_eq!(lang_from_file_path("/src/app.tsx"), Some("typescript"));
+        assert_eq!(lang_from_file_path("config.yaml"), Some("yaml"));
+        assert_eq!(lang_from_file_path("Cargo.toml"), Some("toml"));
+        assert_eq!(lang_from_file_path("no_extension"), None);
+        assert_eq!(lang_from_file_path("script.sh"), Some("bash"));
+    }
 
     #[test]
     fn highlight_rust_produces_colored_spans() {
@@ -245,8 +335,16 @@ mod tests {
     fn highlight_inline_no_line_numbers() {
         let lines = highlight_code_inline("let x = 1;", "rust").unwrap();
         assert!(!lines.is_empty());
-        // First span should be indent "  ", not a line number.
-        assert_eq!(lines[0].spans[0].content.as_ref(), "  ");
+        // First span should be code content, not a line number.
+        let first_content: String = lines[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            first_content.contains("let"),
+            "Inline highlight should contain code"
+        );
     }
 
     #[test]

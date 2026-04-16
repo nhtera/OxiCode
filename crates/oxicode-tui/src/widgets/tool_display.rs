@@ -189,7 +189,7 @@ pub fn completed_tool_lines_with_input(
 
 // ─── Header helper ──────────────────────────────────────────────────────────
 
-/// Build the standard tool header line with icon, name, summary, and elapsed.
+/// Build the standard tool header line: `icon Name(summary) (elapsed)`
 fn tool_header(
     icon: &str,
     color: Color,
@@ -201,14 +201,10 @@ fn tool_header(
     Line::from(vec![
         Span::styled(format!("  {icon} "), Style::default().fg(color)),
         Span::styled(
-            name.to_string(),
+            format!("{name}({summary})"),
             Style::default()
                 .fg(crate::render::TRANSCRIPT_TEXT)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(" \u{2014} {summary}"),
-            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
         Span::styled(
             elapsed_str,
@@ -290,7 +286,7 @@ fn render_file_read(
     content: &str,
     is_error: bool,
     started_at: Option<Instant>,
-    max: usize,
+    _max: usize,
     raw_input: Option<&Value>,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -301,26 +297,40 @@ fn render_file_read(
         .and_then(Value::as_str)
         .unwrap_or(input_summary);
 
-    let line_count = content.lines().count();
-    let summary = format!("{file_path} ({line_count} lines)");
+    // Claude Code style: ✓ Read(path)
+    let summary = format!("{file_path}");
     lines.push(tool_header(icon, color, "Read", &summary, started_at));
 
-    if !content.is_empty() && !is_error {
-        let preview_max = max.min(5); // Show fewer preview lines for file reads.
-        append_output_lines(
-            &mut lines,
-            content,
-            preview_max,
-            Style::default().fg(crate::render::TRANSCRIPT_SECONDARY),
-        );
-    } else if is_error {
-        append_output_lines(
-            &mut lines,
-            content,
-            max,
-            Style::default().fg(crate::render::STATUS_RED),
-        );
+    // Result line: └ Read N lines
+    let line_count = content.lines().count();
+    if is_error && !content.is_empty() {
+        let first_line = content.lines().next().unwrap_or("error");
+        lines.push(Line::from(vec![
+            Span::styled(
+                "    \u{2514} ".to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+            Span::styled(
+                first_line.to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+        ]));
+    } else if line_count > 0 {
+        lines.push(Line::from(vec![
+            Span::styled(
+                "    \u{2514} ".to_string(),
+                Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+            ),
+            Span::styled(
+                format!(
+                    "Read {line_count} {}",
+                    if line_count == 1 { "line" } else { "lines" }
+                ),
+                Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+            ),
+        ]));
     }
+
     lines
 }
 

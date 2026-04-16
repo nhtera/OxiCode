@@ -7,10 +7,6 @@ use ratatui::widgets::Widget;
 
 use super::highlight;
 
-/// Default width for box-drawing code block borders.
-/// Fits comfortably in 80-col terminal with 2-space indent.
-const CODE_BLOCK_WIDTH: usize = 72;
-
 /// Width used when rendering horizontal rules.
 const HORIZONTAL_RULE_WIDTH: usize = 72;
 
@@ -134,7 +130,7 @@ impl<'a> MarkdownView<'a> {
                     }
                     Tag::Link { .. } => {
                         let base = *style_stack.last().unwrap_or(&Style::default());
-                        style_stack.push(base.fg(Color::Blue).add_modifier(Modifier::UNDERLINED));
+                        style_stack.push(base.fg(Color::Cyan).add_modifier(Modifier::UNDERLINED));
                     }
                     Tag::Item => {
                         current_spans.push(Span::styled(
@@ -179,9 +175,7 @@ impl<'a> MarkdownView<'a> {
                     }
                 }
                 Event::Code(code) => {
-                    let code_style = Style::default()
-                        .fg(crate::render::STATUS_YELLOW)
-                        .bg(Color::Rgb(40, 40, 40));
+                    let code_style = Style::default().fg(Color::Cyan);
                     current_spans.push(Span::styled(format!("`{code}`"), code_style));
                 }
                 Event::SoftBreak | Event::HardBreak => {
@@ -217,15 +211,13 @@ impl<'a> MarkdownView<'a> {
 fn heading_style(level: HeadingLevel) -> Style {
     match level {
         HeadingLevel::H1 => Style::default()
-            .fg(crate::render::CLAUDE_ORANGE)
-            .add_modifier(Modifier::BOLD),
-        HeadingLevel::H2 => Style::default()
-            .fg(crate::render::STATUS_CYAN)
-            .add_modifier(Modifier::BOLD),
+            .add_modifier(Modifier::BOLD)
+            .add_modifier(Modifier::UNDERLINED),
+        HeadingLevel::H2 => Style::default().add_modifier(Modifier::BOLD),
         HeadingLevel::H3 => Style::default()
-            .fg(crate::render::STATUS_GREEN)
-            .add_modifier(Modifier::BOLD),
-        _ => Style::default().add_modifier(Modifier::BOLD),
+            .add_modifier(Modifier::BOLD)
+            .add_modifier(Modifier::ITALIC),
+        _ => Style::default().add_modifier(Modifier::ITALIC),
     }
 }
 
@@ -354,8 +346,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
             }
             Event::Code(code) => {
                 let code_style = Style::default()
-                    .fg(crate::render::STATUS_YELLOW)
-                    .bg(Color::Rgb(40, 40, 40));
+                    .fg(crate::render::STATUS_YELLOW);
                 current_spans.push(Span::styled(format!("`{code}`"), code_style));
             }
             Event::SoftBreak | Event::HardBreak => {
@@ -384,61 +375,42 @@ fn flush_owned_spans(spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'stati
     }
 }
 
-/// Render a code block with box-drawing borders and optional language label.
+/// Render a code block with syntax highlighting (clean style, no box borders).
 ///
-/// Output format:
-/// ```text
-///   ┌─ rust ──────────────────────┐
-///   │ fn main() {}                │
-///   └─────────────────────────────┘
-/// ```
+/// Matches Codex style: indented highlighted code with a dim language label.
+/// No background color — terminal's own background shows through.
+/// Falls back to plain text when syntax highlighting is unavailable.
 fn render_code_block_boxed(code_lines: &[String], lang: &str, output: &mut Vec<Line<'static>>) {
-    let border_style = Style::default().fg(crate::render::CHROME_MUTED);
     let label_style = Style::default()
-        .fg(crate::render::TRANSCRIPT_TEXT)
-        .add_modifier(Modifier::BOLD);
-    let code_bg = Style::default()
-        .fg(crate::render::TRANSCRIPT_TEXT)
-        .bg(Color::Rgb(40, 40, 40));
+        .fg(crate::render::TRANSCRIPT_MUTED)
+        .add_modifier(Modifier::DIM);
+    let plain_style = Style::default().fg(crate::render::TRANSCRIPT_TEXT);
 
-    // Top border: ┌─ lang ──...──┐
-    let label = if lang.is_empty() {
-        String::new()
-    } else {
-        format!(" {lang} ")
-    };
-    let used = 4 + label.len(); // "  ┌─" + label
-    let fill = CODE_BLOCK_WIDTH.saturating_sub(used);
-    output.push(Line::from(vec![
-        Span::styled("  \u{250c}\u{2500}".to_string(), border_style), // ┌─
-        Span::styled(label, label_style),
-        Span::styled("\u{2500}".repeat(fill) + "\u{2510}", border_style), // ─...─┐
-    ]));
+    // Language label line (if language specified).
+    if !lang.is_empty() {
+        output.push(Line::from(Span::styled(
+            format!("  {lang}"),
+            label_style,
+        )));
+    }
 
-    // Highlighted or plain code lines with │ prefix and │ suffix.
+    // Highlighted or plain code lines with 4-space indent.
     let code = code_lines.join("\n");
     if let Some(highlighted) = highlight::highlight_code_inline(&code, lang) {
         for hl_line in highlighted {
-            let mut spans = Vec::with_capacity(hl_line.spans.len() + 2);
-            spans.push(Span::styled("  \u{2502} ".to_string(), border_style)); // │
+            let mut spans = Vec::with_capacity(hl_line.spans.len() + 1);
+            spans.push(Span::raw("    ".to_string()));
             spans.extend(hl_line.spans);
             output.push(Line::from(spans));
         }
     } else {
         for cl in code_lines {
             output.push(Line::from(vec![
-                Span::styled("  \u{2502} ".to_string(), border_style),
-                Span::styled(cl.clone(), code_bg),
+                Span::raw("    ".to_string()),
+                Span::styled(cl.clone(), plain_style),
             ]));
         }
     }
-
-    // Bottom border: └──...──┘
-    let bottom_fill = CODE_BLOCK_WIDTH.saturating_sub(3); // "  └" prefix
-    output.push(Line::from(Span::styled(
-        format!("  \u{2514}{}\u{2518}", "\u{2500}".repeat(bottom_fill)),
-        border_style,
-    )));
 }
 
 /// Maximum total table width (fits in 80-col terminal with indent).
@@ -708,35 +680,41 @@ mod tests {
     }
 
     #[test]
-    fn heading_renders_with_color() {
+    fn heading_renders_with_bold_underline() {
         let v = MarkdownView::new("# Heading 1");
         let lines = v.to_lines();
         let raw = text_of(&lines);
         assert!(raw.contains("Heading 1"), "Should contain heading text");
 
-        // H1 should use CLAUDE_ORANGE color.
-        let colored: Vec<_> = lines
+        // H1 should use BOLD + UNDERLINED modifiers (Codex style).
+        let styled: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(crate::render::CLAUDE_ORANGE))
+            .filter(|s| {
+                s.style.add_modifier.contains(Modifier::BOLD)
+                    && s.style.add_modifier.contains(Modifier::UNDERLINED)
+            })
             .collect();
-        assert!(!colored.is_empty(), "H1 should use CLAUDE_ORANGE color");
+        assert!(!styled.is_empty(), "H1 should be bold + underlined");
     }
 
     #[test]
-    fn h2_renders_with_status_cyan() {
+    fn h2_renders_with_bold() {
         let v = MarkdownView::new("## Sub Heading");
         let lines = v.to_lines();
-        let colored: Vec<_> = lines
+        let bold: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(crate::render::STATUS_CYAN))
+            .filter(|s| {
+                s.style.add_modifier.contains(Modifier::BOLD)
+                    && s.content.contains("Sub Heading")
+            })
             .collect();
-        assert!(!colored.is_empty(), "H2 should use STATUS_CYAN color");
+        assert!(!bold.is_empty(), "H2 should be bold");
     }
 
     #[test]
-    fn code_block_renders_with_background() {
+    fn code_block_renders_without_background() {
         let source = "```\nfn main() {}\n```";
         let v = MarkdownView::new(source);
         let lines = v.to_lines();
@@ -746,15 +724,15 @@ mod tests {
             "Code block content should render"
         );
 
-        // Code should have dark background.
+        // No spans should have background color (terminal bg shows through).
         let bg_spans: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| matches!(s.style.bg, Some(Color::Rgb(40, 40, 40))))
+            .filter(|s| s.style.bg.is_some())
             .collect();
         assert!(
-            !bg_spans.is_empty(),
-            "Code block should have background color"
+            bg_spans.is_empty(),
+            "Code block should not have background color (Codex style)"
         );
     }
 
@@ -765,16 +743,13 @@ mod tests {
         let raw = text_of(&lines);
         assert!(raw.contains("`cargo test`"), "Inline code should render");
 
-        // Inline code should have STATUS_YELLOW foreground.
+        // Inline code should have Cyan foreground (Codex style).
         let code_spans: Vec<_> = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .filter(|s| s.style.fg == Some(crate::render::STATUS_YELLOW))
+            .filter(|s| s.style.fg == Some(Color::Cyan))
             .collect();
-        assert!(
-            !code_spans.is_empty(),
-            "Inline code should be STATUS_YELLOW"
-        );
+        assert!(!code_spans.is_empty(), "Inline code should be Cyan");
     }
 
     #[test]
@@ -810,6 +785,27 @@ mod tests {
             .collect();
         assert!(raw.contains("hello"));
         assert!(raw.contains("world"));
+    }
+
+    #[test]
+    fn code_block_has_syntax_highlighting_colors() {
+        let source = "```rust\nfn main() {\n    println!(\"hello\");\n}\n```";
+        let lines = parse_to_owned_lines(source);
+        // Code should have colored (non-default fg) spans beyond the indent
+        let colored_spans: Vec<_> = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| {
+                !s.content.trim().is_empty()
+                    && s.style.fg.is_some()
+                    && s.style.fg != Some(crate::render::TRANSCRIPT_TEXT)
+                    && s.style.fg != Some(crate::render::TRANSCRIPT_MUTED)
+            })
+            .collect();
+        assert!(
+            !colored_spans.is_empty(),
+            "Code block should have syntax-highlighted colored spans"
+        );
     }
 
     #[test]
