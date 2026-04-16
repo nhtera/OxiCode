@@ -3,6 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
+use unicode_width::UnicodeWidthStr;
 
 use crate::render;
 
@@ -170,13 +171,14 @@ impl Widget for InputBox<'_> {
         if self.focused && area.width > 2 && area.height > 2 {
             let (cursor_row, cursor_col) = cursor_row_col(self.text, self.cursor);
             let inner_width = (area.width - 2) as usize;
-            // Account for line wrapping within each row.
+            // Account for line wrapping within each row (using display width).
             let mut visual_row: u16 = 0;
             for (i, line_text) in self.text.split('\n').enumerate() {
-                let wrapped_lines = (line_text.len() / inner_width.max(1)) as u16 + 1;
+                let line_width = UnicodeWidthStr::width(line_text);
+                let wrapped_lines = (line_width / inner_width.max(1)) as u16 + 1;
                 if i == cursor_row {
                     // Cursor is in this line — add offset within wrapping.
-                    let col_in_line = cursor_col.min(line_text.len());
+                    let col_in_line = cursor_col.min(line_width);
                     visual_row += (col_in_line / inner_width.max(1)) as u16;
                     let visual_col = col_in_line % inner_width.max(1);
                     let cx = area.x + 1 + visual_col as u16;
@@ -239,13 +241,14 @@ fn style_image_tags(text: &str) -> Vec<Span<'_>> {
     spans
 }
 
-/// Convert a byte cursor offset into (row, col) for multiline text.
+/// Convert a byte cursor offset into (row, col_display_width) for multiline text.
+/// Returns col as display width (not byte offset) for correct cursor positioning
+/// with multi-byte characters (e.g. Vietnamese, CJK, emoji).
 fn cursor_row_col(text: &str, byte_cursor: usize) -> (usize, usize) {
     let before = &text[..byte_cursor.min(text.len())];
     let row = before.matches('\n').count();
-    let col = before
-        .rfind('\n')
-        .map_or(before.len(), |pos| before.len() - pos - 1);
+    let after_last_newline = before.rfind('\n').map_or(before, |pos| &before[pos + 1..]);
+    let col = UnicodeWidthStr::width(after_last_newline);
     (row, col)
 }
 
@@ -313,9 +316,19 @@ mod tests {
 
     #[test]
     fn cursor_row_col_utf8() {
-        // Emoji is 4 bytes.
+        // Emoji is 4 bytes but 2 display width.
         let text = "hi\u{1f600}";
-        assert_eq!(cursor_row_col(text, 6), (0, 6)); // after emoji
+        assert_eq!(cursor_row_col(text, 6), (0, 4)); // "hi" = 2 width + emoji = 2 width
+    }
+
+    #[test]
+    fn cursor_row_col_vietnamese() {
+        // Vietnamese chars like "ạ" (2 bytes) have display width 1.
+        let text = "xin chào";
+        // "chào" — 'à' is 2 bytes, 'o' is 1 byte.
+        // Display width of "xin chào" is 8.
+        let byte_len = text.len();
+        assert_eq!(cursor_row_col(text, byte_len), (0, 8));
     }
 
     #[test]
