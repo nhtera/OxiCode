@@ -104,6 +104,13 @@ impl<'a> MarkdownView<'a> {
         let mut in_code_block = false;
         let mut code_block_lang = String::new();
         let mut code_block_lines: Vec<String> = Vec::new();
+        // Table state.
+        let mut in_table = false;
+        let mut table_alignments: Vec<Alignment> = Vec::new();
+        let mut table_headers: Vec<String> = Vec::new();
+        let mut table_rows: Vec<Vec<String>> = Vec::new();
+        let mut current_row: Vec<String> = Vec::new();
+        let mut current_cell = String::new();
 
         for event in parser {
             match event {
@@ -138,6 +145,18 @@ impl<'a> MarkdownView<'a> {
                             Style::default().fg(crate::render::TRANSCRIPT_MUTED),
                         ));
                     }
+                    Tag::Table(alignments) => {
+                        in_table = true;
+                        table_alignments = alignments;
+                        table_headers.clear();
+                        table_rows.clear();
+                    }
+                    Tag::TableHead | Tag::TableRow => {
+                        current_row.clear();
+                    }
+                    Tag::TableCell => {
+                        current_cell.clear();
+                    }
                     _ => {}
                 },
                 Event::End(tag_end) => match tag_end {
@@ -162,6 +181,20 @@ impl<'a> MarkdownView<'a> {
                     TagEnd::Item => {
                         flush_spans(&mut current_spans, &mut lines);
                     }
+                    TagEnd::TableCell => {
+                        current_row.push(std::mem::take(&mut current_cell));
+                    }
+                    TagEnd::TableHead => {
+                        table_headers = std::mem::take(&mut current_row);
+                    }
+                    TagEnd::TableRow => {
+                        table_rows.push(std::mem::take(&mut current_row));
+                    }
+                    TagEnd::Table => {
+                        in_table = false;
+                        render_table_boxed(&table_headers, &table_rows, &table_alignments, &mut lines);
+                        lines.push(Line::from(""));
+                    }
                     _ => {}
                 },
                 Event::Text(text) => {
@@ -169,14 +202,20 @@ impl<'a> MarkdownView<'a> {
                         for line in text.lines() {
                             code_block_lines.push(line.to_string());
                         }
+                    } else if in_table {
+                        current_cell.push_str(&text);
                     } else {
                         let style = *style_stack.last().unwrap_or(&Style::default());
                         current_spans.extend(spans_from_text_with_urls(&text, style));
                     }
                 }
                 Event::Code(code) => {
-                    let code_style = Style::default().fg(Color::Cyan);
-                    current_spans.push(Span::styled(format!("`{code}`"), code_style));
+                    if in_table {
+                        current_cell.push_str(&code);
+                    } else {
+                        let code_style = Style::default().fg(Color::Cyan);
+                        current_spans.push(Span::styled(format!("`{code}`"), code_style));
+                    }
                 }
                 Event::SoftBreak | Event::HardBreak => {
                     flush_spans(&mut current_spans, &mut lines);
@@ -345,9 +384,13 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                 }
             }
             Event::Code(code) => {
-                let code_style = Style::default()
-                    .fg(crate::render::STATUS_YELLOW);
-                current_spans.push(Span::styled(format!("`{code}`"), code_style));
+                if in_table {
+                    current_cell.push_str(&code);
+                } else {
+                    let code_style = Style::default()
+                        .fg(crate::render::STATUS_YELLOW);
+                    current_spans.push(Span::styled(format!("`{code}`"), code_style));
+                }
             }
             Event::SoftBreak | Event::HardBreak => {
                 flush_owned_spans(&mut current_spans, &mut lines);
@@ -550,6 +593,8 @@ pub struct StreamParserState {
     pub code_lang: String,
     /// Accumulated code lines inside the open fence.
     pub code_lines: Vec<String>,
+    /// Accumulated table lines (pipe-delimited rows) for block parsing.
+    pub table_lines: Vec<String>,
 }
 
 /// Parse a slice of markdown incrementally, carrying `state` across calls.
@@ -587,6 +632,20 @@ pub fn parse_incremental(source: &str, state: &mut StreamParserState) -> Vec<Lin
             continue;
         }
 
+        // Accumulate table lines (pipe-delimited rows) so pulldown-cmark can
+        // recognise the full table block.
+        let is_table_line = trimmed.starts_with('|') && trimmed.ends_with('|');
+        if is_table_line {
+            state.table_lines.push(raw_line.to_string());
+            continue;
+        }
+        // If we were accumulating table lines and hit a non-table line, flush.
+        if !state.table_lines.is_empty() {
+            let table_block = state.table_lines.join("\n");
+            state.table_lines.clear();
+            lines.extend(parse_to_owned_lines(&table_block));
+        }
+
         // Detect standalone horizontal rule lines: ---, ***, ___ (3+ same chars).
         if trimmed.len() >= 3
             && (trimmed.chars().all(|c| c == '-')
@@ -605,6 +664,13 @@ pub fn parse_incremental(source: &str, state: &mut StreamParserState) -> Vec<Lin
         } else {
             lines.extend(parsed);
         }
+    }
+
+    // Flush any remaining accumulated table lines at end of source.
+    if !state.table_lines.is_empty() {
+        let table_block = state.table_lines.join("\n");
+        state.table_lines.clear();
+        lines.extend(parse_to_owned_lines(&table_block));
     }
 
     lines
