@@ -287,9 +287,10 @@ impl QueryEngine {
         let active_skills = self.state_store.current().active_skills;
         let mut effective_prompt = self.system_prompt.clone();
 
-        // Inject environment info (working dir, platform, shell, date).
+        // Inject environment info (working dir, platform, shell, date, model).
         let cwd_str = self.tool_context.working_dir.to_string_lossy();
-        let env_info = crate::system_prompt::build_env_info_section(Some(&cwd_str));
+        let env_info =
+            crate::system_prompt::build_env_info_section(Some(&cwd_str), Some(&model));
         effective_prompt.push_str(&env_info);
 
         if let Some(modes) = crate::system_prompt::mode_injection_text(&active_skills) {

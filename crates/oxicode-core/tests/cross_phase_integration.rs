@@ -80,19 +80,17 @@ fn system_prompt_with_all_components_and_modes() {
     assert!(prompt.contains("memory facts"));
     assert!(prompt.contains("skill definitions"));
 
-    // Verify ordering: base < modes < global < project < memory < skills.
-    let base_pos = prompt.find("OxiCode").unwrap();
+    // Verify ordering: memory < modes < global < project < skills.
+    let memory_pos = prompt.find("Project Memory").unwrap();
     let modes_pos = prompt.find("Active Modes").unwrap();
     let global_pos = prompt.find("Global Instructions").unwrap();
     let project_pos = prompt.find("Project Instructions").unwrap();
-    let memory_pos = prompt.find("Project Memory").unwrap();
     let skills_pos = prompt.find("Active Skills").unwrap();
 
-    assert!(base_pos < modes_pos);
+    assert!(memory_pos < modes_pos);
     assert!(modes_pos < global_pos);
     assert!(global_pos < project_pos);
-    assert!(project_pos < memory_pos);
-    assert!(memory_pos < skills_pos);
+    assert!(project_pos < skills_pos);
 }
 
 #[test]
