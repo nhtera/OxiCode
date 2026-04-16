@@ -65,14 +65,10 @@ pub fn running_tool_line(name: &str, input_summary: &str, started_at: Instant) -
             Style::default().fg(crate::render::STATUS_CYAN),
         ),
         Span::styled(
-            name.to_string(),
+            format!("{name}({input_summary})"),
             Style::default()
                 .fg(crate::render::TRANSCRIPT_TEXT)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(" \u{2014} {input_summary}"),
-            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
         Span::styled(
             format!(" ({elapsed})"),
@@ -97,14 +93,10 @@ pub fn running_tool_line_animated(
     Line::from(vec![
         Span::styled(format!("  {spinner} "), Style::default().fg(color)),
         Span::styled(
-            name.to_string(),
+            format!("{name}({input_summary})"),
             Style::default()
                 .fg(crate::render::TRANSCRIPT_TEXT)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(" \u{2014} {input_summary}"),
-            Style::default().fg(crate::render::TRANSCRIPT_MUTED),
         ),
         Span::styled(
             format!(" ({elapsed})"),
@@ -351,20 +343,42 @@ fn render_file_write(
         .and_then(Value::as_str)
         .unwrap_or(input_summary);
 
-    let summary = if is_error {
-        format!("Failed: {file_path}")
-    } else {
-        format!("Created {file_path}")
-    };
-    lines.push(tool_header(icon, color, "Write", &summary, started_at));
+    // Claude Code style: ✓ Write(path)
+    lines.push(tool_header(icon, color, "Write", file_path, started_at));
 
+    // Result line: └ Written N lines / └ error
     if is_error && !content.is_empty() {
-        append_output_lines(
-            &mut lines,
-            content,
-            3,
-            Style::default().fg(crate::render::STATUS_RED),
-        );
+        let first_line = content.lines().next().unwrap_or("error");
+        lines.push(Line::from(vec![
+            Span::styled(
+                "    \u{2514} ".to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+            Span::styled(
+                first_line.to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+        ]));
+    } else {
+        let line_count = raw_input
+            .and_then(|v| v.get("content"))
+            .and_then(Value::as_str)
+            .map_or(0, |c| c.lines().count());
+        if line_count > 0 {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "    \u{2514} ".to_string(),
+                    Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                ),
+                Span::styled(
+                    format!(
+                        "Wrote {line_count} {}",
+                        if line_count == 1 { "line" } else { "lines" }
+                    ),
+                    Style::default().fg(crate::render::TRANSCRIPT_MUTED),
+                ),
+            ]));
+        }
     }
     lines
 }
@@ -388,56 +402,36 @@ fn render_edit(
 
     lines.push(tool_header(icon, color, "Edit", file_path, started_at));
 
-    // Show brief diff from input if available.
+    // Show compact diff summary: └ -N/+M lines
     if let Some(input) = raw_input {
         let old = input.get("old_string").and_then(Value::as_str);
         let new = input.get("new_string").and_then(Value::as_str);
         if let (Some(old_str), Some(new_str)) = (old, new) {
-            let pipe_style = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
-            let del_style = Style::default().fg(crate::render::STATUS_RED);
-            let add_style = Style::default().fg(crate::render::STATUS_GREEN);
-
-            // Show up to 3 old lines and 3 new lines.
-            for line in old_str.lines().take(3) {
-                lines.push(Line::from(vec![
-                    Span::styled("  \u{2502} ".to_string(), pipe_style),
-                    Span::styled(format!("-{line}"), del_style),
-                ]));
-            }
-            if old_str.lines().count() > 3 {
-                lines.push(Line::from(Span::styled(
-                    format!(
-                        "  \u{2502} ... ({} more removed)",
-                        old_str.lines().count() - 3
-                    ),
-                    pipe_style,
-                )));
-            }
-            for line in new_str.lines().take(3) {
-                lines.push(Line::from(vec![
-                    Span::styled("  \u{2502} ".to_string(), pipe_style),
-                    Span::styled(format!("+{line}"), add_style),
-                ]));
-            }
-            if new_str.lines().count() > 3 {
-                lines.push(Line::from(Span::styled(
-                    format!(
-                        "  \u{2502} ... ({} more added)",
-                        new_str.lines().count() - 3
-                    ),
-                    pipe_style,
-                )));
-            }
+            let removed = old_str.lines().count();
+            let added = new_str.lines().count();
+            let muted = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
+            lines.push(Line::from(vec![
+                Span::styled("    \u{2514} ".to_string(), muted),
+                Span::styled(
+                    format!("-{removed}/+{added} lines"),
+                    muted,
+                ),
+            ]));
         }
     }
 
     if is_error && !content.is_empty() {
-        append_output_lines(
-            &mut lines,
-            content,
-            3,
-            Style::default().fg(crate::render::STATUS_RED),
-        );
+        let first_line = content.lines().next().unwrap_or("error");
+        lines.push(Line::from(vec![
+            Span::styled(
+                "    \u{2514} ".to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+            Span::styled(
+                first_line.to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+        ]));
     }
     lines
 }
@@ -450,46 +444,50 @@ fn render_search(
     content: &str,
     is_error: bool,
     started_at: Option<Instant>,
-    max: usize,
+    _max: usize,
     raw_input: Option<&Value>,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let (icon, color) = status_icon(is_error);
 
     // Build summary from raw input when possible.
-    let summary = if let Some(input) = raw_input {
+    let header_summary = if let Some(input) = raw_input {
         if tool_label == "Grep" {
             let pattern = input.get("pattern").and_then(Value::as_str).unwrap_or("?");
             let path = input.get("path").and_then(Value::as_str).unwrap_or(".");
-            let file_count = content.lines().count();
-            format!("\"{pattern}\" in {path} \u{2192} {file_count} results")
+            format!("{pattern} in {path}")
         } else {
             // Glob
             let pattern = input.get("pattern").and_then(Value::as_str).unwrap_or("?");
-            let file_count = content.lines().count();
-            format!("\"{pattern}\" \u{2192} {file_count} files")
+            pattern.to_string()
         }
     } else {
-        let file_count = content.lines().count();
-        format!("{input_summary} \u{2192} {file_count} results")
+        input_summary.to_string()
     };
 
-    lines.push(tool_header(icon, color, tool_label, &summary, started_at));
+    lines.push(tool_header(icon, color, tool_label, &header_summary, started_at));
 
-    if !content.is_empty() && !is_error {
-        append_output_lines(
-            &mut lines,
-            content,
-            max,
-            Style::default().fg(crate::render::TRANSCRIPT_SECONDARY),
-        );
-    } else if is_error {
-        append_output_lines(
-            &mut lines,
-            content,
-            max,
-            Style::default().fg(crate::render::STATUS_RED),
-        );
+    // Result line: └ N results / └ N files
+    if is_error && !content.is_empty() {
+        let first_line = content.lines().next().unwrap_or("error");
+        lines.push(Line::from(vec![
+            Span::styled(
+                "    \u{2514} ".to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+            Span::styled(
+                first_line.to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+        ]));
+    } else {
+        let result_count = content.lines().count();
+        let label = if tool_label == "Glob" { "files" } else { "results" };
+        let muted = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
+        lines.push(Line::from(vec![
+            Span::styled("    \u{2514} ".to_string(), muted),
+            Span::styled(format!("{result_count} {label}"), muted),
+        ]));
     }
     lines
 }
@@ -502,19 +500,38 @@ fn render_generic(
     content: &str,
     is_error: bool,
     started_at: Option<Instant>,
-    max: usize,
+    _max: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let (icon, color) = status_icon(is_error);
     lines.push(tool_header(icon, color, name, input_summary, started_at));
 
-    if !content.is_empty() {
-        let result_style = if is_error {
-            Style::default().fg(crate::render::STATUS_RED)
-        } else {
-            Style::default().fg(crate::render::TRANSCRIPT_SECONDARY)
-        };
-        append_output_lines(&mut lines, content, max, result_style);
+    // Compact result: └ N lines / └ error message
+    if is_error && !content.is_empty() {
+        let first_line = content.lines().next().unwrap_or("error");
+        lines.push(Line::from(vec![
+            Span::styled(
+                "    \u{2514} ".to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+            Span::styled(
+                first_line.to_string(),
+                Style::default().fg(crate::render::STATUS_RED),
+            ),
+        ]));
+    } else if !content.is_empty() {
+        let line_count = content.lines().count();
+        let muted = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
+        lines.push(Line::from(vec![
+            Span::styled("    \u{2514} ".to_string(), muted),
+            Span::styled(
+                format!(
+                    "{line_count} {}",
+                    if line_count == 1 { "line" } else { "lines" }
+                ),
+                muted,
+            ),
+        ]));
     }
     lines
 }
@@ -632,7 +649,7 @@ mod tests {
     }
 
     #[test]
-    fn file_write_shows_created() {
+    fn file_write_shows_path_and_line_count() {
         let input = serde_json::json!({"file_path": "/tmp/new.txt", "content": "hello"});
         let lines = completed_tool_lines_with_input(
             "Write",
@@ -644,12 +661,12 @@ mod tests {
             Some(&input),
         );
         let raw = lines_to_string(&lines);
-        assert!(raw.contains("Created"), "Write should show Created");
+        assert!(raw.contains("Wrote"), "Write should show Wrote");
         assert!(raw.contains("/tmp/new.txt"), "Should show file path");
     }
 
     #[test]
-    fn edit_shows_diff_preview() {
+    fn edit_shows_compact_diff_summary() {
         let input = serde_json::json!({
             "file_path": "/src/lib.rs",
             "old_string": "old line 1\nold line 2",
@@ -665,8 +682,7 @@ mod tests {
             Some(&input),
         );
         let raw = lines_to_string(&lines);
-        assert!(raw.contains("-old line"), "Should show removed lines");
-        assert!(raw.contains("+new line"), "Should show added lines");
+        assert!(raw.contains("-2/+3 lines"), "Should show diff summary");
         assert!(raw.contains("Edit"), "Should show Edit label");
     }
 
@@ -684,7 +700,7 @@ mod tests {
             Some(&input),
         );
         let raw = lines_to_string(&lines);
-        assert!(raw.contains("\"fn main\""), "Should show pattern");
+        assert!(raw.contains("fn main"), "Should show pattern");
         assert!(raw.contains("3 results"), "Should show result count");
     }
 
@@ -711,6 +727,6 @@ mod tests {
         );
         let raw = lines_to_string(&lines);
         assert!(raw.contains("CustomTool"), "Should show tool name");
-        assert!(raw.contains("output"), "Should show output");
+        assert!(raw.contains("1 line"), "Should show line count");
     }
 }
