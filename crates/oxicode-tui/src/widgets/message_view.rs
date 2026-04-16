@@ -237,6 +237,8 @@ pub struct MessageView<'a> {
     image_paths: Option<&'a HashMap<usize, PathBuf>>,
     /// Set of message indices that are tool-only user messages (skip separator).
     tool_only_indices: Option<&'a std::collections::HashSet<usize>>,
+    /// Queued message texts to render at the bottom of the conversation (dimmed).
+    queued_messages: Vec<&'a str>,
 }
 
 impl<'a> MessageView<'a> {
@@ -269,6 +271,7 @@ impl<'a> MessageView<'a> {
             message_roles: Vec::new(),
             image_paths: None,
             tool_only_indices: None,
+            queued_messages: Vec::new(),
         }
     }
 
@@ -341,6 +344,12 @@ impl<'a> MessageView<'a> {
     /// Set tool-only message indices (skip separators before these messages).
     pub fn with_tool_only_indices(mut self, indices: &'a std::collections::HashSet<usize>) -> Self {
         self.tool_only_indices = Some(indices);
+        self
+    }
+
+    /// Set queued message texts to render at the bottom of the conversation.
+    pub fn with_queued_messages(mut self, messages: Vec<&'a str>) -> Self {
+        self.queued_messages = messages;
         self
     }
 
@@ -426,6 +435,47 @@ impl<'a> MessageView<'a> {
         }
 
         self.render_active_tools(&mut lines);
+
+        // Queued messages — rendered like dimmed/faded user messages.
+        if !self.queued_messages.is_empty() {
+            let muted = crate::render::CHROME_MUTED;
+            // Slightly different bg to distinguish from real messages.
+            let queued_bg = Color::Rgb(40, 35, 32);
+            let dim = Modifier::DIM;
+            for text in &self.queued_messages {
+                // Blank separator.
+                lines.push(Line::from(""));
+                // Header: dimmed "❯ You" + "(queued)" tag.
+                lines.push(
+                    Line::from(vec![
+                        Span::styled(
+                            "  \u{276f} You ",
+                            Style::default()
+                                .fg(muted)
+                                .add_modifier(Modifier::BOLD)
+                                .add_modifier(dim),
+                        ),
+                        Span::styled(
+                            "(queued)",
+                            Style::default()
+                                .fg(Color::Rgb(100, 88, 82))
+                                .add_modifier(Modifier::ITALIC)
+                                .add_modifier(dim),
+                        ),
+                    ])
+                    .style(Style::default().bg(queued_bg)),
+                );
+                // Body: message text (dimmed).
+                lines.push(
+                    Line::from(Span::styled(
+                        format!("    {text}"),
+                        Style::default().fg(muted).add_modifier(dim),
+                    ))
+                    .style(Style::default().bg(queued_bg)),
+                );
+            }
+            // No hint here — it renders below the input box in app.rs.
+        }
 
         Text::from(lines)
     }

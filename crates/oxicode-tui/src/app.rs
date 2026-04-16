@@ -18,6 +18,7 @@ use ratatui::Terminal;
 use tokio::sync::{mpsc, watch};
 
 use crate::events::{CoreEvent, UiEvent};
+use crate::message_queue::{MessageQueue, QueuedMessage};
 use crate::keybindings::{Action, KeybindingRegistry};
 use crate::prompt_suggestions::{suggest_prompts, PromptSuggestion};
 use crate::streaming_markdown::MarkdownStreamCollector;
@@ -91,6 +92,8 @@ pub struct App {
     should_quit: bool,
     /// True from StreamStart until MessageComplete — tracks whether a turn is active.
     is_turn_active: bool,
+    /// Messages queued by the user while a turn is active — drained FIFO on turn complete.
+    message_queue: MessageQueue,
     /// Manages left/right split layout and ratio.
     split_pane: SplitPane,
     /// Toast notifications rendered as an overlay.
@@ -204,6 +207,7 @@ impl App {
             streaming_committed_lines: Vec::new(),
             should_quit: false,
             is_turn_active: false,
+            message_queue: MessageQueue::default(),
             split_pane: SplitPane::new(),
             notifications: Vec::new(),
             active_tools: Vec::new(),
@@ -263,6 +267,25 @@ impl App {
         self.is_turn_active = false;
         self.turn_started_at = None;
         self.stall_start = None;
+        self.message_queue.clear();
+    }
+
+    /// If the turn just ended and the message queue has pending input, send the next one.
+    async fn drain_next_queued_message(&mut self) {
+        if self.is_turn_active || self.message_queue.is_empty() {
+            return;
+        }
+        if let Some(queued) = self.message_queue.dequeue() {
+            self.is_turn_active = true;
+            self.turn_started_at = Some(Instant::now());
+            let _ = self
+                .ui_tx
+                .send(UiEvent::UserInput {
+                    text: queued.text,
+                    images: queued.images,
+                })
+                .await;
+        }
     }
 
     /// Handle Ctrl+C: requires double-press to quit (both idle and active).
@@ -394,6 +417,8 @@ impl App {
                         while let Ok(ev) = self.core_rx.try_recv() {
                             self.handle_core_event(ev);
                         }
+                        // Auto-send next queued message after turn completes.
+                        self.drain_next_queued_message().await;
                         self.draw(terminal)?;
                     } else {
                         // Engine channel closed — quit gracefully.
@@ -568,6 +593,7 @@ impl App {
                     .last_interrupt
                     .is_some_and(|t| t.elapsed() < Duration::from_secs(2));
             let hint_height: u16 = u16::from(ctrl_c_hint);
+            let queue_hint_height: u16 = u16::from(!self.message_queue.is_empty());
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -576,6 +602,7 @@ impl App {
                     Constraint::Length(autocomplete_height), // Command autocomplete (0 when inactive)
                     Constraint::Length(suggestion_height),   // Suggestion chips (0 or 1)
                     Constraint::Length(input_height),        // Input box (+ search bar)
+                    Constraint::Length(queue_hint_height),   // Queue hint (0 or 1)
                     Constraint::Length(hint_height),         // Ctrl+C hint (0 or 1)
                 ])
                 .split(frame.area());
@@ -672,6 +699,13 @@ impl App {
             .with_message_roles(message_roles)
             .with_image_paths(&self.sent_image_paths)
             .with_tool_only_indices(self.message_cache.tool_only_indices());
+
+            // Pass queued messages to render inside the conversation view.
+            let queued_texts: Vec<&str> = (0..self.message_queue.len())
+                .filter_map(|i| self.message_queue.peek_at(i).map(|m| m.text.as_str()))
+                .collect();
+            let message_view = message_view.with_queued_messages(queued_texts);
+
             frame.render_widget(message_view, left_area);
 
             // Read back the actual max scroll offset computed during rendering.
@@ -826,6 +860,24 @@ impl App {
                 frame.render_widget(input, chunks[4]);
             }
 
+            // Queue hint below input box.
+            if !self.message_queue.is_empty() {
+                let muted = crate::render::CHROME_MUTED;
+                let hint = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(vec![
+                    ratatui::text::Span::styled(
+                        "  \u{276f} ",
+                        ratatui::style::Style::default().fg(muted),
+                    ),
+                    ratatui::text::Span::styled(
+                        "Press up to edit queued messages",
+                        ratatui::style::Style::default()
+                            .fg(muted)
+                            .add_modifier(ratatui::style::Modifier::ITALIC),
+                    ),
+                ]));
+                frame.render_widget(hint, chunks[5]);
+            }
+
             // Ctrl+C exit hint below input box.
             if ctrl_c_hint {
                 let hint = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(vec![
@@ -835,7 +887,7 @@ impl App {
                         ratatui::style::Style::default().fg(crate::render::CHROME_MUTED),
                     ),
                 ]));
-                frame.render_widget(hint, chunks[5]);
+                frame.render_widget(hint, chunks[6]);
             }
         })?;
 
@@ -1050,7 +1102,14 @@ impl App {
                 }
             }
             (_, KeyCode::Up) => {
-                self.history_prev();
+                if self.input_text.is_empty() && !self.message_queue.is_empty() {
+                    let (combined, images) = self.message_queue.pop_all_editable();
+                    self.input_text = combined;
+                    self.input_cursor = self.input_text.chars().count();
+                    self.pending_images = images;
+                } else {
+                    self.history_prev();
+                }
             }
             (_, KeyCode::Down) => {
                 self.history_next();
@@ -1972,12 +2031,15 @@ impl App {
 
     /// Submit the current input text.
     async fn submit_input(&mut self) {
-        // Block input while a turn is active.
+        // Queue input when a turn is active — don't block.
         if self.is_turn_active {
-            self.notifications.push(Notification::new(
-                "Waiting for current response...".to_string(),
-                crate::widgets::notification::NotificationLevel::Info,
-            ));
+            if !self.input_text.is_empty() || !self.pending_images.is_empty() {
+                let text = std::mem::take(&mut self.input_text);
+                let images = std::mem::take(&mut self.pending_images);
+                self.input_cursor = 0;
+                self.history.add(&text, None);
+                self.message_queue.enqueue(QueuedMessage::new(text, images));
+            }
             return;
         }
 
@@ -2517,6 +2579,7 @@ impl App {
                 self.streaming_thinking.clear();
                 self.active_tools.clear();
                 self.is_turn_active = false;
+                self.message_queue.clear();
                 // Reset turn timer — otherwise the "thinking" indicator would
                 // keep displaying a stale elapsed duration after an API error.
                 self.turn_started_at = None;
@@ -3818,28 +3881,24 @@ mod tests {
         assert!(app.streaming_text.is_empty());
     }
 
-    /// submit_input must block (show notification) when a turn is active.
+    /// submit_input queues messages when a turn is active (not blocking).
     #[tokio::test]
-    async fn test_submit_input_blocked_during_active_turn() {
+    async fn test_submit_input_queued_during_active_turn() {
         let (mut app, mut ui_rx, _core_tx) = make_test_app();
         app.is_turn_active = true;
         app.input_text = "hello".to_string();
+        app.input_cursor = 5;
 
-        let notif_before = app.notifications.len();
         app.submit_input().await;
 
-        assert_eq!(
-            app.notifications.len(),
-            notif_before + 1,
-            "submit while active should push a notification"
-        );
-        // No UiEvent should have been sent.
+        // Message should be queued, not sent.
+        assert_eq!(app.message_queue.len(), 1, "message should be queued");
         assert!(
             ui_rx.try_recv().is_err(),
             "no UiEvent sent while turn is active"
         );
-        // Input text must be preserved (not consumed).
-        assert_eq!(app.input_text, "hello", "input not consumed on block");
+        // Input text must be cleared (consumed into queue).
+        assert!(app.input_text.is_empty(), "input consumed into queue");
     }
 
     /// History dedup: consecutive identical prompts stored only once.
