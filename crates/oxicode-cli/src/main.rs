@@ -398,6 +398,13 @@ async fn main() -> Result<()> {
 
     let result = run_tui(engine, state_store, &mut session, &settings).await;
     mcp_ref.shutdown_all().await;
+
+    // Show resume session hint after TUI exits.
+    if !session.messages.is_empty() {
+        eprintln!("\nResume this session with:");
+        eprintln!("  oxicode --session {}", session.id);
+    }
+
     result
 }
 

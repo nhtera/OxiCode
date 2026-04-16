@@ -117,6 +117,8 @@ pub struct App {
     history_search: Option<HistorySearchState>,
     /// Timestamp of last interrupt (for double Ctrl+C force quit).
     last_interrupt: Option<Instant>,
+    /// Whether to show "Press Ctrl-C again to exit" hint below input box.
+    ctrl_c_hint_visible: bool,
     /// Per-message render cache — avoids re-parsing markdown for unchanged messages.
     message_cache: MessageRenderCache,
     /// Ghost text completion suffix (shown dimmed after cursor).
@@ -215,6 +217,7 @@ impl App {
             history_saved_input: String::new(),
             history_search: None,
             last_interrupt: None,
+            ctrl_c_hint_visible: false,
             message_cache: MessageRenderCache::new(),
             ghost_text: None,
             pending_paste: None,
@@ -260,6 +263,31 @@ impl App {
         self.is_turn_active = false;
         self.turn_started_at = None;
         self.stall_start = None;
+    }
+
+    /// Handle Ctrl+C: requires double-press to quit (both idle and active).
+    /// First press shows hint / interrupts; second press within 2s quits.
+    async fn handle_ctrl_c(&mut self) {
+        if self
+            .last_interrupt
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(2))
+        {
+            // Second Ctrl+C within 2s → quit.
+            let _ = self.ui_tx.send(UiEvent::Quit).await;
+            self.should_quit = true;
+            self.ctrl_c_hint_visible = false;
+        } else {
+            // First Ctrl+C.
+            self.last_interrupt = Some(Instant::now());
+            if self.is_turn_active {
+                self.signal_interrupt().await;
+                self.notifications.push(Notification::new(
+                    "Interrupting... (Ctrl+C again to quit)".to_string(),
+                    crate::widgets::notification::NotificationLevel::Info,
+                ));
+            }
+            self.ctrl_c_hint_visible = true;
+        }
     }
 
     /// Enable vim mode at runtime.
@@ -534,6 +562,12 @@ impl App {
                 base_input_height
             };
             let suggestion_height: u16 = u16::from(show_suggestions);
+            // Show "Press Ctrl-C again to exit" hint when active and not expired.
+            let ctrl_c_hint = self.ctrl_c_hint_visible
+                && self
+                    .last_interrupt
+                    .is_some_and(|t| t.elapsed() < Duration::from_secs(2));
+            let hint_height: u16 = u16::from(ctrl_c_hint);
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -542,6 +576,7 @@ impl App {
                     Constraint::Length(autocomplete_height), // Command autocomplete (0 when inactive)
                     Constraint::Length(suggestion_height),   // Suggestion chips (0 or 1)
                     Constraint::Length(input_height),        // Input box (+ search bar)
+                    Constraint::Length(hint_height),         // Ctrl+C hint (0 or 1)
                 ])
                 .split(frame.area());
 
@@ -790,6 +825,18 @@ impl App {
                 }
                 frame.render_widget(input, chunks[4]);
             }
+
+            // Ctrl+C exit hint below input box.
+            if ctrl_c_hint {
+                let hint = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(vec![
+                    ratatui::text::Span::raw("  "),
+                    ratatui::text::Span::styled(
+                        "Press Ctrl-C again to exit",
+                        ratatui::style::Style::default().fg(crate::render::CHROME_MUTED),
+                    ),
+                ]));
+                frame.render_widget(hint, chunks[5]);
+            }
         })?;
 
         Ok(())
@@ -797,6 +844,11 @@ impl App {
 
     #[allow(clippy::too_many_lines)]
     async fn handle_key(&mut self, key: KeyEvent) {
+        // Clear Ctrl+C hint on any non-Ctrl+C keypress.
+        if !(key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c')) {
+            self.ctrl_c_hint_visible = false;
+        }
+
         // Paste preview modal takes highest priority.
         if self.pending_paste.is_some() {
             self.handle_paste_preview_key(key);
@@ -885,26 +937,7 @@ impl App {
         // Default key handling (non-vim mode).
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-                if self.is_turn_active {
-                    // Double Ctrl+C within 1s → force quit.
-                    if self
-                        .last_interrupt
-                        .is_some_and(|t| t.elapsed() < Duration::from_secs(1))
-                    {
-                        let _ = self.ui_tx.send(UiEvent::Quit).await;
-                        self.should_quit = true;
-                    } else {
-                        self.last_interrupt = Some(Instant::now());
-                        self.signal_interrupt().await;
-                        self.notifications.push(Notification::new(
-                            "Interrupting... (Ctrl+C again to quit)".to_string(),
-                            crate::widgets::notification::NotificationLevel::Info,
-                        ));
-                    }
-                } else {
-                    let _ = self.ui_tx.send(UiEvent::Quit).await;
-                    self.should_quit = true;
-                }
+                self.handle_ctrl_c().await;
             }
             (_, KeyCode::Esc) if self.is_turn_active => {
                 self.signal_interrupt().await;
@@ -1064,25 +1097,7 @@ impl App {
             VimAction::Passthrough(k) => {
                 // Let Ctrl+C through for quit/interrupt.
                 if k.modifiers == KeyModifiers::CONTROL && k.code == KeyCode::Char('c') {
-                    if self.is_turn_active {
-                        if self
-                            .last_interrupt
-                            .is_some_and(|t| t.elapsed() < Duration::from_secs(1))
-                        {
-                            let _ = self.ui_tx.send(UiEvent::Quit).await;
-                            self.should_quit = true;
-                        } else {
-                            self.last_interrupt = Some(Instant::now());
-                            self.signal_interrupt().await;
-                            self.notifications.push(Notification::new(
-                                "Interrupting... (Ctrl+C again to quit)".to_string(),
-                                crate::widgets::notification::NotificationLevel::Info,
-                            ));
-                        }
-                    } else {
-                        let _ = self.ui_tx.send(UiEvent::Quit).await;
-                        self.should_quit = true;
-                    }
+                    self.handle_ctrl_c().await;
                 }
             }
             VimAction::Noop => {
@@ -1847,8 +1862,7 @@ impl App {
     async fn execute_keybinding_action(&mut self, action: Action) {
         match action {
             Action::Quit => {
-                let _ = self.ui_tx.send(UiEvent::Quit).await;
-                self.should_quit = true;
+                self.handle_ctrl_c().await;
             }
             Action::Submit => {
                 self.submit_input().await;
@@ -2421,16 +2435,7 @@ impl App {
                 if let Some(perm) = self.pending_permission.take() {
                     let _ = perm.reply_tx.send(oxicode_common::PermissionResponse::Deny);
                 }
-                if self.is_turn_active {
-                    self.signal_interrupt().await;
-                    self.notifications.push(Notification::new(
-                        "Permission denied, interrupting...".to_string(),
-                        crate::widgets::notification::NotificationLevel::Info,
-                    ));
-                } else {
-                    let _ = self.ui_tx.send(UiEvent::Quit).await;
-                    self.should_quit = true;
-                }
+                self.handle_ctrl_c().await;
             }
             _ => {}
         }
