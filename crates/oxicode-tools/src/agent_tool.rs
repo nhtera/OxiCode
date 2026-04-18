@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use oxicode_agents::built_in::AgentType;
 use oxicode_agents::spawner::{spawn_agent, AgentConfig};
 use oxicode_common::OxiResult;
+use oxicode_permissions::PermissionMode;
 
 use crate::tool_trait::{PermissionLevel, Tool, ToolContext, ToolResult, ToolSchema};
 
@@ -45,6 +46,11 @@ impl Tool for AgentTool {
                         "type": "string",
                         "description": "Brief description of the subagent's role."
                     },
+                    "permission_mode": {
+                        "type": "string",
+                        "description": "Permission mode for the subagent: bypass, approval_only, default.",
+                        "enum": ["bypass", "approval_only", "default"]
+                    },
                     "timeout": {
                         "type": "integer",
                         "description": "Timeout in seconds (default: 300)."
@@ -86,12 +92,29 @@ impl Tool for AgentTool {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(300);
 
+        // Permission mode inheritance: parent bypass/approval_only wins;
+        // otherwise child's declared mode (or default).
+        let declared = input
+            .get("permission_mode")
+            .and_then(|v| v.as_str())
+            .map(PermissionMode::parse);
+        let effective = match ctx.permission_mode {
+            PermissionMode::Bypass | PermissionMode::ApprovalOnly => ctx.permission_mode,
+            PermissionMode::Default => declared.unwrap_or(PermissionMode::Default),
+        };
+        let permission_mode_str = match effective {
+            PermissionMode::Bypass => "bypass",
+            PermissionMode::ApprovalOnly => "approval_only",
+            PermissionMode::Default => "default",
+        }
+        .to_string();
+
         let mut config = AgentConfig {
             name,
             prompt,
             model,
             working_dir: ctx.working_dir.clone(),
-            permission_mode: "default".to_string(),
+            permission_mode: permission_mode_str,
             timeout: std::time::Duration::from_secs(timeout_secs),
             inherit_env: true,
             agent_type,
@@ -102,10 +125,30 @@ impl Tool for AgentTool {
         // Apply agent type defaults (system prompt, model, tool whitelist).
         config.apply_agent_type();
 
-        match spawn_agent(&config).await {
+        // Pass hook_manager to spawn_agent for AgentSpawn/AgentComplete events.
+        let hm = ctx.hook_manager.as_ref();
+        match spawn_agent(&config, hm).await {
             Ok(result) if result.is_error => Ok(ToolResult::error(result.output)),
-            Ok(result) => Ok(ToolResult::success(result.output)),
+            Ok(result) => {
+                // Unwrap JSON envelope if child emits structured output.
+                let output = unwrap_agent_output(&result.output);
+                Ok(ToolResult::success(output))
+            }
             Err(e) => Ok(ToolResult::error(format!("agent spawn failed: {e}"))),
         }
     }
+}
+
+/// Extract the `output` field from a child's JSON envelope, or return raw text.
+/// Child emits: `{"agent_id":"...","output":"...","is_error":false,"duration_ms":N}`
+fn unwrap_agent_output(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(output) = obj.get("output").and_then(|v| v.as_str()) {
+            if !output.is_empty() {
+                return output.to_string();
+            }
+        }
+    }
+    trimmed.to_string()
 }

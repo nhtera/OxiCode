@@ -22,7 +22,7 @@ pub use perf_metrics::{PerfMetrics, PerfSummary};
 pub use query_engine::QueryEngine;
 pub use thinking_block_store::ThinkingBlockStore;
 pub use tool_use_summary::ToolUseSummary;
-pub use turn_event::TurnEvent;
+pub use turn_event::{HookMessageKind, HookState, TurnEvent};
 pub use vcr_player::VcrPlayer;
 pub use vcr_recorder::{VcrEntry, VcrRecorder};
 pub use vcr_storage::{

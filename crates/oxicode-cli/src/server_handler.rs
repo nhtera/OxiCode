@@ -867,6 +867,35 @@ async fn forward_turn_event(
                 ))
                 .await;
         }
+        TurnEvent::HookProgress { event, state } => {
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "hook.progress",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "event": event,
+                        "state": state.as_str(),
+                    }),
+                ))
+                .await;
+        }
+        TurnEvent::HookMessage {
+            event,
+            kind,
+            content,
+        } => {
+            let _ = notify_tx
+                .send(RpcNotification::new(
+                    "hook.message",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "event": event,
+                        "kind": kind.as_str(),
+                        "content": content,
+                    }),
+                ))
+                .await;
+        }
     }
 }
 

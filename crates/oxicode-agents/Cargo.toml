@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 oxicode-common = { workspace = true }
+oxicode-hooks = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

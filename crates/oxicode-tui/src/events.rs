@@ -69,4 +69,14 @@ pub enum CoreEvent {
     },
     /// Thinking text delta from extended thinking / chain-of-thought.
     ThinkingDelta(String),
+    /// A hook is starting or finishing — TUI shows transient running indicator.
+    /// `state` is "running" or "completed" (string form keeps cross-crate enum dep simple).
+    HookProgress { event: String, state: String },
+    /// A hook surfaced a user-visible message — render as persistent transcript line.
+    /// `kind` is "system", "block_error", or "context".
+    HookMessage {
+        event: String,
+        kind: String,
+        content: String,
+    },
 }

@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 oxicode-common = { workspace = true }
 oxicode-config = { workspace = true }
+oxicode-hooks = { workspace = true }
 oxicode-api = { workspace = true }
 oxicode-state = { workspace = true }
 oxicode-tools = { workspace = true }

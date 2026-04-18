@@ -1,5 +1,6 @@
 /// Subagent process spawning — launches child `oxicode` processes with serialized config.
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,7 @@ use tokio::process::{Child, Command};
 use tracing::{debug, info};
 
 use oxicode_common::{OxiError, OxiResult};
+use oxicode_hooks::{HookEvent, HookManager};
 
 use crate::built_in::AgentType;
 
@@ -139,11 +141,26 @@ impl AgentHandle {
 ///
 /// Passes serialized `AgentConfig` JSON via stdin.  The child binary is the
 /// current executable re-invoked with `--agent-mode`.
-pub async fn spawn_agent(config: &AgentConfig) -> OxiResult<AgentResult> {
+/// Fires `AgentSpawn` before and `AgentComplete` after if `hook_manager` is provided.
+pub async fn spawn_agent(
+    config: &AgentConfig,
+    hook_manager: Option<&Arc<HookManager>>,
+) -> OxiResult<AgentResult> {
     let agent_id = uuid::Uuid::new_v4().to_string();
     let started = Instant::now();
 
     debug!(agent_id = %agent_id, name = %config.name, "spawning subagent");
+
+    // Fire AgentSpawn hook.
+    if let Some(hm) = hook_manager {
+        let data = serde_json::json!({
+            "agent_id": agent_id,
+            "name": config.name,
+            "model": config.model,
+            "agent_type": format!("{:?}", config.agent_type),
+        });
+        hm.fire(HookEvent::AgentSpawn, data).await;
+    }
 
     let current_exe = std::env::current_exe()
         .map_err(|e| OxiError::Other(format!("cannot resolve current exe: {e}")))?;
@@ -199,6 +216,17 @@ pub async fn spawn_agent(config: &AgentConfig) -> OxiResult<AgentResult> {
         duration_ms = duration.as_millis(),
         "subagent finished"
     );
+
+    // Fire AgentComplete hook.
+    if let Some(hm) = hook_manager {
+        let data = serde_json::json!({
+            "agent_id": agent_id,
+            "name": config.name,
+            "is_error": is_error,
+            "duration_ms": duration.as_millis() as u64,
+        });
+        hm.fire(HookEvent::AgentComplete, data).await;
+    }
 
     Ok(AgentResult {
         agent_id,

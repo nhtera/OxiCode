@@ -5,6 +5,7 @@ use futures::StreamExt;
 use oxicode_api::{LlmProvider, MessageRequest, StreamEvent};
 use oxicode_common::{ContentBlock, Message, OxiError, OxiResult, Role, StopReason};
 use oxicode_context::BudgetManager;
+use oxicode_hooks::{HookEvent, HookManager, HookResponse};
 use oxicode_permissions::PermissionPipeline;
 use oxicode_state::StateStore;
 use oxicode_tools::{ToolContext, ToolRegistry};
@@ -12,7 +13,7 @@ use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 
 use crate::conversation::Conversation;
-use crate::turn_event::{emit, TurnEvent};
+use crate::turn_event::{emit, fire_hook_with_events, TurnEvent};
 
 /// Maximum number of tool-use turns before forcing a stop.
 const MAX_TOOL_TURNS: usize = 50;
@@ -32,6 +33,8 @@ pub struct QueryEngine {
     system_prompt: String,
     /// Context budget manager — wrapped in Mutex because check_budget needs &mut self.
     budget_manager: Mutex<BudgetManager>,
+    /// Hook manager for firing lifecycle events.
+    pub(crate) hook_manager: Arc<HookManager>,
 }
 
 impl QueryEngine {
@@ -46,6 +49,11 @@ impl QueryEngine {
         max_tokens: u32,
         system_prompt: String,
     ) -> Self {
+        // Use hook_manager from tool_context if available, otherwise noop.
+        let hook_manager = tool_context
+            .hook_manager
+            .clone()
+            .unwrap_or_else(|| Arc::new(HookManager::noop()));
         Self {
             provider,
             state_store,
@@ -56,6 +64,7 @@ impl QueryEngine {
             max_tokens,
             system_prompt,
             budget_manager: Mutex::new(BudgetManager::new(DEFAULT_MODEL_MAX_TOKENS)),
+            hook_manager,
         }
     }
 
@@ -156,7 +165,51 @@ impl QueryEngine {
 
             let assistant_msg = self
                 .stream_one_turn(conversation, event_tx, cancel_flag)
-                .await?;
+                .await;
+
+            // Fire PreQuery hook before processing the result.
+            let pre_data = serde_json::json!({
+                "messages_count": conversation.len(),
+                "model": self.model(),
+                "turn": turn_count,
+            });
+            let pre_resp =
+                fire_hook_with_events(&self.hook_manager, HookEvent::PreQuery, pre_data, event_tx)
+                    .await;
+            if let HookResponse::Abort { reason } = pre_resp {
+                return Err(OxiError::HookAbort(reason));
+            }
+
+            let assistant_msg = match assistant_msg {
+                Ok(msg) => {
+                    // Fire PostSampling hook.
+                    let stop = msg.stop_reason.unwrap_or(StopReason::EndTurn);
+                    let post_data = serde_json::json!({
+                        "stop_reason": format!("{stop:?}"),
+                        "turn": turn_count,
+                    });
+                    fire_hook_with_events(
+                        &self.hook_manager,
+                        HookEvent::PostSampling,
+                        post_data,
+                        event_tx,
+                    )
+                    .await;
+                    msg
+                }
+                Err(e) => {
+                    // Fire Error hook.
+                    let err_data = serde_json::json!({"message": e.to_string()});
+                    fire_hook_with_events(
+                        &self.hook_manager,
+                        HookEvent::Error,
+                        err_data,
+                        event_tx,
+                    )
+                    .await;
+                    return Err(e);
+                }
+            };
             let stop_reason = assistant_msg.stop_reason.unwrap_or(StopReason::EndTurn);
 
             // Extract tool use blocks from the assistant message.

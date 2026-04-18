@@ -58,6 +58,8 @@ fn tool_ctx(dir: &Path) -> ToolContext {
         skill_executor: None,
         team_manager: Arc::new(Mutex::new(oxicode_agents::TeamManager::new())),
         bash_processes: Arc::new(Mutex::new(HashMap::new())),
+        hook_manager: None,
+        permission_mode: oxicode_permissions::PermissionMode::Default,
     }
 }
 

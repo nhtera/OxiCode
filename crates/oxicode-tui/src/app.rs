@@ -53,6 +53,49 @@ struct ImageTagHit {
     image_number: usize,
 }
 
+/// Maximum length of a hook message rendered in the TUI.
+/// Hook content is untrusted — truncate to avoid overrunning the transcript.
+const MAX_HOOK_LINE_CHARS: usize = 200;
+
+/// Persistent record of a hook message (kept for transcript / scrollback).
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields read by tests + reserved for future transcript scrollback.
+struct HookLogEntry {
+    event: String,
+    kind: HookKind,
+    content: String,
+}
+
+/// TUI-local mirror of `oxicode_core::HookMessageKind` — drives color choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HookKind {
+    System,
+    BlockError,
+    Context,
+}
+
+impl HookKind {
+    fn parse(s: &str) -> Self {
+        match s {
+            "block_error" => Self::BlockError,
+            "context" => Self::Context,
+            _ => Self::System,
+        }
+    }
+}
+
+/// Truncate hook content for display. Hooks are untrusted; cap at
+/// `MAX_HOOK_LINE_CHARS` and append ellipsis when over limit.
+fn truncate_hook_content(s: &str, max: usize) -> String {
+    let cleaned: String = s.chars().filter(|c| *c != '\x1b').collect();
+    if cleaned.chars().count() <= max {
+        return cleaned;
+    }
+    let mut out: String = cleaned.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
 /// A pending permission request awaiting user response.
 struct PendingPermission {
     tool_name: String,
@@ -175,6 +218,12 @@ pub struct App {
     /// Current retry/rate-limit label shown in status bar (empty when not retrying).
     /// Set by CoreEvent::Retrying / CoreEvent::RateLimited, cleared on StreamStart.
     retry_status_label: String,
+    /// Name of the hook currently executing (if any). Drives the transient
+    /// "Running {hook} hook…" status line. Cleared on HookProgress::Completed.
+    active_hook: Option<String>,
+    /// Persistent log of hook messages surfaced this session — used for
+    /// diagnostics and future transcript rendering. Capped to avoid growth.
+    hook_messages: Vec<HookLogEntry>,
 }
 
 impl App {
@@ -247,12 +296,26 @@ impl App {
             cancel_flag: None,
             bash_prefix_allowlist: std::collections::HashSet::new(),
             retry_status_label: String::new(),
+            active_hook: None,
+            hook_messages: Vec::new(),
         }
     }
 
     /// Set the cancel flag shared with the engine task.
     pub fn set_cancel_flag(&mut self, flag: Arc<AtomicBool>) {
         self.cancel_flag = Some(flag);
+    }
+
+    /// Compose the status-bar label shown to the right.
+    /// Priority: rate-limit/retry banner > active hook indicator.
+    fn compose_status_label(&self) -> String {
+        if !self.retry_status_label.is_empty() {
+            return self.retry_status_label.clone();
+        }
+        if let Some(hook) = &self.active_hook {
+            return format!("⟳ Running {hook} hook…");
+        }
+        String::new()
     }
 
     /// Signal an interrupt: set cancel flag directly (engine sees it
@@ -578,6 +641,7 @@ impl App {
             !is_streaming && self.input_text.is_empty() && !self.suggestions.is_empty();
         let autocomplete_active = self.autocomplete.active;
         let autocomplete_height = self.autocomplete.visible_height();
+        let status_label = self.compose_status_label();
 
         terminal.draw(|frame| {
             let base_input_height = InputBox::required_height(&self.input_text);
@@ -625,7 +689,7 @@ impl App {
                 .with_cwd(&cwd)
                 .with_session_start(Some(self.session_start))
                 .with_cost(cost_usd)
-                .with_retry_status(&self.retry_status_label);
+                .with_retry_status(&status_label);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)
@@ -2688,6 +2752,36 @@ impl App {
                 // Accumulate thinking text for live display during streaming.
                 self.streaming_thinking.push_str(&text);
                 self.auto_scroll = true;
+            }
+            CoreEvent::HookProgress { event, state } => match state.as_str() {
+                "running" => self.active_hook = Some(event),
+                "completed" => self.active_hook = None,
+                _ => {}
+            },
+            CoreEvent::HookMessage {
+                event,
+                kind,
+                content,
+            } => {
+                let kind = HookKind::parse(&kind);
+                let trimmed = truncate_hook_content(&content, MAX_HOOK_LINE_CHARS);
+                let display_line = format!("▪ {event}: {trimmed}");
+                let level = match kind {
+                    HookKind::BlockError => {
+                        crate::widgets::notification::NotificationLevel::Warning
+                    }
+                    _ => crate::widgets::notification::NotificationLevel::Info,
+                };
+                self.notifications.push(Notification::new(display_line, level));
+                self.hook_messages.push(HookLogEntry {
+                    event,
+                    kind,
+                    content: trimmed,
+                });
+                // Cap log size to avoid unbounded growth across long sessions.
+                if self.hook_messages.len() > 500 {
+                    self.hook_messages.drain(0..self.hook_messages.len() - 500);
+                }
             }
         }
     }
@@ -5001,6 +5095,61 @@ mod tests {
             retry_in_secs: 30.0,
         });
         assert_eq!(app.notifications.len(), before + 1, "RateLimited should add notification");
+    }
+
+    #[test]
+    fn test_core_event_hook_progress_running_then_completed() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.handle_core_event(CoreEvent::HookProgress {
+            event: "tool_call_before".to_string(),
+            state: "running".to_string(),
+        });
+        assert_eq!(app.active_hook.as_deref(), Some("tool_call_before"));
+        let label = app.compose_status_label();
+        assert!(label.contains("tool_call_before"), "got: {label}");
+        app.handle_core_event(CoreEvent::HookProgress {
+            event: "tool_call_before".to_string(),
+            state: "completed".to_string(),
+        });
+        assert!(app.active_hook.is_none());
+    }
+
+    #[test]
+    fn test_core_event_hook_message_appended_and_notified() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let before_notif = app.notifications.len();
+        let before_log = app.hook_messages.len();
+        app.handle_core_event(CoreEvent::HookMessage {
+            event: "tool_call_before".to_string(),
+            kind: "system".to_string(),
+            content: "hi".to_string(),
+        });
+        assert_eq!(app.hook_messages.len(), before_log + 1);
+        assert_eq!(app.hook_messages[before_log].content, "hi");
+        assert_eq!(app.notifications.len(), before_notif + 1);
+    }
+
+    #[test]
+    fn test_hook_message_truncates_long_content() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let long = "x".repeat(500);
+        app.handle_core_event(CoreEvent::HookMessage {
+            event: "evt".to_string(),
+            kind: "system".to_string(),
+            content: long,
+        });
+        let stored = &app.hook_messages.last().unwrap().content;
+        // 200 chars + ellipsis.
+        assert_eq!(stored.chars().count(), MAX_HOOK_LINE_CHARS + 1);
+        assert!(stored.ends_with('…'));
+    }
+
+    #[test]
+    fn test_compose_status_label_priority_retry_over_hook() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.active_hook = Some("evt".to_string());
+        app.retry_status_label = "retry banner".to_string();
+        assert_eq!(app.compose_status_label(), "retry banner");
     }
 
     #[test]

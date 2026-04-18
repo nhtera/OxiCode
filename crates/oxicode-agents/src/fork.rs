@@ -94,7 +94,7 @@ pub async fn run_fork_agent(repo_path: &Path, config: &ForkConfig) -> OxiResult<
         model_override: false,
     };
 
-    let agent_result = spawn_agent(&agent_config).await?;
+    let agent_result = spawn_agent(&agent_config, None).await?;
 
     // Decide merge vs discard.
     let merged = if agent_result.is_error {

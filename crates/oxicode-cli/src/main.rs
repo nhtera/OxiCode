@@ -24,6 +24,7 @@ use oxicode_api::ProviderRouter;
 use oxicode_common::{ContentBlock, Message, Role};
 use oxicode_config::Settings;
 use oxicode_core::{Conversation, QueryEngine};
+use oxicode_hooks::HookManager;
 use oxicode_permissions::pipeline::{PermissionMode, PermissionPipeline};
 use oxicode_session::Session;
 use oxicode_state::{AppState, StateStore};
@@ -247,6 +248,11 @@ async fn main() -> Result<()> {
     let permission_mode = PermissionMode::parse(&settings.permission_mode);
     let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
 
+    // Initialize HookManager from settings.
+    let mut hook_mgr = HookManager::from_settings();
+    hook_mgr.set_model(&settings.model);
+    let hook_manager = Arc::new(hook_mgr);
+
     // Initialize MCP servers from config.
     let mut mcp_manager = oxicode_mcp::McpServerManager::new();
     let mcp_config = oxicode_mcp::McpConfig::load();
@@ -275,6 +281,8 @@ async fn main() -> Result<()> {
         bash_processes: std::sync::Arc::new(
             std::sync::Mutex::new(std::collections::HashMap::new()),
         ),
+        hook_manager: Some(hook_manager.clone()),
+        permission_mode,
     };
 
     let engine = Arc::new(QueryEngine::new(
@@ -288,6 +296,9 @@ async fn main() -> Result<()> {
         system_prompt,
     ));
 
+    // Fire SessionStart hook.
+    hook_manager.fire_simple(oxicode_hooks::HookEvent::SessionStart).await;
+
     if let Some(prompt) = cli.prompt {
         let result = match cli.output {
             OutputFormat::Json => {
@@ -295,6 +306,7 @@ async fn main() -> Result<()> {
             }
             OutputFormat::Text => run_single_prompt(engine, &mut session, &prompt).await,
         };
+        hook_manager.fire_simple(oxicode_hooks::HookEvent::SessionEnd).await;
         mcp_ref.shutdown_all().await;
         return result;
     }
@@ -397,6 +409,7 @@ async fn main() -> Result<()> {
     }
 
     let result = run_tui(engine, state_store, &mut session, &settings).await;
+    hook_manager.fire_simple(oxicode_hooks::HookEvent::SessionEnd).await;
     mcp_ref.shutdown_all().await;
 
     // Show resume session hint after TUI exits.
@@ -559,6 +572,19 @@ fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
             attempt,
             max_retries,
             retry_in_secs,
+        },
+        TurnEvent::HookProgress { event, state } => CoreEvent::HookProgress {
+            event,
+            state: state.as_str().to_string(),
+        },
+        TurnEvent::HookMessage {
+            event,
+            kind,
+            content,
+        } => CoreEvent::HookMessage {
+            event,
+            kind: kind.as_str().to_string(),
+            content,
         },
     }
 }
@@ -912,6 +938,10 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
     let tool_registry = Arc::new(registry);
     let permission_mode = PermissionMode::parse(&config.permission_mode);
     let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
+
+    // Child agent gets its own HookManager from settings.
+    let hook_manager = Arc::new(HookManager::from_settings());
+
     let tool_context = ToolContext {
         working_dir: cwd,
         file_state: Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default()),
@@ -921,6 +951,8 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
         skill_executor: None, // Agent mode doesn't initialize skills
         team_manager: Arc::new(std::sync::Mutex::new(oxicode_agents::TeamManager::new())),
         bash_processes: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        hook_manager: Some(hook_manager),
+        permission_mode,
     };
 
     let engine = Arc::new(QueryEngine::new(

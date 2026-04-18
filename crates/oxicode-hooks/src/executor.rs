@@ -111,14 +111,70 @@ async fn run_subprocess(command: &str, payload_json: &str) -> Result<HookRespons
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
+    Ok(parse_hook_output(&stdout))
+}
 
+/// Parse hook stdout into a `HookResponse`.
+///
+/// Accepts:
+/// - Legacy oxicode tagged form: `{"action":"pass"|"abort"|"modify_prompt"|"override_result"|...}`
+/// - openclaude form: `{"decision":"block","reason":"..."}` → `Abort`
+/// - openclaude form: `{"systemMessage":"..."}`,
+///   `{"hookSpecificOutput":{"additionalContext":"..."}}`,
+///   or `{"reason":"..."}` (non-fatal) → `Message`
+///
+/// Falls back to `HookResponse::Pass` on empty input or unparseable JSON
+/// (preserves existing shell-script compatibility — most hooks emit nothing).
+pub fn parse_hook_output(stdout: &str) -> HookResponse {
+    let trimmed = stdout.trim();
     if trimmed.is_empty() {
-        // No output = pass.
-        return Ok(HookResponse::Pass);
+        return HookResponse::Pass;
     }
 
-    serde_json::from_str(trimmed).map_err(|e| format!("Failed to parse hook response: {e}"))
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return HookResponse::Pass;
+    };
+
+    // Legacy tagged form first — preserves current behavior for existing hooks.
+    if value.get("action").is_some() {
+        if let Ok(resp) = serde_json::from_value::<HookResponse>(value.clone()) {
+            return resp;
+        }
+    }
+
+    // openclaude-style block decision.
+    if value.get("decision").and_then(|v| v.as_str()) == Some("block") {
+        let reason = value
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("blocked")
+            .to_string();
+        return HookResponse::Abort { reason };
+    }
+
+    let system_message = value
+        .get("systemMessage")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let additional_context = value
+        .pointer("/hookSpecificOutput/additionalContext")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    // Only treat top-level `reason` as a non-fatal message when no decision tag set.
+    let block_reason = value
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    if system_message.is_some() || additional_context.is_some() || block_reason.is_some() {
+        return HookResponse::Message {
+            system_message,
+            additional_context,
+            block_reason,
+        };
+    }
+
+    HookResponse::Pass
 }
 
 #[cfg(test)]
@@ -236,6 +292,66 @@ mod tests {
         )
         .await;
         assert!(matches!(response, HookResponse::Pass));
+    }
+
+    // -- parse_hook_output unit tests --
+
+    #[test]
+    fn parse_empty_returns_pass() {
+        assert!(matches!(parse_hook_output(""), HookResponse::Pass));
+        assert!(matches!(parse_hook_output("   \n"), HookResponse::Pass));
+    }
+
+    #[test]
+    fn parse_plain_text_returns_pass() {
+        assert!(matches!(
+            parse_hook_output("hello world"),
+            HookResponse::Pass
+        ));
+    }
+
+    #[test]
+    fn parse_legacy_action_abort() {
+        let resp = parse_hook_output(r#"{"action":"abort","reason":"x"}"#);
+        assert!(matches!(resp, HookResponse::Abort { reason } if reason == "x"));
+    }
+
+    #[test]
+    fn parse_openclaude_decision_block() {
+        let resp = parse_hook_output(r#"{"decision":"block","reason":"nope"}"#);
+        assert!(matches!(resp, HookResponse::Abort { reason } if reason == "nope"));
+    }
+
+    #[test]
+    fn parse_openclaude_system_message() {
+        let resp = parse_hook_output(r#"{"systemMessage":"hi"}"#);
+        match resp {
+            HookResponse::Message {
+                system_message,
+                additional_context,
+                block_reason,
+            } => {
+                assert_eq!(system_message.as_deref(), Some("hi"));
+                assert!(additional_context.is_none());
+                assert!(block_reason.is_none());
+            }
+            other => panic!("expected Message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_openclaude_additional_context() {
+        let resp = parse_hook_output(
+            r#"{"hookSpecificOutput":{"additionalContext":"some ctx"}}"#,
+        );
+        match resp {
+            HookResponse::Message {
+                additional_context, ..
+            } => {
+                assert_eq!(additional_context.as_deref(), Some("some ctx"));
+            }
+            other => panic!("expected Message, got {other:?}"),
+        }
     }
 
     #[tokio::test]

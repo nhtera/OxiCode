@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use oxicode_agents::TeamManager;
 use oxicode_common::OxiResult;
+use oxicode_hooks::HookManager;
 use oxicode_mcp::McpServerManager;
+use oxicode_permissions::PermissionMode;
 use oxicode_skills::SkillExecutor;
 use oxicode_tasks::TaskManager;
 use serde::{Deserialize, Serialize};
@@ -69,6 +71,10 @@ pub struct ToolContext {
     pub team_manager: Arc<Mutex<TeamManager>>,
     /// Tracks running bash processes by task_id for KillBashTool.
     pub bash_processes: BashProcessMap,
+    /// Hook manager for firing lifecycle events (None in tests or when hooks disabled).
+    pub hook_manager: Option<Arc<HookManager>>,
+    /// Parent's permission mode — used by AgentTool for inheritance.
+    pub permission_mode: PermissionMode,
 }
 
 impl fmt::Debug for ToolContext {
@@ -90,6 +96,8 @@ impl Default for ToolContext {
             skill_executor: None,
             team_manager: Arc::new(Mutex::new(TeamManager::new())),
             bash_processes: Arc::new(Mutex::new(HashMap::new())),
+            hook_manager: None,
+            permission_mode: PermissionMode::Default,
         }
     }
 }

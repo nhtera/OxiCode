@@ -7,4 +7,4 @@ pub mod tracker;
 #[cfg(feature = "ai-classifier")]
 pub mod ai_classifier;
 
-pub use pipeline::{PermissionDecision, PermissionPipeline};
+pub use pipeline::{PermissionDecision, PermissionMode, PermissionPipeline};

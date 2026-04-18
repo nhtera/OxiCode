@@ -38,6 +38,9 @@ pub enum OxiError {
     #[error("Stream closed unexpectedly")]
     StreamClosed,
 
+    #[error("Hook aborted: {0}")]
+    HookAbort(String),
+
     #[error("{0}")]
     Other(String),
 }

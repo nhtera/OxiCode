@@ -18,6 +18,8 @@ all = ["remote", "dream", "teammate"]
 [dependencies]
 oxicode-common = { workspace = true }
 oxicode-agents = { workspace = true }
+oxicode-hooks = { workspace = true }
+oxicode-permissions = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

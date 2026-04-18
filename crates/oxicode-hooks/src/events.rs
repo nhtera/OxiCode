@@ -178,6 +178,18 @@ pub enum HookResponse {
     OverrideResult { text: String },
     /// Cancel the operation.
     Abort { reason: String },
+    /// Surface informational fields from a hook (openclaude-style output).
+    ///
+    /// Carries `systemMessage`, `additionalContext`, and a non-fatal `reason`
+    /// to be displayed to the user without aborting the operation.
+    Message {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system_message: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        additional_context: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block_reason: Option<String>,
+    },
 }
 
 #[cfg(test)]
