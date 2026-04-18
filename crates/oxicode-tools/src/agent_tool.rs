@@ -130,7 +130,6 @@ impl Tool for AgentTool {
         match spawn_agent(&config, hm).await {
             Ok(result) if result.is_error => Ok(ToolResult::error(result.output)),
             Ok(result) => {
-                // Unwrap JSON envelope if child emits structured output.
                 let output = unwrap_agent_output(&result.output);
                 Ok(ToolResult::success(output))
             }
@@ -147,6 +146,11 @@ fn unwrap_agent_output(raw: &str) -> String {
         if let Some(output) = obj.get("output").and_then(|v| v.as_str()) {
             if !output.is_empty() {
                 return output.to_string();
+            }
+        }
+        if let Some(err) = obj.get("error").and_then(|v| v.as_str()) {
+            if !err.is_empty() {
+                return err.to_string();
             }
         }
     }
