@@ -2650,10 +2650,10 @@ impl App {
                 self.stall_start = None;
             }
             CoreEvent::ToolUseStart { id, name, input } => {
-                let summary = summarize_input(&input);
+                let (display_name, summary) = display_name_and_summary(&name, &input);
                 self.active_tools.push(ActiveToolCall {
                     id,
-                    name,
+                    name: display_name,
                     input_summary: summary,
                     raw_input: input,
                     started_at: Instant::now(),
@@ -2796,6 +2796,12 @@ fn summarize_input(input: &serde_json::Value) -> String {
     } else if let Some(pattern) = input.get("pattern").and_then(|v| v.as_str()) {
         let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
         format!("{pattern} in {path}")
+    } else if let Some(query) = input.get("query").and_then(|v| v.as_str()) {
+        query.to_string()
+    } else if let Some(url) = input.get("url").and_then(|v| v.as_str()) {
+        url.to_string()
+    } else if let Some(skill) = input.get("skill").and_then(|v| v.as_str()) {
+        skill.to_string()
     } else {
         serde_json::to_string(input).unwrap_or_else(|_| "{}".to_string())
     };
@@ -2805,6 +2811,31 @@ fn summarize_input(input: &serde_json::Value) -> String {
     } else {
         raw
     }
+}
+
+/// Return (display_name, summary) for active-tool display.
+/// For the agent tool, show subagent_type/name as the label and description as
+/// the summary (matching Claude Code's rendering).
+fn display_name_and_summary(name: &str, input: &serde_json::Value) -> (String, String) {
+    if name == "Agent" || name == "agent" {
+        let label = input
+            .get("subagent_type")
+            .and_then(|v| v.as_str())
+            .or_else(|| input.get("name").and_then(|v| v.as_str()))
+            .unwrap_or("Agent");
+        let summary = input
+            .get("description")
+            .and_then(|v| v.as_str())
+            .or_else(|| input.get("prompt").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        let truncated = if let Some((idx, _)) = summary.char_indices().nth(80) {
+            format!("{}...", &summary[..idx])
+        } else {
+            summary.to_string()
+        };
+        return (label.to_string(), truncated);
+    }
+    (name.to_string(), summarize_input(input))
 }
 
 /// Convert a character index to a byte index in a UTF-8 string.
