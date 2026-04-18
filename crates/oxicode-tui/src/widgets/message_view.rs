@@ -808,14 +808,15 @@ fn render_content_blocks_static(
             }
             ContentBlock::ToolUse { name, input, .. } => {
                 // Claude Code style: ● ToolName(summary)
-                let summary = tool_input_summary(input);
+                // For agent tool: show subagent_type as label, description as summary
+                let (display_name, summary) = tool_display_name_and_summary(name, input);
                 lines.push(Line::from(vec![
                     Span::styled(
                         "  \u{25cf} ",
                         Style::default().fg(crate::render::STATUS_YELLOW),
                     ),
                     Span::styled(
-                        format!("{name}({summary})"),
+                        format!("{display_name}({summary})"),
                         Style::default()
                             .fg(crate::render::STATUS_YELLOW)
                             .add_modifier(Modifier::BOLD),
@@ -1002,6 +1003,29 @@ fn render_image_gallery(image_numbers: &[usize], lines: &mut Vec<Line<'static>>)
     lines.push(Line::from(bot_spans));
 }
 
+/// Return (display_name, summary) for a tool use block.
+/// For the agent tool, show subagent_type/name as the label and description as
+/// the summary (matching Claude Code's rendering). All other tools use the raw
+/// tool name and fall through to `tool_input_summary`.
+fn tool_display_name_and_summary(name: &str, input: &serde_json::Value) -> (String, String) {
+    if name == "Agent" || name == "agent" {
+        // Label: prefer subagent_type, then name field, fallback "Agent"
+        let label = input
+            .get("subagent_type")
+            .and_then(|v| v.as_str())
+            .or_else(|| input.get("name").and_then(|v| v.as_str()))
+            .unwrap_or("Agent");
+        // Summary: prefer description (short), then truncated prompt
+        let summary = input
+            .get("description")
+            .and_then(|v| v.as_str())
+            .or_else(|| input.get("prompt").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        return (label.to_string(), truncate_str(summary, 80));
+    }
+    (name.to_string(), tool_input_summary(input))
+}
+
 /// Summarize tool input JSON for inline display.
 fn tool_input_summary(input: &serde_json::Value) -> String {
     let raw = if let Some(cmd) = input.get("command").and_then(|v| v.as_str()) {
@@ -1011,6 +1035,12 @@ fn tool_input_summary(input: &serde_json::Value) -> String {
     } else if let Some(pattern) = input.get("pattern").and_then(|v| v.as_str()) {
         let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
         format!("{pattern} in {path}")
+    } else if let Some(query) = input.get("query").and_then(|v| v.as_str()) {
+        query.to_string()
+    } else if let Some(url) = input.get("url").and_then(|v| v.as_str()) {
+        url.to_string()
+    } else if let Some(skill) = input.get("skill").and_then(|v| v.as_str()) {
+        skill.to_string()
     } else {
         serde_json::to_string(input).unwrap_or_else(|_| "{}".to_string())
     };
