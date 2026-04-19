@@ -149,15 +149,19 @@ async fn post_hook(
     serde_json::from_str(trimmed).map_err(|e| format!("Failed to parse HTTP hook response: {e}"))
 }
 
-/// Build the JSON request body sent to the hook endpoint.
+/// Build the JSON request body sent to the hook endpoint. Mirrors the
+/// stdin payload sent to command-type hooks (Claude Code-compatible
+/// `HookPayload`) plus a server-side `timestamp`.
 fn build_request_body(payload: &HookPayload) -> serde_json::Value {
-    serde_json::json!({
-        "event": payload.event.as_str(),
-        "data": payload.data,
-        "session_id": payload.session_id,
-        "model": payload.model,
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-    })
+    let mut value =
+        serde_json::to_value(payload).unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "timestamp".to_string(),
+            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+        );
+    }
+    value
 }
 
 /// Validate URL against SSRF: reject private/loopback/link-local IPs.
@@ -208,12 +212,10 @@ mod tests {
     use crate::events::HookEvent;
 
     fn test_payload() -> HookPayload {
-        HookPayload {
-            event: HookEvent::ToolCallBefore,
-            data: serde_json::json!({"tool": "bash"}),
-            session_id: Some("sess_1".to_string()),
-            model: None,
-        }
+        let mut p = HookPayload::new(HookEvent::PreToolUse, "sess_1");
+        p.tool_name = Some("bash".to_string());
+        p.tool_input = Some(serde_json::json!({"command": "ls"}));
+        p
     }
 
     #[test]
@@ -355,7 +357,8 @@ mod tests {
     fn test_build_request_body() {
         let payload = test_payload();
         let body = build_request_body(&payload);
-        assert_eq!(body["event"], "tool_call_before");
+        assert_eq!(body["hook_event_name"], "PreToolUse");
+        assert_eq!(body["tool_name"], "bash");
         assert!(body["timestamp"].is_string());
     }
 

@@ -387,7 +387,7 @@ fn test_all_core_tools_registered() {
         "send_message",
         "config",
         "tool_search",
-        "agent",
+        "Task",
         "web_fetch",
         "web_search",
         "task_create",

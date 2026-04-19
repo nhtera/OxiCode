@@ -141,7 +141,8 @@ impl AgentHandle {
 ///
 /// Passes serialized `AgentConfig` JSON via stdin.  The child binary is the
 /// current executable re-invoked with `--agent-mode`.
-/// Fires `AgentSpawn` before and `AgentComplete` after if `hook_manager` is provided.
+/// Fires `SubagentStop` after sub-agent completion (Claude Code spec —
+/// no `AgentSpawn` event in the spec).
 pub async fn spawn_agent(
     config: &AgentConfig,
     hook_manager: Option<&Arc<HookManager>>,
@@ -150,17 +151,6 @@ pub async fn spawn_agent(
     let started = Instant::now();
 
     debug!(agent_id = %agent_id, name = %config.name, "spawning subagent");
-
-    // Fire AgentSpawn hook.
-    if let Some(hm) = hook_manager {
-        let data = serde_json::json!({
-            "agent_id": agent_id,
-            "name": config.name,
-            "model": config.model,
-            "agent_type": format!("{:?}", config.agent_type),
-        });
-        hm.fire(HookEvent::AgentSpawn, data).await;
-    }
 
     let current_exe = std::env::current_exe()
         .map_err(|e| OxiError::Other(format!("cannot resolve current exe: {e}")))?;
@@ -217,15 +207,14 @@ pub async fn spawn_agent(
         "subagent finished"
     );
 
-    // Fire AgentComplete hook.
+    // Fire SubagentStop hook.
     if let Some(hm) = hook_manager {
         let data = serde_json::json!({
             "agent_id": agent_id,
-            "name": config.name,
             "is_error": is_error,
             "duration_ms": duration.as_millis() as u64,
         });
-        hm.fire(HookEvent::AgentComplete, data).await;
+        hm.fire(HookEvent::SubagentStop, data).await;
     }
 
     Ok(AgentResult {

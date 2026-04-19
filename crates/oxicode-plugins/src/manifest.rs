@@ -69,7 +69,7 @@ pub struct PluginCommandDef {
 /// A hook event subscription.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginHookDef {
-    /// Hook event name (e.g. "session_start", "tool_call_before").
+    /// Hook event name (e.g. "SessionStart", "PreToolUse"). PascalCase per Claude Code spec.
     pub event: String,
     /// Execution priority (lower runs first).
     #[serde(default = "default_priority")]

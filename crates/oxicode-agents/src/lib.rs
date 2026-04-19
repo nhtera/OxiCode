@@ -3,6 +3,7 @@ pub mod built_in;
 pub mod communication;
 pub mod coordinator;
 pub mod fork;
+pub mod loader;
 pub mod spawner;
 pub mod summary;
 pub mod team;
@@ -15,6 +16,7 @@ pub use coordinator::{
     CoordinatorMode, CoordinatorState, COORDINATOR_TOOLS,
 };
 pub use fork::{run_fork_agent, ForkConfig, ForkResult};
+pub use loader::{discover, find_by_name, CustomAgent};
 pub use spawner::{spawn_agent, spawn_agent_handle, AgentConfig, AgentHandle, AgentResult};
 pub use summary::AgentSummary;
 pub use team::{Team, TeamManager};

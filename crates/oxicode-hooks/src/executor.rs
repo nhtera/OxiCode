@@ -183,12 +183,7 @@ mod tests {
     use crate::events::HookEvent;
 
     fn test_payload() -> HookPayload {
-        HookPayload {
-            event: HookEvent::SessionStart,
-            data: serde_json::json!({}),
-            session_id: None,
-            model: None,
-        }
+        HookPayload::new(HookEvent::SessionStart, "test-session")
     }
 
     #[tokio::test]
@@ -268,14 +263,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_payload_received_by_script() {
-        let payload = HookPayload {
-            event: HookEvent::ToolCallBefore,
-            data: serde_json::json!({"tool": "bash"}),
-            session_id: Some("test-session".to_string()),
-            model: None,
-        };
+        let mut payload = HookPayload::new(HookEvent::PreToolUse, "test-session");
+        payload.tool_name = Some("bash".to_string());
+        payload.tool_input = Some(serde_json::json!({"command": "ls"}));
         let response = execute_hook_script(
-            r#"input=$(cat); echo "$input" | grep -q "tool_call_before" && echo '{"action":"pass"}' || echo '{"action":"abort","reason":"missing event"}'"#,
+            r#"input=$(cat); echo "$input" | grep -q "PreToolUse" && echo '{"action":"pass"}' || echo '{"action":"abort","reason":"missing event"}'"#,
             &payload,
             Some(Duration::from_secs(5)),
         )

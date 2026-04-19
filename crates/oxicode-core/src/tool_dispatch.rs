@@ -103,8 +103,8 @@ impl QueryEngine {
 
     /// Execute a single tool, checking permissions first.
     ///
-    /// Fires `ToolCallBefore` / `ToolCallAfter` hooks and tool-specific events
-    /// (`FileRead`, `FileWrite`, `FileEdit`, `BashExecute`).
+    /// Fires `PreToolUse` / `PostToolUse` (or `PostToolUseFailure` on error)
+    /// hooks following Claude Code spec.
     /// When `event_tx` is `Some`, permission Ask decisions are sent to the TUI
     /// via oneshot channel and the engine blocks until the user responds (30s timeout).
     /// When `None`, Ask decisions are auto-denied.
@@ -115,14 +115,14 @@ impl QueryEngine {
         input: &serde_json::Value,
         event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
     ) -> ContentBlock {
-        // Fire ToolCallBefore hook — abort if hook says so.
+        // Fire PreToolUse hook — abort if hook says so.
         let before_data = serde_json::json!({
-            "tool": tool_name,
-            "input": input,
+            "tool_name": tool_name,
+            "tool_input": input,
         });
         let before_resp = fire_hook_with_events(
             &self.hook_manager,
-            HookEvent::ToolCallBefore,
+            HookEvent::PreToolUse,
             before_data,
             event_tx,
         )
@@ -133,19 +133,6 @@ impl QueryEngine {
                 content: format!("Hook aborted: {reason}"),
                 is_error: true,
             };
-        }
-
-        // Fire tool-specific event (best-effort, ignore response for P0).
-        let specific_event = match tool_name {
-            "read_file" | "file_read" => Some(HookEvent::FileRead),
-            "write_file" | "file_write" => Some(HookEvent::FileWrite),
-            "file_edit" | "edit_file" => Some(HookEvent::FileEdit),
-            "bash" => Some(HookEvent::BashExecute),
-            _ => None,
-        };
-        if let Some(evt) = specific_event {
-            let data = serde_json::json!({"tool": tool_name, "input": input});
-            fire_hook_with_events(&self.hook_manager, evt, data, event_tx).await;
         }
 
         let tool_level = self.tool_registry.get(tool_name).map_or(
@@ -191,19 +178,19 @@ impl QueryEngine {
             is_error,
         } = block
         {
-            // Fire ToolCallAfter hook.
+            // Fire PostToolUse (or PostToolUseFailure on error) hook.
             let after_data = serde_json::json!({
-                "tool": tool_name,
-                "result": content,
+                "tool_name": tool_name,
+                "tool_input": input,
+                "tool_response": content,
                 "is_error": is_error,
             });
-            fire_hook_with_events(
-                &self.hook_manager,
-                HookEvent::ToolCallAfter,
-                after_data,
-                event_tx,
-            )
-            .await;
+            let after_event = if is_error {
+                HookEvent::PostToolUseFailure
+            } else {
+                HookEvent::PostToolUse
+            };
+            fire_hook_with_events(&self.hook_manager, after_event, after_data, event_tx).await;
 
             emit(
                 event_tx,

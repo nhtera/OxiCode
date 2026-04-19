@@ -21,10 +21,15 @@ pub enum NdjsonEvent {
     },
     /// User message received.
     UserMessage { content: String },
-    /// Streaming text delta from assistant.
+    /// Streaming text chunk from assistant (one per delta).
+    TextDelta { text: String },
+    /// Streaming reasoning/thinking chunk from extended-thinking models.
+    ThinkingDelta { text: String },
+    /// Buffered assistant text (emitted once per turn end if any text accumulated).
     AssistantText { text: String },
     /// Tool invocation by the assistant.
     ToolUse {
+        tool_use_id: String,
         tool_name: String,
         input: serde_json::Value,
     },
@@ -33,6 +38,36 @@ pub enum NdjsonEvent {
         tool_use_id: String,
         content: String,
         is_error: bool,
+    },
+    /// Hook lifecycle progress signal (running/completed) or persistent message.
+    Hook {
+        event: String,
+        state: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kind: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<String>,
+    },
+    /// Permission gate decision (in `-p` mode without bypass, auto-denied).
+    PermissionAsk {
+        tool_name: String,
+        input_summary: String,
+        prompt: String,
+        decision: String,
+    },
+    /// Retry in progress for transient provider error.
+    Retrying {
+        message: String,
+        attempt: u32,
+        max_retries: u32,
+        retry_in_secs: f64,
+    },
+    /// Provider returned 429; retry scheduled.
+    RateLimited {
+        message: String,
+        attempt: u32,
+        max_retries: u32,
+        retry_in_secs: f64,
     },
     /// Token usage statistics for a turn.
     Usage {
@@ -92,8 +127,14 @@ impl NdjsonWriter {
     }
 
     /// Emit a tool_use event.
-    pub fn tool_use(&mut self, tool_name: &str, input: &serde_json::Value) -> io::Result<()> {
+    pub fn tool_use(
+        &mut self,
+        tool_use_id: &str,
+        tool_name: &str,
+        input: &serde_json::Value,
+    ) -> io::Result<()> {
         self.emit(&NdjsonEvent::ToolUse {
+            tool_use_id: tool_use_id.to_string(),
             tool_name: tool_name.to_string(),
             input: input.clone(),
         })
@@ -170,12 +211,64 @@ mod tests {
     #[test]
     fn test_tool_use_event() {
         let event = NdjsonEvent::ToolUse {
+            tool_use_id: "tu_1".to_string(),
             tool_name: "bash".to_string(),
             input: serde_json::json!({"command": "ls"}),
         };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"type\":\"tool_use\""));
+        assert!(json.contains("\"tool_use_id\":\"tu_1\""));
         assert!(json.contains("\"tool_name\":\"bash\""));
+    }
+
+    #[test]
+    fn test_text_delta_event() {
+        let event = NdjsonEvent::TextDelta {
+            text: "hello".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"text_delta\""));
+        assert!(json.contains("\"text\":\"hello\""));
+    }
+
+    #[test]
+    fn test_hook_event_running() {
+        let event = NdjsonEvent::Hook {
+            event: "PreToolUse".to_string(),
+            state: "running".to_string(),
+            kind: None,
+            content: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"hook\""));
+        assert!(json.contains("\"state\":\"running\""));
+        assert!(!json.contains("\"kind\""), "kind should be skipped when None");
+    }
+
+    #[test]
+    fn test_hook_event_message() {
+        let event = NdjsonEvent::Hook {
+            event: "PreToolUse".to_string(),
+            state: "completed".to_string(),
+            kind: Some("block_error".to_string()),
+            content: Some("blocked by policy".to_string()),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"kind\":\"block_error\""));
+        assert!(json.contains("\"content\":\"blocked by policy\""));
+    }
+
+    #[test]
+    fn test_permission_ask_event() {
+        let event = NdjsonEvent::PermissionAsk {
+            tool_name: "bash".to_string(),
+            input_summary: "rm -rf /".to_string(),
+            prompt: "Approve dangerous command?".to_string(),
+            decision: "denied".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"permission_ask\""));
+        assert!(json.contains("\"decision\":\"denied\""));
     }
 
     #[test]

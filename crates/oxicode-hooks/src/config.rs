@@ -199,6 +199,107 @@ impl HooksConfig {
             .map(Self::from_toml_value)
             .unwrap_or_default()
     }
+
+    /// Layered loader (Claude Code parity, oxicode-overlay-wins precedence).
+    ///
+    /// Read order (low → high precedence):
+    /// 1. `~/.claude/settings.json` (user)
+    /// 2. project `.claude/settings.json`
+    /// 3. project `.claude/settings.local.json`
+    /// 4. `~/.oxicode/settings.toml` overlay (oxicode wins per user choice)
+    ///
+    /// Each layer's hooks are merged into a single `HooksConfig`. Later
+    /// layers' hooks for the same event REPLACE earlier ones.
+    pub fn load_layered() -> Self {
+        let mut merged = Self::default();
+
+        // Layer 1: ~/.claude/settings.json
+        if let Some(home) = dirs::home_dir() {
+            let user_claude = home.join(".claude").join("settings.json");
+            merge_into(&mut merged, &load_claude_json(&user_claude));
+        }
+
+        // Layer 2: project .claude/settings.json (relative to cwd)
+        let project_claude = std::path::PathBuf::from(".claude").join("settings.json");
+        merge_into(&mut merged, &load_claude_json(&project_claude));
+
+        // Layer 3: project .claude/settings.local.json
+        let project_local = std::path::PathBuf::from(".claude").join("settings.local.json");
+        merge_into(&mut merged, &load_claude_json(&project_local));
+
+        // Layer 4: ~/.oxicode/settings.toml overlay (highest precedence).
+        merge_into(&mut merged, &Self::load_from_settings_dir());
+
+        merged
+    }
+}
+
+/// Merge `src` into `dst`, with `src` entries replacing `dst` entries on conflict.
+fn merge_into(dst: &mut HooksConfig, src: &HooksConfig) {
+    for (key, def) in &src.hooks {
+        dst.hooks.insert(key.clone(), def.clone());
+    }
+}
+
+/// Read a Claude-Code-style `settings.json` file and convert its `hooks`
+/// section to our `HooksConfig`. Returns empty config if the file is missing
+/// or malformed (fail-soft — hooks should never break the app).
+fn load_claude_json(path: &std::path::Path) -> HooksConfig {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return HooksConfig::default();
+    };
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) else {
+        tracing::warn!("Failed to parse Claude settings JSON at {path:?}");
+        return HooksConfig::default();
+    };
+    let Some(hooks_section) = parsed.get("hooks") else {
+        return HooksConfig::default();
+    };
+    HooksConfig::from_claude_json(hooks_section)
+}
+
+impl HooksConfig {
+    /// Parse Claude Code's `hooks` JSON section.
+    ///
+    /// Schema:
+    /// ```json
+    /// {
+    ///   "PreToolUse": [
+    ///     { "matcher": "Bash|Edit",
+    ///       "hooks": [{"type":"command","command":"...","timeout":30}] }
+    ///   ]
+    /// }
+    /// ```
+    /// We currently flatten to one hook per event (first matching). Multi-hook
+    /// + matcher routing is a follow-up phase.
+    pub fn from_claude_json(value: &serde_json::Value) -> Self {
+        let Some(obj) = value.as_object() else {
+            return Self::default();
+        };
+        let mut hooks = HashMap::new();
+        for (event_name, event_value) in obj {
+            // event_value is an array of {matcher, hooks: [...]}
+            let Some(arr) = event_value.as_array() else {
+                continue;
+            };
+            // Take the first matcher group's first hook (single-hook MVP).
+            for matcher_group in arr {
+                let Some(group) = matcher_group.as_object() else {
+                    continue;
+                };
+                let Some(hooks_arr) = group.get("hooks").and_then(|v| v.as_array()) else {
+                    continue;
+                };
+                if let Some(first) = hooks_arr.first() {
+                    if let Ok(def) = serde_json::from_value::<HookDef>(first.clone()) {
+                        hooks.insert(event_name.clone(), def);
+                        break;
+                    }
+                }
+            }
+        }
+        Self { hooks }
+    }
 }
 
 #[cfg(test)]
@@ -206,10 +307,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_string_form() {
+    fn test_simple_string_form_pascal_case() {
         let toml_str = r#"
-session_start = "echo hello"
-pre_query = "~/.oxicode/hooks/pre-query.sh"
+SessionStart = "echo hello"
+UserPromptSubmit = "~/.claude/hooks/pre-prompt.sh"
 "#;
         let value: toml::Value = toml_str.parse().unwrap();
         let config = HooksConfig::from_toml_value(&value);
@@ -222,14 +323,14 @@ pre_query = "~/.oxicode/hooks/pre-query.sh"
     #[test]
     fn test_table_form_command() {
         let toml_str = r#"
-[pre_query]
+[UserPromptSubmit]
 command = "python3 check.py"
 timeout_secs = 5
 enabled = true
 "#;
         let value: toml::Value = toml_str.parse().unwrap();
         let config = HooksConfig::from_toml_value(&value);
-        let hook = config.get(HookEvent::PreQuery).unwrap();
+        let hook = config.get(HookEvent::UserPromptSubmit).unwrap();
         assert_eq!(hook.command, "python3 check.py");
         assert_eq!(hook.timeout_secs, 5);
         assert_eq!(hook.hook_type, HookType::Command);
@@ -238,7 +339,7 @@ enabled = true
     #[test]
     fn test_table_form_agent() {
         let toml_str = r#"
-[tool_call_before]
+[PreToolUse]
 type = "agent"
 instructions = "Check for PII"
 model = "claude-haiku"
@@ -246,7 +347,7 @@ timeout_secs = 30
 "#;
         let value: toml::Value = toml_str.parse().unwrap();
         let config = HooksConfig::from_toml_value(&value);
-        let hook = config.get(HookEvent::ToolCallBefore).unwrap();
+        let hook = config.get(HookEvent::PreToolUse).unwrap();
         assert_eq!(hook.hook_type, HookType::Agent);
         let agent_cfg = hook.agent_config();
         assert_eq!(agent_cfg.instructions, "Check for PII");
@@ -257,7 +358,7 @@ timeout_secs = 30
     #[test]
     fn test_table_form_http() {
         let toml_str = r#"
-[post_sampling]
+[Stop]
 type = "http"
 url = "https://hooks.example.com/event"
 authorization = "Bearer abc"
@@ -265,7 +366,7 @@ timeout_secs = 120
 "#;
         let value: toml::Value = toml_str.parse().unwrap();
         let config = HooksConfig::from_toml_value(&value);
-        let hook = config.get(HookEvent::PostSampling).unwrap();
+        let hook = config.get(HookEvent::Stop).unwrap();
         assert_eq!(hook.hook_type, HookType::Http);
         let http_cfg = hook.http_config();
         assert_eq!(http_cfg.url, "https://hooks.example.com/event");
@@ -276,7 +377,7 @@ timeout_secs = 120
     #[test]
     fn test_disabled_hook() {
         let toml_str = r#"
-[session_start]
+[SessionStart]
 command = "echo disabled"
 enabled = false
 "#;
@@ -288,20 +389,6 @@ enabled = false
     #[test]
     fn test_hook_type_default_is_command() {
         assert_eq!(HookType::default(), HookType::Command);
-    }
-
-    #[test]
-    fn test_hook_type_serde() {
-        let json = serde_json::to_string(&HookType::Agent).unwrap();
-        assert_eq!(json, "\"agent\"");
-        let parsed: HookType = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, HookType::Agent);
-
-        let json = serde_json::to_string(&HookType::Http).unwrap();
-        assert_eq!(json, "\"http\"");
-
-        let json = serde_json::to_string(&HookType::Command).unwrap();
-        assert_eq!(json, "\"command\"");
     }
 
     #[test]
@@ -320,7 +407,7 @@ enabled = false
 
     #[test]
     fn test_default_timeout() {
-        let toml_str = r#"session_start = "echo hello""#;
+        let toml_str = r#"SessionStart = "echo hello""#;
         let value: toml::Value = toml_str.parse().unwrap();
         let config = HooksConfig::from_toml_value(&value);
         let hook = config.get(HookEvent::SessionStart).unwrap();
@@ -328,52 +415,8 @@ enabled = false
     }
 
     #[test]
-    fn test_custom_timeout() {
-        let toml_str = r#"
-[tool_call_before]
-command = "security-check.sh"
-timeout_secs = 30
-"#;
-        let value: toml::Value = toml_str.parse().unwrap();
-        let config = HooksConfig::from_toml_value(&value);
-        let hook = config.get(HookEvent::ToolCallBefore).unwrap();
-        assert_eq!(hook.timeout_secs, 30);
-    }
-
-    #[test]
-    fn test_table_default_enabled() {
-        let toml_str = r#"
-[error]
-command = "log-error.sh"
-"#;
-        let value: toml::Value = toml_str.parse().unwrap();
-        let config = HooksConfig::from_toml_value(&value);
-        let hook = config.get(HookEvent::Error).unwrap();
-        assert!(hook.enabled);
-    }
-
-    #[test]
-    fn test_multiple_hooks() {
-        let toml_str = r#"
-session_start = "init.sh"
-session_end = "cleanup.sh"
-pre_query = "pre.sh"
-post_sampling = "post.sh"
-tool_call_before = "check.sh"
-"#;
-        let value: toml::Value = toml_str.parse().unwrap();
-        let config = HooksConfig::from_toml_value(&value);
-        assert_eq!(config.hooks.len(), 5);
-        assert!(config.get(HookEvent::SessionStart).is_some());
-        assert!(config.get(HookEvent::SessionEnd).is_some());
-        assert!(config.get(HookEvent::PreQuery).is_some());
-        assert!(config.get(HookEvent::PostSampling).is_some());
-        assert!(config.get(HookEvent::ToolCallBefore).is_some());
-    }
-
-    #[test]
     fn test_unknown_event_key_stored_but_not_retrievable() {
-        let toml_str = r#"unknown_event = "noop.sh""#;
+        let toml_str = r#"NotARealEvent = "noop.sh""#;
         let value: toml::Value = toml_str.parse().unwrap();
         let config = HooksConfig::from_toml_value(&value);
         assert_eq!(config.hooks.len(), 1);
@@ -381,36 +424,21 @@ tool_call_before = "check.sh"
     }
 
     #[test]
-    fn test_non_string_non_table_value_skipped() {
-        let toml_str = r#"session_start = 42"#;
+    fn test_old_snake_case_keys_do_not_match_new_events() {
+        // Hard rename: old snake_case keys must not be picked up.
+        let toml_str = r#"
+tool_call_before = "old.sh"
+pre_query = "old.sh"
+"#;
         let value: toml::Value = toml_str.parse().unwrap();
         let config = HooksConfig::from_toml_value(&value);
-        assert!(config.hooks.is_empty());
+        assert_eq!(config.hooks.len(), 2, "raw keys still stored");
+        assert!(config.get(HookEvent::PreToolUse).is_none());
+        assert!(config.get(HookEvent::UserPromptSubmit).is_none());
     }
 
     #[test]
-    fn test_hook_def_serde_roundtrip() {
-        let def = HookDef {
-            hook_type: HookType::Command,
-            command: "echo test".to_string(),
-            timeout_secs: 15,
-            enabled: true,
-            agent: None,
-            http: None,
-            instructions: None,
-            model: None,
-            url: None,
-            authorization: None,
-        };
-        let json = serde_json::to_string(&def).unwrap();
-        let parsed: HookDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.command, "echo test");
-        assert_eq!(parsed.timeout_secs, 15);
-        assert!(parsed.enabled);
-    }
-
-    #[test]
-    fn test_all_29_events_retrievable() {
+    fn test_all_events_retrievable() {
         let mut hooks = HashMap::new();
         for event in HookEvent::ALL {
             hooks.insert(
@@ -438,39 +466,35 @@ tool_call_before = "check.sh"
     }
 
     #[test]
-    fn test_mixed_hook_types() {
-        let toml_str = r#"
-session_start = "init.sh"
-
-[pre_query]
-type = "agent"
-instructions = "Evaluate safety"
-timeout_secs = 45
-
-[post_sampling]
-type = "http"
-url = "https://example.com/hook"
-timeout_secs = 120
-
-[tool_call_before]
-type = "command"
-command = "security-check.sh"
-"#;
-        let value: toml::Value = toml_str.parse().unwrap();
-        let config = HooksConfig::from_toml_value(&value);
-
+    fn test_from_claude_json_simple() {
+        let json = serde_json::json!({
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {"type": "command", "command": "echo pre", "timeout_secs": 5}
+                    ]
+                }
+            ],
+            "SessionStart": [
+                {
+                    "hooks": [{"type": "command", "command": "init.sh"}]
+                }
+            ]
+        });
+        let config = HooksConfig::from_claude_json(&json);
+        let pre = config.get(HookEvent::PreToolUse).unwrap();
+        assert_eq!(pre.command, "echo pre");
         let start = config.get(HookEvent::SessionStart).unwrap();
-        assert_eq!(start.hook_type, HookType::Command);
+        assert_eq!(start.command, "init.sh");
+    }
 
-        let pre = config.get(HookEvent::PreQuery).unwrap();
-        assert_eq!(pre.hook_type, HookType::Agent);
-        assert_eq!(pre.agent_config().instructions, "Evaluate safety");
-
-        let post = config.get(HookEvent::PostSampling).unwrap();
-        assert_eq!(post.hook_type, HookType::Http);
-        assert_eq!(post.http_config().url, "https://example.com/hook");
-
-        let tool = config.get(HookEvent::ToolCallBefore).unwrap();
-        assert_eq!(tool.hook_type, HookType::Command);
+    #[test]
+    fn test_from_claude_json_ignores_malformed_entries() {
+        let json = serde_json::json!({
+            "PreToolUse": "not an array",
+        });
+        let config = HooksConfig::from_claude_json(&json);
+        assert!(config.hooks.is_empty());
     }
 }

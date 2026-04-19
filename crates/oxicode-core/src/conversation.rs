@@ -33,6 +33,16 @@ impl Conversation {
     pub fn replace_messages(&mut self, messages: Vec<Message>) {
         self.messages = messages;
     }
+
+    /// Return the most recent user-message text, if any. Used for the
+    /// `UserPromptSubmit` hook payload.
+    pub fn last_user_text(&self) -> Option<String> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, oxicode_common::Role::User))
+            .map(|m| m.text())
+    }
 }
 
 #[cfg(test)]

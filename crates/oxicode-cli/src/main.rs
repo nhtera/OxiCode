@@ -44,6 +44,33 @@ enum OutputFormat {
     Json,
 }
 
+/// Permission mode override from the command line.
+///
+/// Mirrors Claude Code's `--permission-mode` flag values so users can pass
+/// the same flags they use with `claude`.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum PermissionModeArg {
+    /// Default — read-only auto-allowed, others prompt.
+    Default,
+    /// Auto-accept file edits but still prompt for shell.
+    AcceptEdits,
+    /// Bypass all permission checks (alias for `--dangerously-skip-permissions`).
+    BypassPermissions,
+    /// Plan mode — read-only investigation, no edits/exec until exit.
+    Plan,
+}
+
+impl PermissionModeArg {
+    /// Translate to the settings string form parsed by `PermissionMode::parse`.
+    fn as_settings_str(self) -> &'static str {
+        match self {
+            Self::Default | Self::Plan => "default",
+            Self::AcceptEdits => "approval_only",
+            Self::BypassPermissions => "bypass",
+        }
+    }
+}
+
 /// `OxiCode` — A Rust-powered CLI agent for software engineering.
 #[derive(Parser, Debug)]
 #[command(name = "oxicode", version, about)]
@@ -119,6 +146,54 @@ struct Cli {
     /// Run as an MCP server (expose tools via stdio JSON-RPC).
     #[arg(long)]
     mcp: bool,
+
+    /// Permission mode override (overrides settings.permission_mode for this run).
+    #[arg(long, value_enum)]
+    permission_mode: Option<PermissionModeArg>,
+
+    /// Skip ALL permission prompts (alias for --permission-mode=bypass-permissions).
+    /// Use with caution — runs every tool without confirmation.
+    #[arg(long, conflicts_with = "permission_mode")]
+    dangerously_skip_permissions: bool,
+
+    /// Comma-separated list of tool names that should always be allowed
+    /// (e.g. `--allowed-tools=bash,file_write`). Glob `*` is supported.
+    #[arg(long, value_delimiter = ',')]
+    allowed_tools: Vec<String>,
+
+    /// Comma-separated list of tool names that should always be denied.
+    #[arg(long, value_delimiter = ',')]
+    disallowed_tools: Vec<String>,
+}
+
+/// Resolve the effective permission mode from CLI flags + settings.
+/// CLI flags override settings.toml. `--dangerously-skip-permissions` is
+/// equivalent to `--permission-mode=bypass-permissions`.
+fn resolve_permission_mode(cli: &Cli, settings_value: &str) -> PermissionMode {
+    if cli.dangerously_skip_permissions {
+        return PermissionMode::Bypass;
+    }
+    if let Some(mode) = cli.permission_mode {
+        return PermissionMode::parse(mode.as_settings_str());
+    }
+    PermissionMode::parse(settings_value)
+}
+
+/// Build `PermissionRule`s from `--allowed-tools` and `--disallowed-tools`.
+/// Deny rules are pushed first so they take precedence in the matcher.
+fn build_cli_permission_rules(
+    allowed: &[String],
+    disallowed: &[String],
+) -> Vec<oxicode_permissions::rules::PermissionRule> {
+    use oxicode_permissions::rules::PermissionRule;
+    let mut rules = Vec::with_capacity(allowed.len() + disallowed.len());
+    for tool in disallowed {
+        rules.push(PermissionRule::deny(tool, None));
+    }
+    for tool in allowed {
+        rules.push(PermissionRule::allow(tool, None));
+    }
+    rules
 }
 
 #[tokio::main]
@@ -186,8 +261,8 @@ async fn main() -> Result<()> {
     // Load config (env vars and TOML, no CLI secret)
     let mut settings = oxicode_config::load_settings(cli.config_dir.as_deref());
 
-    if let Some(model) = cli.model {
-        settings.model = model;
+    if let Some(ref model) = cli.model {
+        settings.model = model.clone();
     }
 
     // Resolve auth source: OAuth token > env var > config > none.
@@ -293,12 +368,26 @@ async fn main() -> Result<()> {
     let state_store = Arc::new(StateStore::new(initial_state));
 
     let tool_registry = Arc::new(oxicode_tools::default_registry());
-    let permission_mode = PermissionMode::parse(&settings.permission_mode);
-    let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
+    let permission_mode = resolve_permission_mode(&cli, &settings.permission_mode);
+    let cli_rules = build_cli_permission_rules(&cli.allowed_tools, &cli.disallowed_tools);
+    let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, cli_rules));
 
-    // Initialize HookManager from settings.
+    // Initialize HookManager from layered settings (Claude Code parity:
+    // ~/.claude/settings.json + project .claude/settings.json + .oxicode overlay).
     let mut hook_mgr = HookManager::from_settings();
     hook_mgr.set_model(&settings.model);
+    hook_mgr.set_session_id(&session.id);
+    hook_mgr.set_cwd(cwd.to_string_lossy());
+    hook_mgr.set_permission_mode(match permission_mode {
+        PermissionMode::Bypass => "bypass",
+        PermissionMode::ApprovalOnly => "approval_only",
+        PermissionMode::Default => "default",
+    });
+    let transcript_path = oxicode_session::sessions_dir(None)
+        .join(format!("{}.json", session.id))
+        .to_string_lossy()
+        .into_owned();
+    hook_mgr.set_transcript_path(transcript_path);
     let hook_manager = Arc::new(hook_mgr);
 
     // Initialize MCP servers from config.
@@ -510,6 +599,11 @@ async fn run_single_prompt(
 }
 
 /// Run a single prompt with NDJSON structured output.
+///
+/// Streams `TurnEvent`s from the engine to stdout in real-time so consumers
+/// see tool_use/tool_result/hook events as they happen, not just the final
+/// assistant message. In `-p` mode without a permission bypass flag, any
+/// `PermissionAsk` is auto-denied (no human in the loop).
 async fn run_single_prompt_json(
     engine: Arc<QueryEngine>,
     session: &mut Session,
@@ -530,29 +624,30 @@ async fn run_single_prompt_json(
     session.push_message(user_msg.clone());
     conversation.push(user_msg);
 
-    match engine.execute_turn(&mut conversation, None).await {
-        Ok(assistant_msg) => {
-            // Emit content blocks as structured events
-            for block in &assistant_msg.content {
-                match block {
-                    oxicode_common::ContentBlock::Text { text } => {
-                        writer.assistant_text(text)?;
-                    }
-                    oxicode_common::ContentBlock::ToolUse { name, input, .. } => {
-                        writer.tool_use(name, input)?;
-                    }
-                    oxicode_common::ContentBlock::ToolResult {
-                        tool_use_id,
-                        content,
-                        is_error,
-                    } => {
-                        writer.tool_result(tool_use_id, content, *is_error)?;
-                    }
-                    oxicode_common::ContentBlock::Thinking { .. }
-                    | oxicode_common::ContentBlock::Image { .. } => {}
-                }
-            }
+    let (event_tx, mut event_rx) = mpsc::channel::<oxicode_core::TurnEvent>(64);
 
+    let drain_handle = tokio::spawn(async move {
+        let mut writer = NdjsonWriter::new();
+        let mut text_buf = String::new();
+        while let Some(event) = event_rx.recv().await {
+            if let Err(e) = stream_event_to_ndjson(&mut writer, &mut text_buf, event) {
+                eprintln!("ndjson stream error: {e}");
+                break;
+            }
+        }
+        // Flush any remaining buffered text as a final assistant_text.
+        if !text_buf.is_empty() {
+            let _ = writer.assistant_text(&text_buf);
+        }
+    });
+
+    let result = engine.execute_turn(&mut conversation, Some(&event_tx)).await;
+    drop(event_tx);
+    let _ = drain_handle.await;
+
+    let mut writer = NdjsonWriter::new();
+    match result {
+        Ok(assistant_msg) => {
             if let Some(usage) = &assistant_msg.usage {
                 writer.emit(&structured_output::NdjsonEvent::Usage {
                     input_tokens: usage.input_tokens,
@@ -577,6 +672,91 @@ async fn run_single_prompt_json(
 
     writer.session_end("complete")?;
     Ok(())
+}
+
+/// Convert one `TurnEvent` to an NDJSON line. Buffers text deltas so the
+/// final assistant text can be emitted as a single `assistant_text` event
+/// at end-of-stream while individual `text_delta` events stream live.
+fn stream_event_to_ndjson(
+    writer: &mut NdjsonWriter,
+    text_buf: &mut String,
+    event: oxicode_core::TurnEvent,
+) -> std::io::Result<()> {
+    use oxicode_core::TurnEvent;
+    match event {
+        TurnEvent::TextDelta(text) => {
+            text_buf.push_str(&text);
+            writer.emit(&structured_output::NdjsonEvent::TextDelta { text })
+        }
+        TurnEvent::ThinkingDelta(text) => {
+            writer.emit(&structured_output::NdjsonEvent::ThinkingDelta { text })
+        }
+        TurnEvent::TurnStart | TurnEvent::TurnEnd => Ok(()),
+        TurnEvent::ToolUseStart { id, name, input } => writer.tool_use(&id, &name, &input),
+        TurnEvent::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => writer.tool_result(&tool_use_id, &content, is_error),
+        TurnEvent::PermissionAsk {
+            tool_name,
+            input_summary,
+            prompt,
+            reply_tx,
+        } => {
+            // Non-interactive `-p` mode: auto-deny so engine doesn't hang.
+            let _ = reply_tx.send(oxicode_common::PermissionResponse::Deny);
+            writer.emit(&structured_output::NdjsonEvent::PermissionAsk {
+                tool_name,
+                input_summary,
+                prompt,
+                decision: "denied".to_string(),
+            })
+        }
+        TurnEvent::Error(message) => {
+            writer.emit(&structured_output::NdjsonEvent::Error { message })
+        }
+        TurnEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => writer.emit(&structured_output::NdjsonEvent::Retrying {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        }),
+        TurnEvent::RateLimited {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        } => writer.emit(&structured_output::NdjsonEvent::RateLimited {
+            message,
+            attempt,
+            max_retries,
+            retry_in_secs,
+        }),
+        TurnEvent::HookProgress { event, state } => {
+            writer.emit(&structured_output::NdjsonEvent::Hook {
+                event,
+                state: state.as_str().to_string(),
+                kind: None,
+                content: None,
+            })
+        }
+        TurnEvent::HookMessage {
+            event,
+            kind,
+            content,
+        } => writer.emit(&structured_output::NdjsonEvent::Hook {
+            event,
+            state: "message".to_string(),
+            kind: Some(kind.as_str().to_string()),
+            content: Some(content),
+        }),
+    }
 }
 
 /// Outcome of resolving a /resume argument against the saved sessions list.
@@ -901,12 +1081,16 @@ async fn run_tui(
                                     s.total_usage = oxicode_common::Usage::default();
                                 });
 
-                                // 5. SessionLoad + SessionStart hooks for the new session.
+                                // 5. SessionStart hook with source=resume (Claude Code spec —
+                                // no separate SessionLoad event).
+                                use oxicode_hooks::manager::HookFields;
+                                let mut fields = HookFields::default();
+                                fields.source = Some("resume".to_string());
                                 hook_manager_engine
-                                    .fire_simple(oxicode_hooks::HookEvent::SessionLoad)
-                                    .await;
-                                hook_manager_engine
-                                    .fire_simple(oxicode_hooks::HookEvent::SessionStart)
+                                    .fire_with_fields(
+                                        oxicode_hooks::HookEvent::SessionStart,
+                                        fields,
+                                    )
                                     .await;
 
                                 // 6. Tell the TUI to rehydrate image paths + redraw.

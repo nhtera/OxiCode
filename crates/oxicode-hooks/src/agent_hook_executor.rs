@@ -127,7 +127,7 @@ async fn call_agent(
     tracing::debug!(
         "Agent hook stub: model={}, event={}, instructions_len={}",
         config.model,
-        payload.event.as_str(),
+        payload.hook_event_name.as_str(),
         config.instructions.len()
     );
 
@@ -192,12 +192,10 @@ mod tests {
     use crate::events::HookEvent;
 
     fn test_payload() -> HookPayload {
-        HookPayload {
-            event: HookEvent::PreQuery,
-            data: serde_json::json!({"query": "test prompt"}),
-            session_id: Some("sess_1".to_string()),
-            model: Some("claude-sonnet-4".to_string()),
-        }
+        let mut p = HookPayload::new(HookEvent::UserPromptSubmit, "sess_1");
+        p.prompt = Some("test prompt".to_string());
+        p.model = Some("claude-sonnet-4".to_string());
+        p
     }
 
     #[test]
@@ -285,7 +283,7 @@ mod tests {
     fn test_build_user_message() {
         let payload = test_payload();
         let msg = build_user_message(&payload).unwrap();
-        assert!(msg.contains("pre_query"));
+        assert!(msg.contains("UserPromptSubmit"));
         assert!(msg.contains("test prompt"));
     }
 

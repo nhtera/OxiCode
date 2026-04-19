@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use oxicode_agents::built_in::AgentType;
+use oxicode_agents::loader as agent_loader;
 use oxicode_agents::spawner::{spawn_agent, AgentConfig};
 use oxicode_common::OxiResult;
 use oxicode_permissions::PermissionMode;
@@ -13,12 +14,41 @@ pub struct AgentTool;
 #[async_trait]
 impl Tool for AgentTool {
     fn name(&self) -> &str {
-        "agent"
+        "Task"
     }
     fn description(&self) -> &str {
         "Launch a subagent to handle complex tasks autonomously. Supports specialized types: plan, explore, verify, general, guide, statusline."
     }
     fn schema(&self) -> ToolSchema {
+        // Built-in slugs + any user-defined agents discovered from
+        // ~/.claude/agents/*.md and project .claude/agents/*.md.
+        let mut subagent_types: Vec<String> = vec![
+            "plan".into(),
+            "explore".into(),
+            "verify".into(),
+            "general".into(),
+            "guide".into(),
+            "statusline".into(),
+        ];
+        for agent in agent_loader::discover() {
+            if !subagent_types.iter().any(|n| n == &agent.name) {
+                subagent_types.push(agent.name.clone());
+            }
+        }
+
+        let custom_blurb = agent_loader::discover()
+            .iter()
+            .map(|a| format!("- {}: {}", a.name, a.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let description = if custom_blurb.is_empty() {
+            "Specialized agent type: plan, explore, verify, general, guide, statusline. Each type has restricted tools and a tailored system prompt.".to_string()
+        } else {
+            format!(
+                "Specialized agent type: plan, explore, verify, general, guide, statusline, or one of the user-defined agents below.\n\nUser-defined agents:\n{custom_blurb}"
+            )
+        };
+
         ToolSchema {
             name: self.name().into(),
             description: self.description().into(),
@@ -31,8 +61,8 @@ impl Tool for AgentTool {
                     },
                     "subagent_type": {
                         "type": "string",
-                        "description": "Specialized agent type: plan, explore, verify, general, guide, statusline. Each type has restricted tools and a tailored system prompt.",
-                        "enum": ["plan", "explore", "verify", "general", "guide", "statusline"]
+                        "description": description,
+                        "enum": subagent_types
                     },
                     "model": {
                         "type": "string",
@@ -69,17 +99,35 @@ impl Tool for AgentTool {
             None => return Ok(ToolResult::error("agent tool requires 'prompt' field")),
         };
 
-        // Parse optional subagent_type.
-        let agent_type = input
+        // Parse optional subagent_type. First try to match a built-in enum
+        // variant; if that fails, look for a user-defined agent loaded from
+        // ~/.claude/agents/*.md or project .claude/agents/*.md.
+        let subagent_type_str = input
             .get("subagent_type")
             .and_then(|v| v.as_str())
+            .map(String::from);
+        let agent_type = subagent_type_str
+            .as_deref()
             .and_then(AgentType::from_str_loose);
+        let custom_agent = if agent_type.is_none() {
+            subagent_type_str
+                .as_deref()
+                .and_then(agent_loader::find_by_name)
+        } else {
+            None
+        };
 
         let explicit_model = input.get("model").and_then(|v| v.as_str());
+        // Model precedence: explicit `model` arg > custom agent's frontmatter
+        // `model` > ANTHROPIC_DEFAULT_SONNET_MODEL env > current stable Sonnet.
+        let env_default = std::env::var("ANTHROPIC_DEFAULT_SONNET_MODEL").ok();
+        let custom_model = custom_agent.as_ref().and_then(|a| a.model.clone());
         let model = explicit_model
-            .unwrap_or("claude-sonnet-4-20250514")
-            .to_string();
-        let model_override = explicit_model.is_some();
+            .map(str::to_string)
+            .or(custom_model)
+            .or(env_default)
+            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+        let model_override = explicit_model.is_some() || custom_agent.is_some();
 
         let name = input
             .get("name")
@@ -109,20 +157,31 @@ impl Tool for AgentTool {
         }
         .to_string();
 
+        // Compose the final prompt. For user-defined agents, prepend the
+        // frontmatter system prompt to the user's task prompt (matches the
+        // built-in AgentType behavior).
+        let final_prompt = if let Some(ref ca) = custom_agent {
+            format!("{}\n\n---\n\n{}", ca.system_prompt, prompt)
+        } else {
+            prompt
+        };
+        let allowed_tools_override = custom_agent.as_ref().and_then(|a| a.tools.clone());
+
         let mut config = AgentConfig {
             name,
-            prompt,
+            prompt: final_prompt,
             model,
             working_dir: ctx.working_dir.clone(),
             permission_mode: permission_mode_str,
             timeout: std::time::Duration::from_secs(timeout_secs),
             inherit_env: true,
             agent_type,
-            allowed_tools: None,
+            allowed_tools: allowed_tools_override,
             model_override,
         };
 
-        // Apply agent type defaults (system prompt, model, tool whitelist).
+        // Apply agent type defaults (only has effect when a built-in variant
+        // was chosen — custom agents already supplied prompt/tools above).
         config.apply_agent_type();
 
         // Pass hook_manager to spawn_agent for AgentSpawn/AgentComplete events.

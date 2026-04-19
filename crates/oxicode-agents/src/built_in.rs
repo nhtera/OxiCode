@@ -62,10 +62,20 @@ impl AgentType {
     }
 
     /// Suggested default model for this agent type.
-    pub fn default_model(&self) -> &'static str {
+    ///
+    /// Reads from `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL`
+    /// env vars first (Claude Code parity), falling back to current stable model IDs.
+    /// Returns `String` because the env-var value is owned at runtime.
+    pub fn default_model(&self) -> String {
         match self {
-            Self::Plan | Self::Verify | Self::General => "claude-sonnet-4-20250514",
-            Self::Explore | Self::Guide | Self::Statusline => "claude-haiku-4-5-20251001",
+            Self::Plan | Self::Verify | Self::General => {
+                std::env::var("ANTHROPIC_DEFAULT_SONNET_MODEL")
+                    .unwrap_or_else(|_| "claude-sonnet-4-5-20250929".to_string())
+            }
+            Self::Explore | Self::Guide | Self::Statusline => {
+                std::env::var("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+                    .unwrap_or_else(|_| "claude-haiku-4-5-20251001".to_string())
+            }
         }
     }
 

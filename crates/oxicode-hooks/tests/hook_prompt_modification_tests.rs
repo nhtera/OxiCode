@@ -9,17 +9,14 @@ use oxicode_hooks::events::{HookEvent, HookPayload, HookResponse};
 use oxicode_hooks::executor::execute_hook_script;
 
 fn test_payload(event: HookEvent) -> HookPayload {
-    HookPayload {
-        event,
-        data: serde_json::json!({}),
-        session_id: Some("test-session".to_string()),
-        model: Some("test-model".to_string()),
-    }
+    let mut p = HookPayload::new(event, "test-session");
+    p.model = Some("test-model".to_string());
+    p
 }
 
 #[tokio::test]
 async fn test_pre_query_hook_modifies_prompt() {
-    let payload = test_payload(HookEvent::PreQuery);
+    let payload = test_payload(HookEvent::UserPromptSubmit);
 
     let response = execute_hook_script(
         r#"echo '{"action":"modify_prompt","text":"Always respond in French"}'"#,
@@ -38,7 +35,7 @@ async fn test_pre_query_hook_modifies_prompt() {
 
 #[tokio::test]
 async fn test_post_query_hook_overrides_result() {
-    let payload = test_payload(HookEvent::PostSampling);
+    let payload = test_payload(HookEvent::Stop);
 
     let response = execute_hook_script(
         r#"echo '{"action":"override_result","text":"replaced output"}'"#,
@@ -57,7 +54,7 @@ async fn test_post_query_hook_overrides_result() {
 
 #[tokio::test]
 async fn test_multiple_hooks_compose() {
-    let payload = test_payload(HookEvent::PreQuery);
+    let payload = test_payload(HookEvent::UserPromptSubmit);
 
     // Simulate two hooks by calling execute_hook_script twice
     // and composing the results.
@@ -95,7 +92,7 @@ async fn test_multiple_hooks_compose() {
 
 #[tokio::test]
 async fn test_hook_error_does_not_block_execution() {
-    let payload = test_payload(HookEvent::PreQuery);
+    let payload = test_payload(HookEvent::UserPromptSubmit);
 
     // Hook script exits with error code — should return Pass (fail-open).
     let response = execute_hook_script("exit 1", &payload, Some(Duration::from_secs(5))).await;

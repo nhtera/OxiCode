@@ -15,12 +15,11 @@ use std::time::Duration;
 // ── Helper ──────────────────────────────────────────────────────
 
 fn make_payload(event: HookEvent) -> HookPayload {
-    HookPayload {
-        event,
-        data: serde_json::json!({"tool": "bash", "command": "echo test"}),
-        session_id: Some("test-session-123".to_string()),
-        model: Some("claude-sonnet-4".to_string()),
-    }
+    let mut p = HookPayload::new(event, "test-session-123");
+    p.tool_name = Some("bash".to_string());
+    p.tool_input = Some(serde_json::json!({"command": "echo test"}));
+    p.model = Some("claude-sonnet-4".to_string());
+    p
 }
 
 fn make_hook_def(command: &str) -> HookDef {
@@ -57,7 +56,7 @@ async fn test_noop_manager_passes_all_events() {
 async fn test_manager_has_hook_returns_false_for_noop() {
     let mgr = HookManager::noop();
     assert!(!mgr.has_hook(HookEvent::SessionStart));
-    assert!(!mgr.has_hook(HookEvent::ToolCallBefore));
+    assert!(!mgr.has_hook(HookEvent::PreToolUse));
 }
 
 // ── Command Hook Execution ──────────────────────────────────────
@@ -77,7 +76,7 @@ async fn test_command_hook_pass_response() {
 async fn test_command_hook_modify_prompt_response() {
     let response = execute_hook_script(
         r#"echo '{"action":"modify_prompt","text":"extra instructions"}'"#,
-        &make_payload(HookEvent::PreQuery),
+        &make_payload(HookEvent::UserPromptSubmit),
         Some(Duration::from_secs(5)),
     )
     .await;
@@ -91,7 +90,7 @@ async fn test_command_hook_modify_prompt_response() {
 async fn test_command_hook_abort_response() {
     let response = execute_hook_script(
         r#"echo '{"action":"abort","reason":"blocked by security policy"}'"#,
-        &make_payload(HookEvent::ToolCallBefore),
+        &make_payload(HookEvent::PreToolUse),
         Some(Duration::from_secs(5)),
     )
     .await;
@@ -105,7 +104,7 @@ async fn test_command_hook_abort_response() {
 async fn test_command_hook_override_result() {
     let response = execute_hook_script(
         r#"echo '{"action":"override_result","text":"custom output"}'"#,
-        &make_payload(HookEvent::ToolCallAfter),
+        &make_payload(HookEvent::PostToolUse),
         Some(Duration::from_secs(5)),
     )
     .await;
@@ -123,14 +122,14 @@ async fn test_command_hook_receives_full_payload() {
     let script = r#"
         input=$(cat)
         echo "$input" | grep -q "test-session-123" && \
-        echo "$input" | grep -q "tool_call_before" && \
+        echo "$input" | grep -q "PreToolUse" && \
         echo "$input" | grep -q "bash" && \
         echo '{"action":"pass"}' || \
         echo '{"action":"abort","reason":"payload missing fields"}'
     "#;
     let response = execute_hook_script(
         script,
-        &make_payload(HookEvent::ToolCallBefore),
+        &make_payload(HookEvent::PreToolUse),
         Some(Duration::from_secs(5)),
     )
     .await;
@@ -236,7 +235,7 @@ async fn test_execute_hook_agent_type_stubs_pass() {
         authorization: None,
     };
     // Agent hook executor is a stub that returns Pass.
-    let response = execute_hook(&hook_def, &make_payload(HookEvent::ToolCallBefore)).await;
+    let response = execute_hook(&hook_def, &make_payload(HookEvent::PreToolUse)).await;
     assert!(matches!(response, HookResponse::Pass));
 }
 
@@ -244,18 +243,16 @@ async fn test_execute_hook_agent_type_stubs_pass() {
 
 #[test]
 fn test_payload_serialization_has_all_fields() {
-    let payload = make_payload(HookEvent::ToolCallBefore);
+    let payload = make_payload(HookEvent::PreToolUse);
     let json = serde_json::to_value(&payload).unwrap();
 
-    assert!(json.get("event").is_some(), "Should have 'event' field");
-    assert!(json.get("data").is_some(), "Should have 'data' field");
-    assert!(
-        json.get("session_id").is_some(),
-        "Should have 'session_id' field"
-    );
-    assert!(json.get("model").is_some(), "Should have 'model' field");
-    assert_eq!(json["event"], "tool_call_before");
+    assert!(json.get("hook_event_name").is_some());
+    assert!(json.get("session_id").is_some());
+    assert!(json.get("tool_name").is_some());
+    assert!(json.get("tool_input").is_some());
+    assert_eq!(json["hook_event_name"], "PreToolUse");
     assert_eq!(json["session_id"], "test-session-123");
+    assert_eq!(json["tool_name"], "bash");
 }
 
 #[test]
@@ -295,17 +292,22 @@ fn test_hooks_config_default_is_empty() {
 
 #[test]
 fn test_all_hook_events_have_str_names() {
-    // Verify all 29 events have valid string representations.
-    assert_eq!(HookEvent::ALL.len(), 29);
+    // Verify all events have valid PascalCase string representations.
+    assert_eq!(HookEvent::ALL.len(), 10);
     for event in HookEvent::ALL {
         let name = event.as_str();
         assert!(
             !name.is_empty(),
             "Event {event:?} should have non-empty name"
         );
+        // PascalCase: starts with uppercase, contains only alphanumeric.
         assert!(
-            name.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
-            "Event name should be snake_case: {name}"
+            name.chars().next().is_some_and(|c| c.is_ascii_uppercase()),
+            "Event name should be PascalCase: {name}"
+        );
+        assert!(
+            name.chars().all(|c| c.is_ascii_alphanumeric()),
+            "Event name should only contain alphanumeric chars: {name}"
         );
     }
 }

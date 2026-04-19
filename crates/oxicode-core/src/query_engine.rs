@@ -163,50 +163,54 @@ impl QueryEngine {
                 }
             }
 
+            // Fire UserPromptSubmit ONCE on the first turn (before the first
+            // LLM call) — Claude Code spec: this hook fires when the user
+            // submits, not per intermediate tool turn.
+            if turn_count == 1 {
+                let prompt_text = conversation
+                    .last_user_text()
+                    .unwrap_or_default();
+                let pre_data = serde_json::json!({
+                    "prompt": prompt_text,
+                });
+                let pre_resp = fire_hook_with_events(
+                    &self.hook_manager,
+                    HookEvent::UserPromptSubmit,
+                    pre_data,
+                    event_tx,
+                )
+                .await;
+                if let HookResponse::Abort { reason } = pre_resp {
+                    return Err(OxiError::HookAbort(reason));
+                }
+            }
+
             let assistant_msg = self
                 .stream_one_turn(conversation, event_tx, cancel_flag)
                 .await;
 
-            // Fire PreQuery hook before processing the result.
-            let pre_data = serde_json::json!({
-                "messages_count": conversation.len(),
-                "model": self.model(),
-                "turn": turn_count,
-            });
-            let pre_resp =
-                fire_hook_with_events(&self.hook_manager, HookEvent::PreQuery, pre_data, event_tx)
-                    .await;
-            if let HookResponse::Abort { reason } = pre_resp {
-                return Err(OxiError::HookAbort(reason));
-            }
-
             let assistant_msg = match assistant_msg {
                 Ok(msg) => {
-                    // Fire PostSampling hook.
+                    // Fire Stop hook ONLY on final EndTurn (Claude Code spec —
+                    // not per intermediate tool turn).
                     let stop = msg.stop_reason.unwrap_or(StopReason::EndTurn);
-                    let post_data = serde_json::json!({
-                        "stop_reason": format!("{stop:?}"),
-                        "turn": turn_count,
-                    });
-                    fire_hook_with_events(
-                        &self.hook_manager,
-                        HookEvent::PostSampling,
-                        post_data,
-                        event_tx,
-                    )
-                    .await;
+                    if matches!(stop, StopReason::EndTurn) {
+                        let post_data = serde_json::json!({
+                            "stop_reason": format!("{stop:?}").to_lowercase(),
+                        });
+                        fire_hook_with_events(
+                            &self.hook_manager,
+                            HookEvent::Stop,
+                            post_data,
+                            event_tx,
+                        )
+                        .await;
+                    }
                     msg
                 }
                 Err(e) => {
-                    // Fire Error hook.
-                    let err_data = serde_json::json!({"message": e.to_string()});
-                    fire_hook_with_events(
-                        &self.hook_manager,
-                        HookEvent::Error,
-                        err_data,
-                        event_tx,
-                    )
-                    .await;
+                    // Errors flow through stderr / OxiResult; no Error hook
+                    // event in Claude Code spec.
                     return Err(e);
                 }
             };

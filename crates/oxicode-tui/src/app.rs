@@ -5223,14 +5223,14 @@ mod tests {
     fn test_core_event_hook_progress_running_then_completed() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.handle_core_event(CoreEvent::HookProgress {
-            event: "tool_call_before".to_string(),
+            event: "PreToolUse".to_string(),
             state: "running".to_string(),
         });
-        assert_eq!(app.active_hook.as_deref(), Some("tool_call_before"));
+        assert_eq!(app.active_hook.as_deref(), Some("PreToolUse"));
         let label = app.compose_status_label();
-        assert!(label.contains("tool_call_before"), "got: {label}");
+        assert!(label.contains("PreToolUse"), "got: {label}");
         app.handle_core_event(CoreEvent::HookProgress {
-            event: "tool_call_before".to_string(),
+            event: "PreToolUse".to_string(),
             state: "completed".to_string(),
         });
         assert!(app.active_hook.is_none());
@@ -5242,7 +5242,7 @@ mod tests {
         let before_notif = app.notifications.len();
         let before_log = app.hook_messages.len();
         app.handle_core_event(CoreEvent::HookMessage {
-            event: "tool_call_before".to_string(),
+            event: "PreToolUse".to_string(),
             kind: "system".to_string(),
             content: "hi".to_string(),
         });
