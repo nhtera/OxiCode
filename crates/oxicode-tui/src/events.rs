@@ -79,4 +79,7 @@ pub enum CoreEvent {
         kind: String,
         content: String,
     },
+    /// Session was hot-swapped via `/resume <id>`. TUI rehydrates image paths,
+    /// resets its render cache, and scrolls to the bottom of the new transcript.
+    SessionResumed { session_id: String },
 }

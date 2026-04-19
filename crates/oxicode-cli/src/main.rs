@@ -58,9 +58,23 @@ struct Cli {
     #[arg(long)]
     config_dir: Option<String>,
 
-    /// Resume a previous session by ID.
+    /// Resume a previous session by full ID (exact match only).
     #[arg(short, long)]
     session: Option<String>,
+
+    /// Resume a previous conversation (Claude Code parity).
+    ///
+    /// With no value: opens an interactive session picker on startup.
+    /// With a value: accepts a UUID prefix or preview substring — single
+    /// match resumes that session, ambiguous matches exit with an error.
+    #[arg(
+        short = 'r',
+        long,
+        num_args = 0..=1,
+        default_missing_value = "",
+        value_name = "QUERY"
+    )]
+    resume: Option<String>,
 
     /// Send a single message and exit (non-interactive mode).
     #[arg(short = 'p', long)]
@@ -223,13 +237,36 @@ async fn main() -> Result<()> {
         None, // TODO(phase-4): inject project memory
     );
 
-    let state_store = Arc::new(StateStore::new(AppState {
-        current_model: settings.model.clone(),
-        auth_label,
-        ..AppState::default()
-    }));
+    // Resolve `-r/--resume`. With a query, fuzzy-match before boot. Without
+    // one, signal the TUI to open the session picker immediately.
+    let mut open_picker_on_start = false;
+    let resume_id: Option<String> = match cli.resume.as_deref() {
+        Some("") => {
+            open_picker_on_start = true;
+            None
+        }
+        Some(query) => {
+            match resolve_resume_arg(query, "") {
+                ResumeLookup::Found(s) => Some(s.id),
+                ResumeLookup::NotFound => {
+                    eprintln!("Session '{query}' not found.");
+                    std::process::exit(1);
+                }
+                ResumeLookup::Multiple(n) => {
+                    eprintln!(
+                        "Found {n} sessions matching '{query}'. \
+                         Use `oxicode --resume` to pick one interactively."
+                    );
+                    std::process::exit(1);
+                }
+                ResumeLookup::SameAsCurrent => None,
+            }
+        }
+        None => None,
+    };
 
-    let mut session = if let Some(session_id) = &cli.session {
+    let load_id = resume_id.as_deref().or(cli.session.as_deref());
+    let mut session = if let Some(session_id) = load_id {
         match oxicode_session::load_session(session_id, None) {
             Ok(s) => {
                 tracing::info!("Resumed session {}", session_id);
@@ -243,6 +280,17 @@ async fn main() -> Result<()> {
     } else {
         Session::new(&settings.model)
     };
+
+    // Initialize state with the (possibly resumed) session id so session-scoped
+    // resources (image cache dir, cost tracker) stay aligned after resume.
+    let mut initial_state = AppState {
+        current_model: settings.model.clone(),
+        auth_label,
+        ..AppState::default()
+    };
+    initial_state.session_id = session.id.clone();
+    initial_state.cost_tracker = oxicode_state::cost_tracker::CostTracker::new(session.id.clone());
+    let state_store = Arc::new(StateStore::new(initial_state));
 
     let tool_registry = Arc::new(oxicode_tools::default_registry());
     let permission_mode = PermissionMode::parse(&settings.permission_mode);
@@ -262,11 +310,12 @@ async fn main() -> Result<()> {
     }
 
     let mcp_ref = std::sync::Arc::new(mcp_manager);
+    let file_state_ref = std::sync::Arc::new(
+        oxicode_tools::file_state_tracker::FileStateTracker::default(),
+    );
     let tool_context = ToolContext {
         working_dir: cwd.clone(),
-        file_state: std::sync::Arc::new(
-            oxicode_tools::file_state_tracker::FileStateTracker::default(),
-        ),
+        file_state: file_state_ref.clone(),
         task_manager: std::sync::Arc::new(std::sync::Mutex::new(
             oxicode_tasks::TaskManager::default(),
         )),
@@ -408,7 +457,16 @@ async fn main() -> Result<()> {
         eprintln!("Warning: --output json is only supported with --prompt (non-interactive mode).");
     }
 
-    let result = run_tui(engine, state_store, &mut session, &settings).await;
+    let result = run_tui(
+        engine,
+        state_store,
+        &mut session,
+        &settings,
+        hook_manager.clone(),
+        file_state_ref,
+        open_picker_on_start,
+    )
+    .await;
     hook_manager.fire_simple(oxicode_hooks::HookEvent::SessionEnd).await;
     mcp_ref.shutdown_all().await;
 
@@ -521,6 +579,54 @@ async fn run_single_prompt_json(
     Ok(())
 }
 
+/// Outcome of resolving a /resume argument against the saved sessions list.
+enum ResumeLookup {
+    Found(oxicode_session::Session),
+    NotFound,
+    Multiple(usize),
+    SameAsCurrent,
+}
+
+/// Resolve a /resume argument to a concrete session.
+///
+/// Accepts: full UUID, UUID prefix, or substring of the session preview
+/// (case-insensitive). Rejects matches on the current session and
+/// ambiguous prefixes. Mirrors Claude Code's resume.tsx `call()` flow.
+fn resolve_resume_arg(arg: &str, current_id: &str) -> ResumeLookup {
+    // 1. Exact UUID — fastest path, also covers arg == current_id check.
+    if let Ok(loaded) = oxicode_session::load_session(arg, None) {
+        if loaded.id == current_id {
+            return ResumeLookup::SameAsCurrent;
+        }
+        return ResumeLookup::Found(loaded);
+    }
+
+    let Ok(summaries) = oxicode_session::list_sessions(None) else {
+        return ResumeLookup::NotFound;
+    };
+    let arg_lc = arg.to_lowercase();
+    let mut matches: Vec<_> = summaries
+        .into_iter()
+        .filter(|s| s.id != current_id)
+        .filter(|s| {
+            s.id.to_lowercase().starts_with(&arg_lc)
+                || s.preview
+                    .as_deref()
+                    .is_some_and(|p| p.to_lowercase().contains(&arg_lc))
+        })
+        .collect();
+
+    match matches.len() {
+        0 => ResumeLookup::NotFound,
+        1 => {
+            let s = matches.remove(0);
+            oxicode_session::load_session(&s.id, None)
+                .map_or(ResumeLookup::NotFound, ResumeLookup::Found)
+        }
+        n => ResumeLookup::Multiple(n),
+    }
+}
+
 /// Translate a `TurnEvent` from the engine into a `CoreEvent` for the TUI.
 fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
     use oxicode_core::TurnEvent;
@@ -596,6 +702,9 @@ async fn run_tui(
     state_store: Arc<StateStore>,
     session: &mut Session,
     settings: &Settings,
+    hook_manager: Arc<oxicode_hooks::HookManager>,
+    file_state: Arc<oxicode_tools::file_state_tracker::FileStateTracker>,
+    open_picker_on_start: bool,
 ) -> Result<()> {
     let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(32);
     let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(256);
@@ -627,6 +736,14 @@ async fn run_tui(
 
     let mut app = App::new(&state_store, ui_tx, core_rx, slash_command_meta);
 
+    // Rebuild click-to-open map for `[Image #N]` tags from resumed session data.
+    app.hydrate_image_paths_from_session();
+
+    // `oxicode -r` (no query) opens the picker as soon as the TUI is up.
+    if open_picker_on_start {
+        app.open_session_browser_on_startup();
+    }
+
     // Wire editor mode from settings.
     if settings.editor_mode == "vim" || settings.features.vim_mode {
         app.set_vim_mode(true);
@@ -649,6 +766,9 @@ async fn run_tui(
     // immediately, bypassing the channel queue that the engine task cannot
     // drain while blocked inside execute_turn_with_cancel.
     app.set_cancel_flag(cancel_flag.clone());
+
+    let hook_manager_engine = hook_manager.clone();
+    let file_state_engine = file_state.clone();
 
     // Engine task: owns conversation, calls execute_turn(), forwards events to TUI.
     let engine_handle = tokio::spawn(async move {
@@ -730,6 +850,99 @@ async fn run_tui(
                     }
                 }
                 UiEvent::SlashCommand { name, args } => {
+                    // Handle /resume <arg> (or /continue <arg>) asynchronously —
+                    // load the resolved session and hot-swap conversation + state
+                    // so the TUI rerenders the old transcript without restart.
+                    // Matches Claude Code's /resume entrypoint flow.
+                    let is_resume_alias = name == "resume" || name == "continue";
+                    if is_resume_alias && !args.trim().is_empty() {
+                        let arg = args.trim().to_string();
+                        let current_id = state_store_clone.current().session_id;
+                        let resolved = resolve_resume_arg(&arg, &current_id);
+                        match resolved {
+                            ResumeLookup::Found(loaded) => {
+                                let loaded_id = loaded.id.clone();
+
+                                // 1. Persist current session's costs so they're not lost.
+                                let cost_path =
+                                    oxicode_state::cost_tracker::default_cost_path();
+                                let current_tracker =
+                                    state_store_clone.current().cost_tracker;
+                                let _ = oxicode_state::cost_tracker::save_costs(
+                                    &cost_path,
+                                    &current_tracker,
+                                );
+
+                                // 2. SessionEnd hook for the old session before swap.
+                                hook_manager_engine
+                                    .fire_simple(oxicode_hooks::HookEvent::SessionEnd)
+                                    .await;
+
+                                // 3. Drop recorded mtimes — the resumed session's
+                                //    tool history doesn't know about the current
+                                //    session's reads and vice versa.
+                                file_state_engine.clear();
+
+                                // 4. Swap conversation + state in place.
+                                conversation.replace_messages(loaded.messages.clone());
+                                let target_tracker = oxicode_state::cost_tracker::load_costs(
+                                    &cost_path,
+                                    &loaded_id,
+                                )
+                                .unwrap_or_else(|| {
+                                    oxicode_state::cost_tracker::CostTracker::new(
+                                        loaded_id.clone(),
+                                    )
+                                });
+                                state_store_clone.update(|s| {
+                                    s.messages = loaded.messages;
+                                    s.session_id.clone_from(&loaded_id);
+                                    s.cost_tracker = target_tracker;
+                                    s.total_usage = oxicode_common::Usage::default();
+                                });
+
+                                // 5. SessionLoad + SessionStart hooks for the new session.
+                                hook_manager_engine
+                                    .fire_simple(oxicode_hooks::HookEvent::SessionLoad)
+                                    .await;
+                                hook_manager_engine
+                                    .fire_simple(oxicode_hooks::HookEvent::SessionStart)
+                                    .await;
+
+                                // 6. Tell the TUI to rehydrate image paths + redraw.
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::SessionResumed {
+                                        session_id: loaded_id,
+                                    })
+                                    .await;
+                                let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            }
+                            ResumeLookup::NotFound => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!(
+                                        "Session '{arg}' not found."
+                                    )))
+                                    .await;
+                            }
+                            ResumeLookup::Multiple(n) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!(
+                                        "Found {n} sessions matching '{arg}'. \
+                                         Use /resume to pick one."
+                                    )))
+                                    .await;
+                            }
+                            ResumeLookup::SameAsCurrent => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(
+                                        "Already on that session.".into(),
+                                    ))
+                                    .await;
+                            }
+                        }
+                        continue;
+                    }
+
                     // Handle /compact asynchronously (needs LLM provider).
                     if name == "compact" {
                         let msg_count_before = conversation.len();
@@ -869,8 +1082,16 @@ async fn run_tui(
 
     app.run().await?;
 
+    // Persist to whichever session the user ended on. After `/resume <id>` the
+    // TUI hot-swaps `state.session_id` to the resumed id — if we kept writing
+    // to the original `session.id` here, the resumed transcript would clobber
+    // the original session's file and both records would be corrupted.
     let state = state_store.current();
+    if session.id != state.session_id {
+        session.id = state.session_id;
+    }
     session.messages = state.messages;
+    session.updated_at = chrono::Utc::now();
     oxicode_session::save_session(session, None)?;
 
     // Graceful shutdown: wait for engine task to finish (ui_tx dropped → ui_rx returns None).
@@ -1027,4 +1248,89 @@ async fn run_mcp_server_mode() -> Result<()> {
 
     oxicode_mcp::run_mcp_server(server).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod resume_lookup_tests {
+    use super::*;
+
+    fn save(id: &str, preview: &str) {
+        use oxicode_common::{ContentBlock, Message, Role};
+        let mut s = oxicode_session::Session::new("test-model");
+        s.id = id.into();
+        s.messages.push(Message {
+            id: "m".into(),
+            role: Role::User,
+            content: vec![ContentBlock::Text { text: preview.into() }],
+            model: None,
+            stop_reason: None,
+            created_at: chrono::Utc::now(),
+            usage: None,
+        });
+        oxicode_session::save_session(&s, None).unwrap();
+    }
+
+    /// Single test that exercises every resolve_resume_arg outcome.
+    ///
+    /// Combined into one test because resolve_resume_arg reads `$HOME` via
+    /// `dirs::home_dir()`; parallel tests that mutate HOME race with each
+    /// other. Keeping this sequential also keeps the saved-session fixture
+    /// deterministic.
+    #[test]
+    fn test_resolve_resume_arg_all_branches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prev = std::env::var_os("HOME");
+        std::env::set_var("HOME", tmp.path());
+        let result = std::panic::catch_unwind(|| {
+            // Seed four sessions: full-uuid, prefix, preview-match, ambiguous pair.
+            save("aaaaaaaa-1111-2222-3333-444444444444", "hello world");
+            save("bbbbbbbb-aaaa-bbbb-cccc-dddddddddddd", "bug fix");
+            save("cccccccc-1111-2222-3333-444444444444", "migrate db");
+            save("dddddddd-1111-2222-3333-444444444444", "current session");
+            save("eeee1111-1111-2222-3333-444444444444", "debug x");
+            save("eeee2222-1111-2222-3333-444444444444", "debug y");
+
+            // Full UUID — Found.
+            assert!(matches!(
+                resolve_resume_arg(
+                    "aaaaaaaa-1111-2222-3333-444444444444",
+                    "other"
+                ),
+                ResumeLookup::Found(_)
+            ));
+            // UUID prefix — Found.
+            assert!(matches!(
+                resolve_resume_arg("bbbb", "other"),
+                ResumeLookup::Found(_)
+            ));
+            // Preview substring — Found.
+            assert!(matches!(
+                resolve_resume_arg("migrate", "other"),
+                ResumeLookup::Found(_)
+            ));
+            // Requesting the current session — SameAsCurrent.
+            assert!(matches!(
+                resolve_resume_arg(
+                    "dddddddd-1111-2222-3333-444444444444",
+                    "dddddddd-1111-2222-3333-444444444444"
+                ),
+                ResumeLookup::SameAsCurrent
+            ));
+            // Ambiguous prefix — Multiple(2).
+            assert!(matches!(
+                resolve_resume_arg("eeee", "other"),
+                ResumeLookup::Multiple(2)
+            ));
+            // No match — NotFound.
+            assert!(matches!(
+                resolve_resume_arg("no-such-thing", "other"),
+                ResumeLookup::NotFound
+            ));
+        });
+        match prev {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+        result.unwrap();
+    }
 }

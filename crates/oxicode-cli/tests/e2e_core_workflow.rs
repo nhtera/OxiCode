@@ -145,6 +145,22 @@ fn translate_turn_event(te: TurnEvent) -> CoreEvent {
             max_retries,
             retry_in_secs,
         },
+        TurnEvent::HookProgress { event, state } => CoreEvent::HookProgress {
+            event,
+            state: match state {
+                oxicode_core::HookState::Running => "running".into(),
+                oxicode_core::HookState::Completed => "completed".into(),
+            },
+        },
+        TurnEvent::HookMessage {
+            event,
+            kind,
+            content,
+        } => CoreEvent::HookMessage {
+            event,
+            kind: kind.as_str().to_string(),
+            content,
+        },
     }
 }
 
@@ -820,6 +836,9 @@ fn event_name(e: &CoreEvent) -> &'static str {
         CoreEvent::RateLimited { .. } => "RateLimited",
         CoreEvent::ThinkingDelta(_) => "ThinkingDelta",
         CoreEvent::Retrying { .. } => "Retrying",
+        CoreEvent::HookProgress { .. } => "HookProgress",
+        CoreEvent::HookMessage { .. } => "HookMessage",
+        CoreEvent::SessionResumed { .. } => "SessionResumed",
     }
 }
 

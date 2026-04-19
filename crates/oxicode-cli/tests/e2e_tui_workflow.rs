@@ -138,6 +138,22 @@ fn translate(te: TurnEvent) -> CoreEvent {
             max_retries,
             retry_in_secs,
         },
+        TurnEvent::HookProgress { event, state } => CoreEvent::HookProgress {
+            event,
+            state: match state {
+                oxicode_core::HookState::Running => "running".into(),
+                oxicode_core::HookState::Completed => "completed".into(),
+            },
+        },
+        TurnEvent::HookMessage {
+            event,
+            kind,
+            content,
+        } => CoreEvent::HookMessage {
+            event,
+            kind: kind.as_str().to_string(),
+            content,
+        },
     }
 }
 
@@ -191,6 +207,9 @@ enum CoreEventKind {
     RateLimited,
     Retrying,
     ThinkingDelta,
+    HookProgress,
+    HookMessage,
+    SessionResumed,
     Timeout,
 }
 
@@ -209,6 +228,9 @@ fn classify_event(event: &CoreEvent) -> CoreEventKind {
         CoreEvent::RateLimited { .. } => CoreEventKind::RateLimited,
         CoreEvent::ThinkingDelta(_) => CoreEventKind::ThinkingDelta,
         CoreEvent::Retrying { .. } => CoreEventKind::Retrying,
+        CoreEvent::HookProgress { .. } => CoreEventKind::HookProgress,
+        CoreEvent::HookMessage { .. } => CoreEventKind::HookMessage,
+        CoreEvent::SessionResumed { .. } => CoreEventKind::SessionResumed,
     }
 }
 

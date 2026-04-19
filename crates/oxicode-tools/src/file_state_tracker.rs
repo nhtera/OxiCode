@@ -41,6 +41,14 @@ impl FileStateTracker {
         guard.get(&key).copied()
     }
 
+    /// Drop all recorded mtimes (e.g. after `/resume` hot-swaps sessions).
+    pub fn clear(&self) {
+        self.state
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+
     /// Check if a file was modified since the last recorded read.
     /// Returns `Ok(())` if safe to write, `Err(message)` if stale.
     pub fn check_staleness(&self, path: &Path) -> Result<(), String> {

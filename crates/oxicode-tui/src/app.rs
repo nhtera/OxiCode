@@ -306,6 +306,49 @@ impl App {
         self.cancel_flag = Some(flag);
     }
 
+    /// Rebuild `sent_image_paths` from the resumed session's messages.
+    ///
+    /// `[Image #N]` tags in the transcript are clickable only when
+    /// `sent_image_paths[N]` points to an extant PNG. After resume the map is
+    /// empty, so this walks every `ContentBlock::Image` in order, reuses cached
+    /// PNGs under `~/.oxicode/image-cache/{session_id}/` when present, and
+    /// re-materializes missing files from the base64 payload carried in the
+    /// session so clicks still open the viewer.
+    pub fn hydrate_image_paths_from_session(&mut self) {
+        use base64::Engine as _;
+
+        let (session_id, messages) = {
+            let state = self.state_rx.borrow();
+            (state.session_id.clone(), state.messages.clone())
+        };
+        if messages.is_empty() {
+            return;
+        }
+
+        let cache_dir = crate::image_paste::image_cache_dir(&session_id);
+        let mut counter: usize = 0;
+        for msg in &messages {
+            for block in &msg.content {
+                if let oxicode_common::ContentBlock::Image { source } = block {
+                    counter += 1;
+                    let path = cache_dir.join(format!("{counter}.png"));
+                    if !path.exists() {
+                        if let Some(b64) = source.data.as_deref() {
+                            if let Ok(bytes) =
+                                base64::engine::general_purpose::STANDARD.decode(b64)
+                            {
+                                let _ = std::fs::write(&path, bytes);
+                            }
+                        }
+                    }
+                    if path.exists() {
+                        self.sent_image_paths.insert(counter, path);
+                    }
+                }
+            }
+        }
+    }
+
     /// Compose the status-bar label shown to the right.
     /// Priority: rate-limit/retry banner > active hook indicator.
     fn compose_status_label(&self) -> String {
@@ -1820,16 +1863,26 @@ impl App {
         }
     }
 
+    /// Public entry for the CLI `--resume` flag — opens the picker
+    /// immediately on TUI startup (no slash command required).
+    pub fn open_session_browser_on_startup(&mut self) {
+        self.open_session_browser();
+    }
+
     /// Open the session browser with sessions loaded from disk.
     fn open_session_browser(&mut self) {
         // Load sessions from the oxicode-session crate.
         let summaries = oxicode_session::list_sessions(None).unwrap_or_default();
+        // Exclude the session we're currently inside — resuming it would be a
+        // no-op and the picker should default-highlight a meaningful choice.
+        let current_id = self.state_rx.borrow().session_id.clone();
         let entries: Vec<SessionEntry> = summaries
             .into_iter()
+            .filter(|s| s.id != current_id)
             .map(|s| {
-                let title = s
-                    .preview
-                    .unwrap_or_else(|| format!("[{}]", &s.id[..8.min(s.id.len())]));
+                let title = s.title.clone().or_else(|| s.preview.clone()).unwrap_or_else(
+                    || format!("[{}]", &s.id[..8.min(s.id.len())]),
+                );
                 let last_updated = format_relative_time(s.updated_at);
                 SessionEntry {
                     id: s.id,
@@ -2130,7 +2183,11 @@ impl App {
                     return;
                 }
                 // Handle /sessions (and /session) inline — open browser overlay.
-                if trimmed == "sessions" || trimmed == "session" {
+                // `/resume` and `/continue` with no args share the same UX.
+                if matches!(
+                    trimmed,
+                    "sessions" | "session" | "resume" | "continue"
+                ) {
                     self.open_session_browser();
                     return;
                 }
@@ -2782,6 +2839,19 @@ impl App {
                 if self.hook_messages.len() > 500 {
                     self.hook_messages.drain(0..self.hook_messages.len() - 500);
                 }
+            }
+            CoreEvent::SessionResumed { session_id } => {
+                // State messages were replaced by the engine. Drop cached renders,
+                // rebuild click-to-open map from the new transcript, and snap to
+                // bottom so the user sees the newest turn.
+                self.message_cache = MessageRenderCache::new();
+                self.hydrate_image_paths_from_session();
+                self.scroll_offset = u16::MAX;
+                self.auto_scroll = true;
+                self.notifications.push(Notification::new(
+                    format!("Resumed session {}", &session_id[..8.min(session_id.len())]),
+                    crate::widgets::notification::NotificationLevel::Info,
+                ));
             }
         }
     }
@@ -5704,5 +5774,88 @@ mod tests {
         app.submit_input().await;
         // The image counter starts at 0 (from message_cache), so first image is at index 1
         assert!(!app.sent_image_paths.is_empty(), "sent_image_paths should track submitted images");
+    }
+
+    #[tokio::test]
+    async fn test_hydrate_image_paths_from_session_rebuilds_map() {
+        use base64::Engine as _;
+        use oxicode_common::{ContentBlock, ImageSource, Message};
+
+        // Use a throwaway session id under $HOME/.oxicode/image-cache for isolation.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let session_id = format!("test-hydrate-{nanos}");
+        let cache_dir = crate::image_paste::image_cache_dir(&session_id);
+
+        // Minimal 24-byte PNG (signature + IHDR, 1x1).
+        let mut png = Vec::new();
+        png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+        png.extend_from_slice(&13u32.to_be_bytes());
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&1u32.to_be_bytes());
+        png.extend_from_slice(&1u32.to_be_bytes());
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+
+        // Build a state store whose session_id matches the cache dir,
+        // containing a user message with two Image blocks and one text block.
+        let state = oxicode_state::AppState {
+            session_id: session_id.clone(),
+            messages: vec![Message {
+                id: "m1".into(),
+                role: oxicode_common::Role::User,
+                content: vec![
+                    ContentBlock::Image {
+                        source: ImageSource {
+                            source_type: "base64".into(),
+                            media_type: Some("image/png".into()),
+                            data: Some(b64.clone()),
+                        },
+                    },
+                    ContentBlock::Image {
+                        source: ImageSource {
+                            source_type: "base64".into(),
+                            media_type: Some("image/png".into()),
+                            data: Some(b64),
+                        },
+                    },
+                    ContentBlock::Text { text: "look".into() },
+                ],
+                model: None,
+                stop_reason: None,
+                created_at: chrono::Utc::now(),
+                usage: None,
+            }],
+            ..oxicode_state::AppState::default()
+        };
+        let store = Arc::new(StateStore::new(state));
+        let (ui_tx, _ui_rx) = mpsc::channel::<UiEvent>(8);
+        let (_core_tx, core_rx) = mpsc::channel::<CoreEvent>(8);
+        let mut app = App::new(&store, ui_tx, core_rx, Vec::new());
+
+        app.hydrate_image_paths_from_session();
+
+        assert_eq!(app.sent_image_paths.len(), 2, "both images should be mapped");
+        let p1 = app.sent_image_paths.get(&1).unwrap();
+        let p2 = app.sent_image_paths.get(&2).unwrap();
+        assert_eq!(p1, &cache_dir.join("1.png"));
+        assert_eq!(p2, &cache_dir.join("2.png"));
+        assert!(p1.exists(), "1.png should be materialized from base64");
+        assert!(p2.exists(), "2.png should be materialized from base64");
+
+        // Cleanup.
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[tokio::test]
+    async fn test_bare_resume_opens_session_browser() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        app.input_text = "/resume".into();
+        app.input_cursor = app.input_text.chars().count();
+        app.submit_input().await;
+        assert!(
+            app.session_browser.is_visible(),
+            "/resume with no args should open the session browser overlay"
+        );
     }
 }
