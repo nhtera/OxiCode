@@ -27,6 +27,9 @@ pub struct Session {
     pub model: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// User-assigned display name. None → derive from first user message.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl Session {
@@ -38,6 +41,7 @@ impl Session {
             model: model.into(),
             created_at: now,
             updated_at: now,
+            title: None,
         }
     }
 
@@ -57,18 +61,29 @@ pub struct SessionSummary {
     pub updated_at: DateTime<Utc>,
     /// First user message preview.
     pub preview: Option<String>,
+    /// User-assigned display name (takes precedence over preview when present).
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl SessionSummary {
+    /// Best display label: user-assigned title if set, else first user message preview,
+    /// else `(empty)`.
+    pub fn display_label(&self) -> &str {
+        self.title
+            .as_deref()
+            .or(self.preview.as_deref())
+            .unwrap_or("(empty)")
+    }
+
     /// Human-readable one-line display.
     pub fn display(&self) -> String {
-        let preview = self.preview.as_deref().unwrap_or("(empty)");
         format!(
             "{} [{}] ({} msgs) — {}",
             self.id.chars().take(8).collect::<String>(),
             self.model,
             self.message_count,
-            preview,
+            self.display_label(),
         )
     }
 }
@@ -179,6 +194,7 @@ pub fn list_sessions(config_dir_override: Option<&Path>) -> OxiResult<Vec<Sessio
                         created_at: session.created_at,
                         updated_at: session.updated_at,
                         preview,
+                        title: session.title,
                     });
                 }
             }
@@ -187,6 +203,24 @@ pub fn list_sessions(config_dir_override: Option<&Path>) -> OxiResult<Vec<Sessio
 
     summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(summaries)
+}
+
+/// Rename a session by updating its `title` and persisting to disk.
+/// `new_title` is trimmed; empty values are rejected.
+pub fn rename_session(
+    id: &str,
+    new_title: &str,
+    config_dir_override: Option<&Path>,
+) -> OxiResult<()> {
+    let trimmed = new_title.trim();
+    if trimmed.is_empty() {
+        return Err(OxiError::Session("Session title cannot be empty".into()));
+    }
+    let mut session = load_session(id, config_dir_override)?;
+    session.title = Some(trimmed.to_string());
+    session.updated_at = Utc::now();
+    save_session(&session, config_dir_override)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -229,5 +263,47 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let result = load_session("nonexistent", Some(tmp.path()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rename_session_persists_title() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut session = Session::new("model");
+        session.push_message(Message::user("first"));
+        save_session(&session, Some(tmp.path())).unwrap();
+        assert!(session.title.is_none());
+
+        rename_session(&session.id, "  my-custom-title  ", Some(tmp.path())).unwrap();
+
+        let reloaded = load_session(&session.id, Some(tmp.path())).unwrap();
+        assert_eq!(reloaded.title.as_deref(), Some("my-custom-title"));
+
+        // List surfaces the title too.
+        let list = list_sessions(Some(tmp.path())).unwrap();
+        assert_eq!(list[0].title.as_deref(), Some("my-custom-title"));
+        assert_eq!(list[0].display_label(), "my-custom-title");
+    }
+
+    #[test]
+    fn test_rename_session_rejects_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let session = Session::new("model");
+        save_session(&session, Some(tmp.path())).unwrap();
+        assert!(rename_session(&session.id, "   ", Some(tmp.path())).is_err());
+    }
+
+    #[test]
+    fn test_display_label_falls_back_to_preview() {
+        let now = Utc::now();
+        let summary = SessionSummary {
+            id: "abc".into(),
+            model: "m".into(),
+            message_count: 1,
+            created_at: now,
+            updated_at: now,
+            preview: Some("first message".into()),
+            title: None,
+        };
+        assert_eq!(summary.display_label(), "first message");
     }
 }

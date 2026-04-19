@@ -1,48 +1,24 @@
 //! New commands added in Phase 5: /vim, /rename, /usage, /resume, /review,
 //! /stats, /rewind, /thinking, /sandbox-toggle, /output-style.
 
-use std::fmt::Write as _;
-
 use super::git_helpers::{run_command, truncate};
 use super::{CommandContext, CommandOutput, SlashCommand};
 
-/// /resume [id] — list recent sessions or show resume info.
+/// `/resume [query]` — advertised in /help and autocomplete so users can
+/// discover the command. The TUI intercepts the bare form (opens the session
+/// browser overlay) and the engine intercepts `<query>` (fuzzy-matches and
+/// hot-swaps) in main.rs, so this registry entry is only hit as a fallback.
 pub struct ResumeCommand;
 impl SlashCommand for ResumeCommand {
     fn name(&self) -> &str {
         "resume"
     }
     fn description(&self) -> &str {
-        "Resume a previous session"
+        "Resume a previous conversation (interactive picker with no args)"
     }
-    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        if args.trim().is_empty() {
-            match oxicode_session::list_sessions(None) {
-                Ok(sessions) if sessions.is_empty() => {
-                    CommandOutput::Message("No saved sessions.".into())
-                }
-                Ok(sessions) => {
-                    let mut out = String::from("Recent sessions:\n");
-                    for s in sessions.iter().take(10) {
-                        let _ = writeln!(out, "  {}", s.display());
-                    }
-                    out.push_str("\nResume with: oxicode --session <id>");
-                    CommandOutput::Message(out)
-                }
-                Err(e) => CommandOutput::Error(format!("Failed to list sessions: {e}")),
-            }
-        } else {
-            let id = args.trim();
-            match oxicode_session::load_session(id, None) {
-                Ok(s) => CommandOutput::Message(format!(
-                    "Session: {}\nMessages: {}\n\nResume: oxicode --session {}",
-                    s.id,
-                    s.messages.len(),
-                    s.id,
-                )),
-                Err(e) => CommandOutput::Error(format!("Session not found: {e}")),
-            }
-        }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
+        // Unreachable in practice — see doc comment above.
+        CommandOutput::Silent
     }
 }
 
@@ -161,7 +137,7 @@ fn write_editor_mode(path: &std::path::Path, mode: &str) {
     }
 }
 
-/// /rename <name> — rename current session.
+/// /rename <name> — rename current session (persists `title` to session JSON).
 pub struct RenameCommand;
 impl SlashCommand for RenameCommand {
     fn name(&self) -> &str {
@@ -176,17 +152,46 @@ impl SlashCommand for RenameCommand {
             return CommandOutput::Error("Usage: /rename <name>".into());
         }
         let name = truncate(name, 64);
-        // Store the display name in active_skills as a marker.
-        // Full session-level rename requires Session struct changes (future).
-        ctx.state_store.update(|s| {
-            s.active_skills
-                .retain(|sk| !sk.starts_with("session_name:"));
-            s.active_skills.push(format!("session_name:{name}"));
-        });
-        CommandOutput::Message(format!(
-            "Session '{}' display name set to: {name}",
-            ctx.session_id
-        ))
+        let session_id = ctx.state_store.current().session_id;
+        if session_id.is_empty() {
+            return CommandOutput::Error("No active session to rename.".into());
+        }
+        match oxicode_session::rename_session(&session_id, &name, None) {
+            Ok(()) => CommandOutput::Message(format!("Renamed session to \"{name}\"")),
+            Err(e) => CommandOutput::Error(format!("Failed to rename session: {e}")),
+        }
+    }
+}
+
+/// `/rename-session <session_id> <new_name>` — rename any session by id.
+/// Dispatched by the session browser overlay (F3 → 'r' → Enter).
+pub struct RenameSessionCommand;
+impl SlashCommand for RenameSessionCommand {
+    fn name(&self) -> &str {
+        "rename-session"
+    }
+    fn description(&self) -> &str {
+        "Rename a session by id (internal, used by session browser)"
+    }
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+        let args = args.trim();
+        let Some((session_id, new_name)) = args.split_once(char::is_whitespace) else {
+            return CommandOutput::Error(
+                "Usage: /rename-session <session_id> <new_name>".into(),
+            );
+        };
+        let session_id = session_id.trim();
+        let new_name = truncate(new_name.trim(), 64);
+        if session_id.is_empty() || new_name.is_empty() {
+            return CommandOutput::Error(
+                "Usage: /rename-session <session_id> <new_name>".into(),
+            );
+        }
+        match oxicode_session::rename_session(session_id, &new_name, None) {
+            // Silent: the browser already shows its own "Renamed session to ..." toast.
+            Ok(()) => CommandOutput::Silent,
+            Err(e) => CommandOutput::Error(format!("Failed to rename session: {e}")),
+        }
     }
 }
 

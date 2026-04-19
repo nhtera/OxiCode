@@ -302,11 +302,14 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(session_view_commands::FeedbackCommand));
     reg.register(Box::new(session_view_commands::DocsCommand));
 
-    // Phase 5: New commands (enhanced resume/review + vim/rename/usage + stats/rewind/thinking)
+    // Phase 5: New commands (resume/review/vim/rename/usage + stats/rewind/thinking).
+    // /resume's interactive flow is handled inline by the TUI + engine task;
+    // this registry entry surfaces it in /help and autocomplete.
     reg.register(Box::new(new_commands::ResumeCommand));
     reg.register(Box::new(new_commands::ReviewCommand));
     reg.register(Box::new(new_commands::VimCommand));
     reg.register(Box::new(new_commands::RenameCommand));
+    reg.register(Box::new(new_commands::RenameSessionCommand));
     reg.register(Box::new(new_commands::UsageCommand));
     reg.register(Box::new(new_commands::StatsCommand));
     reg.register(Box::new(new_commands::RewindCommand));

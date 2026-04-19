@@ -73,6 +73,7 @@ fn test_session_summary_display() {
         preview: Some("Hello world".to_string()),
         created_at: now,
         updated_at: now,
+        title: None,
     };
 
     let display = summary.display();

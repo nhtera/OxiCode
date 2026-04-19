@@ -791,11 +791,12 @@ async fn run_tui(
                         continue;
                     }
 
+                    let current = state_store_clone.current();
                     let command_ctx = commands::CommandContext {
                         state_store: state_store_clone.clone(),
-                        model: state_store_clone.current().current_model.clone(),
+                        model: current.current_model.clone(),
                         provider_name: "auto".into(),
-                        session_id: String::new(),
+                        session_id: current.session_id.clone(),
                     };
                     let input_str = format!("/{name} {args}");
                     match command_registry.execute(&input_str, &command_ctx) {
