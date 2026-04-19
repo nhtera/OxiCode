@@ -382,16 +382,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_suspicious_command_warns() {
+        // Use a suspicious pattern that exits immediately without prompting.
+        // `sudo echo` would block on a TTY password prompt; `chmod 777` on a
+        // nonexistent path matches the `chmod\s+[0-7]*777` suspicious rule and
+        // fails fast with "No such file or directory".
         let tool = BashTool;
         let ctx = ToolContext::default();
 
         let result = tool
-            .execute(serde_json::json!({"command": "sudo echo hello"}), &ctx)
+            .execute(
+                serde_json::json!({
+                    "command": "chmod 777 oxicode-nonexistent-test-path-xyz"
+                }),
+                &ctx,
+            )
             .await
             .unwrap();
 
-        // sudo echo should run but with a caution prefix
-        assert!(result.content.contains("CAUTION"));
+        // The suspicious pattern should still attach the caution prefix even
+        // when the underlying command fails.
+        assert!(
+            result.content.contains("CAUTION"),
+            "expected CAUTION prefix, got: {}",
+            result.content
+        );
     }
 
     #[tokio::test]

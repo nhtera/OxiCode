@@ -3428,13 +3428,17 @@ mod tests {
             )))
             .await
             .expect("send enter");
-        term_tx
-            .send(Event::Key(KeyEvent::new(
-                KeyCode::Char('c'),
-                KeyModifiers::CONTROL,
-            )))
-            .await
-            .expect("send ctrl+c");
+        // Double Ctrl+C within 2s is required to quit (first press arms the
+        // interrupt hint, second press sets should_quit + emits UiEvent::Quit).
+        for _ in 0..2 {
+            term_tx
+                .send(Event::Key(KeyEvent::new(
+                    KeyCode::Char('c'),
+                    KeyModifiers::CONTROL,
+                )))
+                .await
+                .expect("send ctrl+c");
+        }
         drop(term_tx);
 
         app.event_loop(&mut terminal, &mut term_rx)
@@ -3489,7 +3493,8 @@ mod tests {
             "permission dialog should include command preview"
         );
 
-        // Ctrl+C while the dialog is open should deny the permission and request app quit.
+        // First Ctrl+C while the dialog is open denies the permission and arms
+        // the double-press quit hint; the second Ctrl+C within 2s emits Quit.
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
             .await;
 
@@ -3502,9 +3507,12 @@ mod tests {
             PermissionResponse::Deny,
             "Ctrl+C on permission dialog should deny"
         );
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
         assert!(
             matches!(ui_rx.recv().await, Some(UiEvent::Quit)),
-            "Ctrl+C should also emit quit"
+            "Second Ctrl+C within 2s should emit quit"
         );
     }
 
@@ -4500,16 +4508,29 @@ mod tests {
         let flag = Arc::new(AtomicBool::new(false));
         app.set_cancel_flag(flag.clone());
         app.handle_core_event(CoreEvent::StreamStart);
-        // Note: Ctrl+C is bound to Action::Quit in the keybinding registry.
-        // When is_turn_active=true and no prior interrupt within 1s, the raw match
-        // arm handles it (below the keybinding check) — but only in vim mode or when
-        // keybindings don't intercept it first. In default mode the keybinding fires Quit.
-        // Verify that Ctrl+C during a turn emits a quit event.
+        // Double-Ctrl+C contract: first press during an active turn signals
+        // interrupt (flips cancel_flag) but does NOT quit; second press within
+        // 2s flips should_quit and emits UiEvent::Quit.
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
-        assert!(app.should_quit, "Ctrl+C should trigger quit via keybinding");
+        assert!(
+            flag.load(Ordering::Relaxed),
+            "First Ctrl+C during turn should set cancel_flag"
+        );
+        assert!(
+            !app.should_quit,
+            "First Ctrl+C should not quit — only arms the double-press"
+        );
+
+        // First Ctrl+C during active turn emits InterruptTurn — drain it.
+        assert!(
+            matches!(ui_rx.try_recv(), Ok(UiEvent::InterruptTurn)),
+            "First Ctrl+C during turn should emit InterruptTurn"
+        );
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        assert!(app.should_quit, "Second Ctrl+C within 2s should set should_quit");
         assert!(
             matches!(ui_rx.try_recv(), Ok(UiEvent::Quit)),
-            "Ctrl+C should emit Quit event"
+            "Second Ctrl+C should emit Quit event"
         );
     }
 
@@ -4517,11 +4538,11 @@ mod tests {
     async fn test_double_ctrl_c_force_quits() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.handle_core_event(CoreEvent::StreamStart);
-        // Ctrl+C is bound to Action::Quit via keybinding registry, so even a single
-        // Ctrl+C sets should_quit=true immediately (the keybinding fires before the
-        // raw double-Ctrl+C logic).
+        // First press arms the hint, second press within 2s force-quits.
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
-        assert!(app.should_quit, "Ctrl+C must set should_quit");
+        assert!(!app.should_quit, "First Ctrl+C must not quit");
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        assert!(app.should_quit, "Double Ctrl+C must set should_quit");
     }
 
     #[test]
@@ -5545,9 +5566,12 @@ mod tests {
         app.vim.set_enabled(true);
         app.vim.mode = crate::vim_mode::Mode::Normal;
         app.is_turn_active = false;
-        // Ctrl+C passthrough in vim normal mode → should quit
+        // Vim-mode Ctrl+C passes through to handle_ctrl_c which follows the
+        // double-press contract: first press arms the hint, second quits.
         app.handle_vim_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
-        assert!(app.should_quit, "Ctrl+C in vim normal should quit when no turn active");
+        assert!(!app.should_quit, "First Ctrl+C in vim normal must not quit");
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        assert!(app.should_quit, "Second Ctrl+C in vim normal should quit");
     }
 
     // --- Phase 13: Notification & Edge Cases ---
