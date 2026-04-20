@@ -133,27 +133,6 @@ impl super::App {
                             ));
                         }
                     }
-                    // Stall recovery: if turn active for 120s+ with no data,
-                    // auto-interrupt to prevent permanent hang after API failures.
-                    if self.is_turn_active {
-                        if let Some(stall) = self.stall_start {
-                            if stall.elapsed().as_secs() >= 120 {
-                                self.is_turn_active = false;
-                                self.turn_started_at = None;
-                                self.stall_start = None;
-                                self.streaming_text.clear();
-                                self.streaming_collector.clear();
-                                self.streaming_committed_lines.clear();
-                                self.streaming_thinking.clear();
-                                self.active_tools.clear();
-                                self.signal_interrupt().await;
-                                self.notifications.push(crate::widgets::Notification::new(
-                                    "Stream stalled — auto-interrupted after 2m".to_string(),
-                                    crate::widgets::notification::NotificationLevel::Warning,
-                                ));
-                            }
-                        }
-                    }
                     self.draw(terminal)?;
                 }
             }

@@ -79,10 +79,16 @@ impl super::App {
             CoreEvent::Error(msg) => {
                 // Show error as a toast notification (no tracing::error! to avoid
                 // corrupting the TUI — stderr leaks into the alternate screen).
-                self.notifications.push(Notification::new(
-                    msg,
-                    crate::widgets::notification::NotificationLevel::Error,
-                ));
+                // Deduplicate: abort_streaming emits TurnEvent::Error AND main.rs also
+                // sends CoreEvent::Error on the same Err return — both arrive in the
+                // same event-drain batch. Skip if last notification has the same text.
+                let is_dup = self.notifications.last().map_or(false, |n| n.message == msg);
+                if !is_dup {
+                    self.notifications.push(Notification::new(
+                        msg,
+                        crate::widgets::notification::NotificationLevel::Error,
+                    ));
+                }
                 // Clear streaming state on error (engine may not send StreamEnd).
                 self.streaming_text.clear();
                 self.streaming_collector.clear();

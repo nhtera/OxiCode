@@ -240,6 +240,14 @@ impl QueryEngine {
                 if let Some(flag) = cancel_flag {
                     if flag.load(Ordering::SeqCst) {
                         flag.store(false, Ordering::SeqCst);
+                        // Repair: the assistant message with ToolUse blocks is already in
+                        // conversation; add synthetic results for all pending tools so the
+                        // next API call is not rejected for missing tool_results.
+                        self.commit_interrupt_results(
+                            conversation,
+                            &tool_uses,
+                            std::mem::take(&mut tool_results),
+                        );
                         self.state_store.set_streaming(false);
                         emit(event_tx, TurnEvent::TurnEnd).await;
                         return Err(OxiError::Other("Interrupted by user".into()));
@@ -286,6 +294,13 @@ impl QueryEngine {
                         },
                     )
                     .await;
+                    // Repair: add synthetic results for any remaining tools so the
+                    // conversation invariant (tool_calls → tool_results) is maintained.
+                    self.commit_interrupt_results(
+                        conversation,
+                        &tool_uses,
+                        std::mem::take(&mut tool_results),
+                    );
                     self.state_store.set_streaming(false);
                     emit(event_tx, TurnEvent::TurnEnd).await;
                     return Err(OxiError::Other("Interrupted by user".into()));
@@ -314,6 +329,57 @@ impl QueryEngine {
         Err(OxiError::Other("Max tool turns exceeded".to_string()))
     }
 
+    /// Repair the conversation after an interrupt that stopped tool execution.
+    ///
+    /// The assistant message with ToolUse blocks is already in conversation; without
+    /// corresponding ToolResult blocks the next API call fails with a "tool_calls must
+    /// be followed by tool_results" error. This method adds a user message with
+    /// synthetic error results for any tools that were not yet executed.
+    fn commit_interrupt_results(
+        &self,
+        conversation: &mut Conversation,
+        tool_uses: &[(String, String, serde_json::Value)],
+        partial: Vec<ContentBlock>,
+    ) {
+        let done: std::collections::HashSet<String> = partial
+            .iter()
+            .filter_map(|b| {
+                if let ContentBlock::ToolResult { tool_use_id, .. } = b {
+                    Some(tool_use_id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let mut results = partial;
+        for (id, _, _) in tool_uses {
+            if !done.contains(id) {
+                results.push(ContentBlock::ToolResult {
+                    tool_use_id: id.clone(),
+                    content: "Interrupted by user".to_string(),
+                    is_error: true,
+                });
+            }
+        }
+
+        if results.is_empty() {
+            return;
+        }
+
+        let result_msg = Message {
+            id: uuid::Uuid::new_v4().to_string(),
+            role: Role::User,
+            content: results,
+            model: None,
+            stop_reason: None,
+            created_at: chrono::Utc::now(),
+            usage: None,
+        };
+        self.state_store.push_message(result_msg.clone());
+        conversation.push(result_msg);
+    }
+
     /// Stream a single LLM turn, collecting the full assistant message.
     /// Cleanup helper: reset streaming state and emit error + end events.
     async fn abort_streaming(
@@ -324,6 +390,29 @@ impl QueryEngine {
         self.state_store.set_streaming(false);
         emit(event_tx, TurnEvent::Error(error.to_string())).await;
         emit(event_tx, TurnEvent::TurnEnd).await;
+    }
+
+    /// Merge any consecutive user-role messages into a single message.
+    ///
+    /// The Anthropic API requires strictly alternating user/assistant turns. Consecutive
+    /// user messages can appear after an interrupted tool turn if the user sends a
+    /// follow-up before the engine processes the interrupt (e.g. stall auto-recovery
+    /// sets is_turn_active=false while the engine is still running). Merging here is a
+    /// defensive layer that prevents spurious "roles must alternate" API rejections.
+    fn coalesce_messages(messages: &[Message]) -> Vec<Message> {
+        let mut out: Vec<Message> = Vec::with_capacity(messages.len());
+        for msg in messages {
+            if msg.role == Role::User {
+                if let Some(last) = out.last_mut() {
+                    if last.role == Role::User {
+                        last.content.extend(msg.content.clone());
+                        continue;
+                    }
+                }
+            }
+            out.push(msg.clone());
+        }
+        out
     }
 
     /// Build a MessageRequest with all tool schemas (built-in + MCP).
@@ -354,7 +443,8 @@ impl QueryEngine {
             effective_prompt.push_str(&modes);
         }
 
-        let mut request = MessageRequest::new(&model, conversation.api_messages().to_vec())
+        let messages = Self::coalesce_messages(conversation.api_messages());
+        let mut request = MessageRequest::new(&model, messages)
             .with_system(&effective_prompt)
             .with_max_tokens(self.max_tokens);
         request.tools = tool_schemas;
