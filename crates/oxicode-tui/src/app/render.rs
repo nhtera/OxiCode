@@ -204,13 +204,17 @@ impl super::App {
             } else {
                 None
             };
-            let streaming_tail_owned: Option<String> = if self.is_turn_active {
-                self.streaming_collector
-                    .trailing_fragment()
-                    .map(std::string::ToString::to_string)
-            } else {
-                None
-            };
+            // Also suppress tail when streaming is suppressed — responses without
+            // newlines live entirely in trailing_fragment() and would still
+            // duplicate even when streaming_lines is None.
+            let streaming_tail_owned: Option<String> =
+                if self.is_turn_active && !streaming_suppressed {
+                    self.streaming_collector
+                        .trailing_fragment()
+                        .map(std::string::ToString::to_string)
+                } else {
+                    None
+                };
             let streaming_tail = streaming_tail_owned.as_deref();
             // Build active tools snapshot for streaming display.
             let active_tool_info: Vec<crate::widgets::ActiveToolInfo<'_>> = self
