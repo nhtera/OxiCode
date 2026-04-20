@@ -1,0 +1,24 @@
+---
+source: crates/oxicode-tui/src/app/tests.rs
+expression: rendered.as_str()
+---
+" ○ Ready  anthropic  claude-sonnet-4-202"
+"┌ Conversation ────────────────────────│"
+"│AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA│"
+"│AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA│"
+"│AAAAAAAAAAAA                          │"
+"│                                      █"
+"│──────────────────────────────────────█"
+"│──────────────────────                █"
+"│                                      █"
+"│▏ ❯ You                               █"
+"│▏   Final question                    █"
+"│                                      █"
+"│◆ Assistant                           █"
+"│  Final answer here                   █"
+"│                                      █"
+"│                                      █"
+"└──────────────────────────────────────█"
+"┌ Input (Enter to send, Alt+Enter for n┐"
+"│Type your message...                  │"
+"└──────────────────────────────────────┘"
