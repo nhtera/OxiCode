@@ -187,7 +187,16 @@ impl super::App {
             // Message view (left pane, or full area when right pane is hidden)
             // Show streaming lines when turn is active OR when committed lines
             // exist (between StreamEnd and MessageComplete).
-            let streaming_lines = if !self.streaming_committed_lines.is_empty() {
+            //
+            // Suppress streaming if the engine has already committed the response
+            // to state (message_count > pre_streaming_msg_count). A 50ms tick draw
+            // could otherwise show the same content from both the cache and the
+            // streaming committed-lines buffer before MessageComplete fires.
+            let streaming_suppressed =
+                self.is_turn_active && message_count > self.pre_streaming_msg_count;
+            let streaming_lines = if streaming_suppressed {
+                None
+            } else if !self.streaming_committed_lines.is_empty() {
                 Some(self.streaming_committed_lines.as_slice())
             } else if self.is_turn_active {
                 // Turn active but no lines yet — pass empty slice so thinking indicator shows.

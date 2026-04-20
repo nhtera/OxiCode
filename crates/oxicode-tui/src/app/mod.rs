@@ -226,6 +226,10 @@ pub struct App {
     /// Persistent log of hook messages surfaced this session — used for
     /// diagnostics and future transcript rendering. Capped to avoid growth.
     pub(super) hook_messages: Vec<HookLogEntry>,
+    /// Number of messages in state when the current streaming turn started.
+    /// Used to detect when the engine commits the response to state before
+    /// MessageComplete fires, suppressing duplicate display.
+    pub(super) pre_streaming_msg_count: usize,
 }
 
 impl App {
@@ -300,6 +304,7 @@ impl App {
             retry_status_label: String::new(),
             active_hook: None,
             hook_messages: Vec::new(),
+            pre_streaming_msg_count: 0,
         }
     }
 

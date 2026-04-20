@@ -35,6 +35,9 @@ impl super::App {
                 self.active_tools.clear();
                 // Clear retry label when a new stream starts.
                 self.retry_status_label.clear();
+                // Snapshot message count so draw() can detect when the engine
+                // commits the response to state before MessageComplete fires.
+                self.pre_streaming_msg_count = self.state_rx.borrow().messages.len();
             }
             CoreEvent::StreamEnd => {
                 // Stream finished — finalize remaining buffer but keep committed
