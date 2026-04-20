@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     // Explicit imports required because tests.rs is a submodule of app, not app.rs itself.
     use crate::app::App;
     use crate::app::{MAX_HOOK_LINE_CHARS, PendingPermission};

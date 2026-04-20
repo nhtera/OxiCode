@@ -2,11 +2,14 @@
 /// rewind, stats dashboard, diff viewer, and keybinding action dispatch.
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 
+use crate::agent_editor;
 use crate::keybindings::Action;
 use crate::vim_mode;
-use crate::widgets::{Notification, SessionEntry};
+use crate::widgets::{AgentsMenuAction, CustomAgentEntry, Notification, SessionEntry};
 
 use super::utils::{char_to_byte_index, format_relative_time};
+
+use oxicode_agents::loader as agent_loader;
 
 impl super::App {
     /// Handle mouse events: scroll wheel, scrollbar click/drag, Cmd+click image, hover.
@@ -324,6 +327,93 @@ impl super::App {
             })
             .collect();
         self.session_browser.open(entries);
+    }
+
+    pub(super) fn open_agents_menu(&mut self) {
+        self.agents_menu.open();
+    }
+
+    pub(super) fn open_agents_list(&mut self) {
+        let agents = agent_loader::refresh()
+            .into_iter()
+            .map(|a| CustomAgentEntry {
+                name: a.name,
+                description: a.description,
+                source_path: a.source_path,
+            })
+            .collect();
+        self.agents_list.open(agents);
+    }
+
+    pub(super) async fn handle_agents_menu_key(&mut self, key: KeyEvent) {
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) => self.agents_menu.cancel(),
+            (_, KeyCode::Up) => self.agents_menu.select_prev(),
+            (_, KeyCode::Down) => self.agents_menu.select_next(),
+            (_, KeyCode::Enter) => match self.agents_menu.selected_action() {
+                AgentsMenuAction::List => {
+                    self.agents_menu.cancel();
+                    self.open_agents_list();
+                }
+                AgentsMenuAction::Create => {
+                    if let Some(home) = dirs::home_dir() {
+                        let dir = home.join(".claude").join("agents");
+                        if let Err(e) = std::fs::create_dir_all(&dir) {
+                            self.notifications.push(Notification::new(
+                                format!("Failed to create agents dir: {e}"),
+                                crate::widgets::notification::NotificationLevel::Error,
+                            ));
+                            return;
+                        }
+                        let path = dir.join("new-agent.md");
+                        if !path.exists() {
+                            if let Err(e) = std::fs::write(
+                                &path,
+                                "---\nname: new-agent\ndescription: TODO\n---\n\nYou are a subagent.\n",
+                            ) {
+                                self.notifications.push(Notification::new(
+                                    format!("Failed to write agent file: {e}"),
+                                    crate::widgets::notification::NotificationLevel::Error,
+                                ));
+                                return;
+                            }
+                        }
+                        self.agents_menu.cancel();
+                        if let Err(e) = agent_editor::open_in_editor(&path) {
+                            self.notifications.push(Notification::new(
+                                format!("Failed to open editor: {e}"),
+                                crate::widgets::notification::NotificationLevel::Error,
+                            ));
+                            return;
+                        }
+                        self.open_agents_list();
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+
+    pub(super) fn handle_agents_list_key(&mut self, key: KeyEvent) {
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) => self.agents_list.cancel(),
+            (_, KeyCode::Up) => self.agents_list.select_prev(14),
+            (_, KeyCode::Down) => self.agents_list.select_next(14),
+            (_, KeyCode::Enter) => {
+                if let Some(path) = self.agents_list.open_selected_action() {
+                    self.agents_list.cancel();
+                    if let Err(e) = agent_editor::open_in_editor(&path) {
+                        self.notifications.push(Notification::new(
+                            format!("Failed to open editor: {e}"),
+                            crate::widgets::notification::NotificationLevel::Error,
+                        ));
+                        return;
+                    }
+                    self.open_agents_list();
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Handle key events when the rewind overlay is visible.

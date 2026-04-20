@@ -8,9 +8,9 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Terminal;
 
 use crate::widgets::{
-    AgentPanel, CommandAutocomplete, DiffViewerWidget, HistorySearchWidget,
-    InputBox, MessageView, ModelPicker, NotificationWidget, PastePreview, PermissionDialog,
-    RewindOverlay, SearchBar, SessionBrowser, StatsDashboard, SuggestionChips,
+    AgentPanel, AgentsList, AgentsMenu, CommandAutocomplete, DiffViewerWidget,
+    HistorySearchWidget, InputBox, MessageView, ModelPicker, NotificationWidget, PastePreview,
+    PermissionDialog, RewindOverlay, SearchBar, SessionBrowser, StatsDashboard, SuggestionChips,
     TaskPanel,
 };
 
@@ -341,6 +341,16 @@ impl super::App {
             if self.diff_viewer.is_visible() {
                 let viewer = DiffViewerWidget::new(&self.diff_viewer);
                 frame.render_widget(viewer, content_area);
+            }
+
+            // Agents menu overlay.
+            if self.agents_menu.is_visible() {
+                frame.render_widget(AgentsMenu::new(&self.agents_menu), content_area);
+            }
+
+            // Agents list overlay.
+            if self.agents_list.is_visible() {
+                frame.render_widget(AgentsList::new(&self.agents_list), content_area);
             }
 
             // History search overlay (Ctrl+R reverse search).

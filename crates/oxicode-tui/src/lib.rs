@@ -1,3 +1,4 @@
+pub mod agent_editor;
 pub mod app;
 pub mod events;
 pub mod ghost_completion;

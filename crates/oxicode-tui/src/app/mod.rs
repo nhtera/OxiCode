@@ -14,9 +14,10 @@ use crate::prompt_suggestions::PromptSuggestion;
 use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::VimState;
 use crate::widgets::{
-    permission_dialog::RiskLevel, AutocompleteState, DiffViewerState, HistorySearchState,
-    MessageRenderCache, ModelPickerState, Notification, RewindOverlayState, SearchOverlay,
-    SessionBrowserState, ShortcutsState, SlashCommandMeta, SplitPane, StatsDashboardState,
+    permission_dialog::RiskLevel, AgentsListState, AgentsMenuState, AutocompleteState,
+    DiffViewerState, HistorySearchState, MessageRenderCache, ModelPickerState, Notification,
+    RewindOverlayState, SearchOverlay, SessionBrowserState, ShortcutsState, SlashCommandMeta,
+    SplitPane, StatsDashboardState,
 };
 
 // ── Submodules ────────────────────────────────────────────────────────────────
@@ -200,6 +201,10 @@ pub struct App {
     pub(super) stats_dashboard: StatsDashboardState,
     /// Interactive diff viewer overlay state (two-pane file diff review).
     pub(super) diff_viewer: DiffViewerState,
+    /// Agents menu overlay state (/agents entrypoint).
+    pub(super) agents_menu: AgentsMenuState,
+    /// Agents list overlay state (browse ~/.claude/agents/*.md).
+    pub(super) agents_list: AgentsListState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     pub(super) message_area: Rect,
     /// Frame counter — incremented each draw call, drives spinner animation.
@@ -293,6 +298,8 @@ impl App {
             rewind_overlay: RewindOverlayState::new(),
             stats_dashboard: StatsDashboardState::new(),
             diff_viewer: DiffViewerState::new(),
+            agents_menu: AgentsMenuState::new(),
+            agents_list: AgentsListState::new(),
             message_area: Rect::default(),
             frame_count: 0,
             session_start: Instant::now(),
