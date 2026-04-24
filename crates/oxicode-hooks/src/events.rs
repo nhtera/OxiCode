@@ -69,6 +69,7 @@ impl HookEvent {
     }
 
     /// Parse event name from a string (case-sensitive PascalCase, Claude Code spec).
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         Self::ALL.iter().copied().find(|e| e.as_str() == s)
     }

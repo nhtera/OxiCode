@@ -84,33 +84,51 @@ impl HookManager {
         self.agent_type = Some(agent_type.into());
     }
 
-    /// Check if a hook is registered for the given event.
+    /// Check if any enabled hook is registered for the given event (regardless
+    /// of matcher). Used to fast-path skip payload construction.
     pub fn has_hook(&self, event: HookEvent) -> bool {
-        self.config.get(event).is_some()
+        self.config.has_event(event)
     }
 
     /// Fire a hook event with a fully-built payload (advanced use; most
     /// callers should prefer `fire_with_fields` or one of the typed helpers).
+    ///
+    /// Runs every enabled hook whose matcher group accepts `payload.tool_name`,
+    /// in declaration order. Responses are combined per the precedence rules
+    /// documented on [`combine_responses`].
+    ///
+    /// Short-circuits on the first `HookResponse::Abort`.
     pub async fn fire_payload(&self, event: HookEvent, payload: HookPayload) -> HookResponse {
-        let Some(hook_def) = self.config.get(event) else {
+        let tool_name = payload.tool_name.as_deref();
+        let hooks: Vec<_> = self.config.matching_hooks(event, tool_name).collect();
+        if hooks.is_empty() {
             return HookResponse::Pass;
-        };
+        }
 
-        tracing::debug!(
-            "Firing hook {} (type={:?}): {}",
-            event.as_str(),
-            hook_def.hook_type,
-            hook_def.command
-        );
-
-        execute_hook(hook_def, &payload).await
+        let mut accumulated = HookResponse::Pass;
+        for hook_def in hooks {
+            tracing::debug!(
+                "Firing hook {} (type={:?}, matcher-group-hook): {}",
+                event.as_str(),
+                hook_def.hook_type,
+                hook_def.command
+            );
+            let resp = execute_hook(hook_def, &payload).await;
+            if matches!(resp, HookResponse::Abort { .. }) {
+                // Short-circuit on hard abort.
+                return resp;
+            }
+            accumulated = combine_responses(accumulated, resp);
+        }
+        accumulated
     }
 
     /// Fire an event by overlaying caller-supplied per-event fields onto the
     /// manager's ambient session metadata. Use `HookFields` to set
     /// `tool_name` / `tool_input` / `prompt` / etc. before firing.
     pub async fn fire_with_fields(&self, event: HookEvent, fields: HookFields) -> HookResponse {
-        if self.config.get(event).is_none() {
+        // Fast path: no groups configured at all.
+        if self.config.groups_for(event).is_empty() {
             return HookResponse::Pass;
         }
         let payload = self.build_payload(event, fields);
@@ -118,7 +136,7 @@ impl HookManager {
     }
 
     /// Backward-compatible alias for the most common fire pattern: an event
-    /// + an arbitrary JSON `data` blob. The blob's well-known keys
+    /// plus an arbitrary JSON `data` blob. The blob's well-known keys
     /// (`tool`, `input`, `result`, `prompt`, `trigger`, `source`) are mapped
     /// onto the structured `HookPayload` fields. Unknown keys are dropped.
     pub async fn fire(&self, event: HookEvent, data: serde_json::Value) -> HookResponse {
@@ -142,7 +160,7 @@ impl HookManager {
             if let Some(v) = obj.get("tool_response") {
                 fields.tool_response = Some(v.clone());
             }
-            if let Some(v) = obj.get("is_error").and_then(|v| v.as_bool()) {
+            if let Some(v) = obj.get("is_error").and_then(serde_json::Value::as_bool) {
                 fields.is_error = Some(v);
             }
             if let Some(v) = obj.get("prompt").and_then(|v| v.as_str()) {
@@ -200,6 +218,64 @@ impl HookManager {
             message: fields.message,
             model: self.model.clone(),
         }
+    }
+}
+
+/// Combine two hook responses when multiple hooks fire for the same event.
+///
+/// Precedence (strongest first):
+/// 1. `Abort` — already short-circuited in `fire_payload`, never reaches here.
+/// 2. `OverrideResult` — later hook fully replaces earlier content.
+/// 3. `ModifyPrompt` — concatenate texts with newline (both hooks contribute).
+/// 4. `Message` — merge fields (later systemMessage / block_reason wins, additional_context concatenated).
+/// 5. `Pass` — keep the accumulated side.
+fn combine_responses(acc: HookResponse, incoming: HookResponse) -> HookResponse {
+    match (acc, incoming) {
+        (acc, HookResponse::Pass) => acc,
+        (HookResponse::Pass, incoming) => incoming,
+
+        // Abort short-circuits in fire_payload, but handle defensively.
+        (_, abort @ HookResponse::Abort { .. }) | (abort @ HookResponse::Abort { .. }, _) => abort,
+
+        // OverrideResult beats ModifyPrompt / Message (content-level wins).
+        (_, ov @ HookResponse::OverrideResult { .. })
+        | (ov @ HookResponse::OverrideResult { .. }, _) => ov,
+
+        // Both ModifyPrompt → concat texts.
+        (HookResponse::ModifyPrompt { text: a }, HookResponse::ModifyPrompt { text: b }) => {
+            HookResponse::ModifyPrompt {
+                text: format!("{a}\n{b}"),
+            }
+        }
+
+        // ModifyPrompt + Message: keep ModifyPrompt (it has concrete effect).
+        (mp @ HookResponse::ModifyPrompt { .. }, HookResponse::Message { .. })
+        | (HookResponse::Message { .. }, mp @ HookResponse::ModifyPrompt { .. }) => mp,
+
+        // Both Message → merge.
+        (
+            HookResponse::Message {
+                system_message: a_sm,
+                additional_context: a_ac,
+                block_reason: a_br,
+            },
+            HookResponse::Message {
+                system_message: b_sm,
+                additional_context: b_ac,
+                block_reason: b_br,
+            },
+        ) => HookResponse::Message {
+            system_message: b_sm.or(a_sm),
+            additional_context: merge_opt_strings(a_ac, b_ac),
+            block_reason: b_br.or(a_br),
+        },
+    }
+}
+
+fn merge_opt_strings(a: Option<String>, b: Option<String>) -> Option<String> {
+    match (a, b) {
+        (None, x) | (x, None) => x,
+        (Some(a), Some(b)) => Some(format!("{a}\n{b}")),
     }
 }
 
@@ -278,5 +354,80 @@ mod tests {
         assert!(manager.has_hook(HookEvent::SessionStart));
         let resp = manager.fire_simple(HookEvent::SessionStart).await;
         assert!(matches!(resp, HookResponse::Pass));
+    }
+
+    #[test]
+    fn test_combine_pass_preserves() {
+        assert!(matches!(
+            combine_responses(HookResponse::Pass, HookResponse::Pass),
+            HookResponse::Pass
+        ));
+        assert!(matches!(
+            combine_responses(
+                HookResponse::ModifyPrompt { text: "a".into() },
+                HookResponse::Pass
+            ),
+            HookResponse::ModifyPrompt { text } if text == "a"
+        ));
+    }
+
+    #[test]
+    fn test_combine_modify_prompt_concats() {
+        let out = combine_responses(
+            HookResponse::ModifyPrompt { text: "a".into() },
+            HookResponse::ModifyPrompt { text: "b".into() },
+        );
+        match out {
+            HookResponse::ModifyPrompt { text } => assert_eq!(text, "a\nb"),
+            other => panic!("expected ModifyPrompt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_combine_override_wins_over_modify() {
+        let out = combine_responses(
+            HookResponse::ModifyPrompt { text: "a".into() },
+            HookResponse::OverrideResult {
+                text: "replace".into(),
+            },
+        );
+        assert!(matches!(out, HookResponse::OverrideResult { text } if text == "replace"));
+    }
+
+    #[test]
+    fn test_combine_abort_wins() {
+        let out = combine_responses(
+            HookResponse::OverrideResult { text: "x".into() },
+            HookResponse::Abort {
+                reason: "nope".into(),
+            },
+        );
+        assert!(matches!(out, HookResponse::Abort { reason } if reason == "nope"));
+    }
+
+    #[test]
+    fn test_combine_messages_merge() {
+        let a = HookResponse::Message {
+            system_message: Some("sm-a".into()),
+            additional_context: Some("ctx-a".into()),
+            block_reason: None,
+        };
+        let b = HookResponse::Message {
+            system_message: Some("sm-b".into()),
+            additional_context: Some("ctx-b".into()),
+            block_reason: Some("why".into()),
+        };
+        match combine_responses(a, b) {
+            HookResponse::Message {
+                system_message,
+                additional_context,
+                block_reason,
+            } => {
+                assert_eq!(system_message.as_deref(), Some("sm-b"));
+                assert_eq!(additional_context.as_deref(), Some("ctx-a\nctx-b"));
+                assert_eq!(block_reason.as_deref(), Some("why"));
+            }
+            other => panic!("expected Message, got {other:?}"),
+        }
     }
 }

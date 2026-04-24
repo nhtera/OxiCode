@@ -137,15 +137,31 @@ impl SlashCommand for HooksCommand {
     }
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        let config = oxicode_hooks::HooksConfig::load_from_settings_dir();
+        // Layered load so Claude JSON + project + user-overlay all show up
+        // (was previously TOML-only → Claude Code hooks were invisible here).
+        let config = oxicode_hooks::HooksConfig::load_layered();
         if config.hooks.is_empty() {
             return CommandOutput::Message("No hooks configured.".to_string());
         }
 
         let mut output = String::from("Configured hooks:\n");
-        for (event, def) in &config.hooks {
-            let status = if def.enabled { "enabled" } else { "disabled" };
-            let _ = writeln!(output, "  {event:<20} {status:<10} {}", def.command);
+        for (event, groups) in &config.hooks {
+            for group in groups {
+                let matcher = group.matcher.as_deref().unwrap_or("*");
+                for def in &group.hooks {
+                    let status = if def.enabled { "enabled" } else { "disabled" };
+                    let label = match def.hook_type {
+                        oxicode_hooks::config::HookType::Command => def.command.as_str(),
+                        oxicode_hooks::config::HookType::Agent => {
+                            def.instructions.as_deref().unwrap_or("<agent>")
+                        }
+                        oxicode_hooks::config::HookType::Http => {
+                            def.url.as_deref().unwrap_or("<http>")
+                        }
+                    };
+                    let _ = writeln!(output, "  {event:<20} [{matcher:<12}] {status:<10} {label}");
+                }
+            }
         }
         CommandOutput::Message(output)
     }

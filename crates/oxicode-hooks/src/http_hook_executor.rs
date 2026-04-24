@@ -154,7 +154,7 @@ async fn post_hook(
 /// `HookPayload`) plus a server-side `timestamp`.
 fn build_request_body(payload: &HookPayload) -> serde_json::Value {
     let mut value = serde_json::to_value(payload)
-        .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::default()));
     if let Some(obj) = value.as_object_mut() {
         obj.insert(
             "timestamp".to_string(),
