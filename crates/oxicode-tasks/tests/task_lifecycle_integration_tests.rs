@@ -32,15 +32,24 @@ fn test_full_lifecycle_pending_to_completed() {
     let id = bash_task(&mut mgr, "echo hi");
 
     // Pending → Running → Completed.
-    assert!(matches!(mgr.get_task(&id).unwrap().status, TaskStatus::Pending));
+    assert!(matches!(
+        mgr.get_task(&id).unwrap().status,
+        TaskStatus::Pending
+    ));
     assert!(mgr.get_task(&id).unwrap().completed_at.is_none());
 
     mgr.update_status(&id, TaskStatus::Running);
-    assert!(matches!(mgr.get_task(&id).unwrap().status, TaskStatus::Running));
+    assert!(matches!(
+        mgr.get_task(&id).unwrap().status,
+        TaskStatus::Running
+    ));
     assert!(mgr.get_task(&id).unwrap().completed_at.is_none());
 
     mgr.update_status(&id, TaskStatus::Completed { exit_code: 0 });
-    assert!(matches!(mgr.get_task(&id).unwrap().status, TaskStatus::Completed { exit_code: 0 }));
+    assert!(matches!(
+        mgr.get_task(&id).unwrap().status,
+        TaskStatus::Completed { exit_code: 0 }
+    ));
     assert!(mgr.get_task(&id).unwrap().completed_at.is_some());
 }
 
@@ -96,9 +105,18 @@ fn test_multiple_tasks_independent_status() {
         },
     );
 
-    assert!(matches!(mgr.get_task(&id1).unwrap().status, TaskStatus::Running));
-    assert!(matches!(mgr.get_task(&id2).unwrap().status, TaskStatus::Completed { .. }));
-    assert!(matches!(mgr.get_task(&id3).unwrap().status, TaskStatus::Failed { .. }));
+    assert!(matches!(
+        mgr.get_task(&id1).unwrap().status,
+        TaskStatus::Running
+    ));
+    assert!(matches!(
+        mgr.get_task(&id2).unwrap().status,
+        TaskStatus::Completed { .. }
+    ));
+    assert!(matches!(
+        mgr.get_task(&id3).unwrap().status,
+        TaskStatus::Failed { .. }
+    ));
 }
 
 #[test]

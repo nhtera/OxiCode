@@ -128,7 +128,10 @@ async fn test_cancel_emits_turn_end_without_error_event() {
     // produced by the caller (main.rs) from the Err return value.
     let has_error = events.iter().any(|e| matches!(e, TurnEvent::Error(_)));
     let has_turn_end = events.iter().any(|e| matches!(e, TurnEvent::TurnEnd));
-    assert!(!has_error, "cancel should NOT emit Error via TurnEvent (caller handles it)");
+    assert!(
+        !has_error,
+        "cancel should NOT emit Error via TurnEvent (caller handles it)"
+    );
     assert!(has_turn_end, "should emit TurnEnd event on cancel");
 }
 
@@ -139,9 +142,7 @@ async fn test_no_cancel_flag_completes_normally() {
 
     let mut conv = Conversation::new();
     // Pass None for cancel flag — should complete normally.
-    let result = engine
-        .execute_turn_with_cancel(&mut conv, None, None)
-        .await;
+    let result = engine.execute_turn_with_cancel(&mut conv, None, None).await;
 
     assert!(result.is_ok());
     let msg = result.unwrap();
@@ -239,10 +240,7 @@ async fn test_always_allow_caches_permission() {
     let ask_count = collector.await.unwrap();
     assert!(result.is_ok());
     // Should have asked exactly once (bash is non-read tool in ApprovalOnly).
-    assert!(
-        ask_count >= 1,
-        "should ask at least once, got: {ask_count}"
-    );
+    assert!(ask_count >= 1, "should ask at least once, got: {ask_count}");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -368,7 +366,10 @@ async fn test_state_store_streaming_flag_lifecycle() {
     );
 
     // Before execute: not streaming.
-    assert!(!state_store.current().is_streaming, "should not be streaming initially");
+    assert!(
+        !state_store.current().is_streaming,
+        "should not be streaming initially"
+    );
 
     let mut conv = Conversation::new();
     let _ = engine.execute_turn(&mut conv, None).await;

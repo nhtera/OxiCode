@@ -337,7 +337,8 @@ async fn test_tool_use_start_contains_correct_name() {
 
 #[tokio::test]
 async fn test_streaming_collector_with_engine_deltas() {
-    let long_text = "# Heading\n\nSome paragraph with **bold** text.\n\n```rust\nfn main() {}\n```\n\nDone.\n";
+    let long_text =
+        "# Heading\n\nSome paragraph with **bold** text.\n\n```rust\nfn main() {}\n```\n\nDone.\n";
     let provider = MockLlmProvider::with_text(long_text);
     let (engine, state_store) = make_engine(provider);
 
@@ -366,7 +367,10 @@ async fn test_streaming_collector_with_engine_deltas() {
             raw.push_str(t);
         }
     }
-    assert_eq!(raw, long_text, "all deltas should reconstruct original text");
+    assert_eq!(
+        raw, long_text,
+        "all deltas should reconstruct original text"
+    );
 }
 
 #[tokio::test]
@@ -517,7 +521,10 @@ async fn test_permission_ask_forwarded_through_bridge() {
         }
     }
 
-    assert!(saw_permission, "should forward PermissionAsk through bridge");
+    assert!(
+        saw_permission,
+        "should forward PermissionAsk through bridge"
+    );
     assert_eq!(
         permission_tool_name, "bash",
         "permission should be for 'bash' tool"
@@ -606,7 +613,9 @@ async fn test_permission_deny_produces_error_result() {
             Ok(Some(CoreEvent::PermissionAsk { reply_tx, .. })) => {
                 let _ = reply_tx.send(PermissionResponse::Deny);
             }
-            Ok(Some(CoreEvent::ToolResult { is_error, content, .. })) => {
+            Ok(Some(CoreEvent::ToolResult {
+                is_error, content, ..
+            })) => {
                 if is_error && content.contains("denied") {
                     saw_denied_result = true;
                 }
@@ -817,8 +826,7 @@ async fn test_cancel_during_streaming_no_hang() {
     loop {
         match tokio::time::timeout(std::time::Duration::from_secs(5), core_rx.recv()).await {
             Ok(Some(event)) => {
-                let is_terminal =
-                    matches!(event, CoreEvent::MessageComplete | CoreEvent::Error(_));
+                let is_terminal = matches!(event, CoreEvent::MessageComplete | CoreEvent::Error(_));
                 events.push(event);
                 if is_terminal {
                     break;
@@ -911,7 +919,10 @@ async fn test_collector_lifecycle_new_clear_reuse() {
     // Simulate second turn.
     collector.push_delta("Second response\n");
     collector.commit_complete_lines();
-    assert!(!collector.lines().is_empty(), "second turn should produce lines");
+    assert!(
+        !collector.lines().is_empty(),
+        "second turn should produce lines"
+    );
 }
 
 #[tokio::test]

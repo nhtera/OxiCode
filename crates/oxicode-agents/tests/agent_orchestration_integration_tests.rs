@@ -437,8 +437,14 @@ fn test_statusline_agent_minimal_tools() {
 #[test]
 fn test_verify_agent_has_bash_and_write() {
     let tools = AgentType::Verify.allowed_tools().unwrap();
-    assert!(tools.contains(&"bash"), "Verify: should have bash for tests");
-    assert!(tools.contains(&"file_write"), "Verify: should write results");
+    assert!(
+        tools.contains(&"bash"),
+        "Verify: should have bash for tests"
+    );
+    assert!(
+        tools.contains(&"file_write"),
+        "Verify: should write results"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -507,7 +513,10 @@ async fn test_message_metadata() {
     bus.send(msg).await;
     let received = bus.receive("receiver").await;
 
-    assert_eq!(received[0].id, original_id, "message ID should be preserved");
+    assert_eq!(
+        received[0].id, original_id,
+        "message ID should be preserved"
+    );
     assert_eq!(received[0].from, "sender");
     assert_eq!(received[0].to, "receiver");
     assert_eq!(received[0].timestamp, original_ts);

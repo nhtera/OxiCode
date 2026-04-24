@@ -96,7 +96,10 @@ fn test_code_fence_split_across_three_deltas() {
     let l3 = c.commit_complete_lines();
 
     let total = l1.len() + l2.len() + l3.len();
-    assert!(total >= 3, "code block should produce ≥3 lines, got: {total}");
+    assert!(
+        total >= 3,
+        "code block should produce ≥3 lines, got: {total}"
+    );
 }
 
 #[test]
@@ -111,7 +114,10 @@ fn test_nested_code_fence_with_triple_backticks_in_content() {
     c.push_delta("````\n");
 
     let lines = c.commit_complete_lines();
-    assert!(!lines.is_empty(), "nested code fences should produce output");
+    assert!(
+        !lines.is_empty(),
+        "nested code fences should produce output"
+    );
 }
 
 #[test]
@@ -134,7 +140,11 @@ fn test_inline_code_not_confused_with_fence() {
     let lines = c.commit_complete_lines();
     assert!(!lines.is_empty());
 
-    let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+    let raw: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.content.as_ref())
+        .collect();
     assert!(raw.contains("cargo test"), "inline code content preserved");
 }
 
@@ -148,7 +158,11 @@ fn test_unicode_emoji_in_stream() {
     c.push_delta("Hello 🎉🚀 World!\n");
     let lines = c.commit_complete_lines();
     assert!(!lines.is_empty());
-    let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+    let raw: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.content.as_ref())
+        .collect();
     assert!(raw.contains("🎉"), "emoji should be preserved");
     assert!(raw.contains("🚀"), "emoji should be preserved");
 }
@@ -158,7 +172,11 @@ fn test_cjk_characters_in_stream() {
     let mut c = MarkdownStreamCollector::new();
     c.push_delta("日本語テスト\n中文测试\n한국어 테스트\n");
     let lines = c.commit_complete_lines();
-    assert!(lines.len() >= 3, "CJK lines should produce ≥3 lines, got: {}", lines.len());
+    assert!(
+        lines.len() >= 3,
+        "CJK lines should produce ≥3 lines, got: {}",
+        lines.len()
+    );
 }
 
 #[test]
@@ -167,7 +185,11 @@ fn test_mixed_unicode_and_markdown() {
     c.push_delta("**太字** と *斜体* テスト\n");
     let lines = c.commit_complete_lines();
     assert!(!lines.is_empty());
-    let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+    let raw: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.content.as_ref())
+        .collect();
     assert!(!raw.contains("**"), "bold markers should be parsed away");
     assert!(raw.contains("太字"), "CJK content preserved");
 }
@@ -191,7 +213,11 @@ fn test_large_streaming_payload_1000_lines() {
         assert!(!new_lines.is_empty(), "batch {batch} should produce lines");
     }
 
-    assert_eq!(c.lines().len(), 1000, "should have exactly 1000 committed lines");
+    assert_eq!(
+        c.lines().len(),
+        1000,
+        "should have exactly 1000 committed lines"
+    );
 }
 
 #[test]
@@ -225,7 +251,10 @@ fn test_many_small_deltas_character_by_character() {
     }
 
     let lines = c.commit_complete_lines();
-    assert!(!lines.is_empty(), "char-by-char should commit after newline");
+    assert!(
+        !lines.is_empty(),
+        "char-by-char should commit after newline"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -247,7 +276,10 @@ fn test_finalize_after_full_commit() {
 
     // Nothing remaining.
     let final_lines = c.finalize();
-    assert!(final_lines.is_empty(), "finalize after full commit = no lines");
+    assert!(
+        final_lines.is_empty(),
+        "finalize after full commit = no lines"
+    );
 }
 
 #[test]
@@ -297,7 +329,11 @@ fn test_clear_and_reuse() {
     c.push_delta("Session 2\n");
     let lines = c.commit_complete_lines();
     assert!(!lines.is_empty());
-    assert_eq!(c.lines().len(), lines.len(), "should only have session 2 lines");
+    assert_eq!(
+        c.lines().len(),
+        lines.len(),
+        "should only have session 2 lines"
+    );
 }
 
 #[test]
@@ -338,7 +374,11 @@ fn test_bold_italic_combined() {
     let mut c = MarkdownStreamCollector::new();
     c.push_delta("***bold italic*** and **bold** and *italic*\n");
     let lines = c.commit_complete_lines();
-    let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+    let raw: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.content.as_ref())
+        .collect();
     assert!(!raw.contains("***"), "bold italic markers should be parsed");
     assert!(raw.contains("bold italic"));
 }
@@ -349,7 +389,11 @@ fn test_link_rendering() {
     c.push_delta("[Click here](https://example.com)\n");
     let lines = c.commit_complete_lines();
     assert!(!lines.is_empty());
-    let raw: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+    let raw: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.content.as_ref())
+        .collect();
     assert!(raw.contains("Click here"), "link text should be rendered");
 }
 
@@ -385,23 +429,43 @@ fn test_bash_error_suggests_fix() {
     let mut msgs = vec![make_user("build it")];
     msgs.extend(make_tool_result("bash", "error: compilation failed", true));
     let suggestions = suggest_prompts(&msgs);
-    assert!(has_label(&suggestions, "Fix this error"), "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>());
+    assert!(
+        has_label(&suggestions, "Fix this error"),
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+    );
 }
 
 #[test]
 fn test_test_failure_suggests_fix_tests() {
     let mut msgs = vec![make_user("test it")];
-    msgs.extend(make_tool_result("bash", "test result: FAILED. 5 passed; 2 failed", true));
+    msgs.extend(make_tool_result(
+        "bash",
+        "test result: FAILED. 5 passed; 2 failed",
+        true,
+    ));
     let suggestions = suggest_prompts(&msgs);
-    assert!(has_label(&suggestions, "Fix failing tests"), "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>());
+    assert!(
+        has_label(&suggestions, "Fix failing tests"),
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+    );
 }
 
 #[test]
 fn test_all_tests_pass_suggests_commit() {
     let mut msgs = vec![make_user("run tests")];
-    msgs.extend(make_tool_result("bash", "test result: ok. 20 passed; 0 failed", false));
+    msgs.extend(make_tool_result(
+        "bash",
+        "test result: ok. 20 passed; 0 failed",
+        false,
+    ));
     let suggestions = suggest_prompts(&msgs);
-    assert!(has_label(&suggestions, "Commit changes"), "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>());
+    assert!(
+        has_label(&suggestions, "Commit changes"),
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -409,7 +473,11 @@ fn test_file_edit_suggests_run_tests() {
     let mut msgs = vec![make_user("fix the bug")];
     msgs.extend(make_tool_result("file_edit", "ok", false));
     let suggestions = suggest_prompts(&msgs);
-    assert!(has_label(&suggestions, "Run tests"), "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>());
+    assert!(
+        has_label(&suggestions, "Run tests"),
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -417,15 +485,27 @@ fn test_grep_suggests_explain_results() {
     let mut msgs = vec![make_user("find it")];
     msgs.extend(make_tool_result("grep", "found 5 matches", false));
     let suggestions = suggest_prompts(&msgs);
-    assert!(has_label(&suggestions, "Explain results"), "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>());
+    assert!(
+        has_label(&suggestions, "Explain results"),
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+    );
 }
 
 #[test]
 fn test_file_read_only_suggests_explain_code() {
     let mut msgs = vec![make_user("show me the code")];
-    msgs.extend(make_tool_result("file_read", "fn main() { println!(\"hello\"); }", false));
+    msgs.extend(make_tool_result(
+        "file_read",
+        "fn main() { println!(\"hello\"); }",
+        false,
+    ));
     let suggestions = suggest_prompts(&msgs);
-    assert!(has_label(&suggestions, "Explain this code"), "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>());
+    assert!(
+        has_label(&suggestions, "Explain this code"),
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -450,7 +530,11 @@ fn test_assistant_shall_i_proceed() {
         make_assistant("I've planned the changes. Shall I proceed?"),
     ];
     let suggestions = suggest_prompts(&msgs);
-    assert!(has_label(&suggestions, "Yes, go ahead"), "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>());
+    assert!(
+        has_label(&suggestions, "Yes, go ahead"),
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -462,7 +546,8 @@ fn test_assistant_offers_choices() {
     let suggestions = suggest_prompts(&msgs);
     assert!(
         has_label(&suggestions, "Go with first") || has_label(&suggestions, "Compare options"),
-        "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
     );
 }
 
@@ -475,7 +560,8 @@ fn test_assistant_task_done_code() {
     let suggestions = suggest_prompts(&msgs);
     assert!(
         has_label(&suggestions, "Run tests") || has_label(&suggestions, "Commit changes"),
-        "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
     );
 }
 
@@ -488,7 +574,8 @@ fn test_assistant_task_done_generic() {
     let suggestions = suggest_prompts(&msgs);
     assert!(
         has_label(&suggestions, "What's next?") || has_label(&suggestions, "Review changes"),
-        "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
     );
 }
 
@@ -506,7 +593,8 @@ fn test_user_intent_build() {
     let suggestions = suggest_prompts(&msgs);
     assert!(
         has_label(&suggestions, "Start implementing") || has_label(&suggestions, "Explore first"),
-        "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
     );
 }
 
@@ -519,7 +607,8 @@ fn test_user_intent_debug() {
     let suggestions = suggest_prompts(&msgs);
     assert!(
         has_label(&suggestions, "Show the error") || has_label(&suggestions, "Find root cause"),
-        "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
     );
 }
 
@@ -532,7 +621,8 @@ fn test_user_intent_test() {
     let suggestions = suggest_prompts(&msgs);
     assert!(
         has_label(&suggestions, "Run all tests") || has_label(&suggestions, "Fix failures"),
-        "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
     );
 }
 
@@ -545,7 +635,8 @@ fn test_user_intent_review() {
     let suggestions = suggest_prompts(&msgs);
     assert!(
         has_label(&suggestions, "Show suggestions") || has_label(&suggestions, "Apply changes"),
-        "got: {:?}", suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
+        "got: {:?}",
+        suggestions.iter().map(|s| &s.label).collect::<Vec<_>>()
     );
 }
 
@@ -555,9 +646,14 @@ fn test_user_intent_review() {
 
 #[test]
 fn test_multi_turn_suggests_summary() {
-    let mut msgs: Vec<Message> = (0..6).flat_map(|i| {
-        vec![make_user(&format!("q{i}")), make_assistant(&format!("a{i}"))]
-    }).collect();
+    let mut msgs: Vec<Message> = (0..6)
+        .flat_map(|i| {
+            vec![
+                make_user(&format!("q{i}")),
+                make_assistant(&format!("a{i}")),
+            ]
+        })
+        .collect();
     msgs.push(make_user("more"));
     msgs.push(make_assistant("more answer"));
 
@@ -577,9 +673,21 @@ fn test_max_suggestions_never_exceeds_three() {
         id: "a".into(),
         role: Role::Assistant,
         content: vec![
-            ContentBlock::ToolUse { id: "t1".into(), name: "bash".into(), input: serde_json::json!({}) },
-            ContentBlock::ToolUse { id: "t2".into(), name: "file_edit".into(), input: serde_json::json!({}) },
-            ContentBlock::ToolUse { id: "t3".into(), name: "grep".into(), input: serde_json::json!({}) },
+            ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "bash".into(),
+                input: serde_json::json!({}),
+            },
+            ContentBlock::ToolUse {
+                id: "t2".into(),
+                name: "file_edit".into(),
+                input: serde_json::json!({}),
+            },
+            ContentBlock::ToolUse {
+                id: "t3".into(),
+                name: "grep".into(),
+                input: serde_json::json!({}),
+            },
         ],
         model: None,
         stop_reason: None,
@@ -590,9 +698,21 @@ fn test_max_suggestions_never_exceeds_three() {
         id: "r".into(),
         role: Role::User,
         content: vec![
-            ContentBlock::ToolResult { tool_use_id: "t1".into(), content: "error: failed".into(), is_error: true },
-            ContentBlock::ToolResult { tool_use_id: "t2".into(), content: "ok".into(), is_error: false },
-            ContentBlock::ToolResult { tool_use_id: "t3".into(), content: "3 matches".into(), is_error: false },
+            ContentBlock::ToolResult {
+                tool_use_id: "t1".into(),
+                content: "error: failed".into(),
+                is_error: true,
+            },
+            ContentBlock::ToolResult {
+                tool_use_id: "t2".into(),
+                content: "ok".into(),
+                is_error: false,
+            },
+            ContentBlock::ToolResult {
+                tool_use_id: "t3".into(),
+                content: "3 matches".into(),
+                is_error: false,
+            },
         ],
         model: None,
         stop_reason: None,
@@ -601,7 +721,11 @@ fn test_max_suggestions_never_exceeds_three() {
     });
 
     let suggestions = suggest_prompts(&msgs);
-    assert!(suggestions.len() <= 3, "should never exceed 3, got: {}", suggestions.len());
+    assert!(
+        suggestions.len() <= 3,
+        "should never exceed 3, got: {}",
+        suggestions.len()
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════

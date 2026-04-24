@@ -11,7 +11,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::Write;
 
 use oxicode_tui::keybindings::{Action, KeyCombo, KeybindingRegistry};
-use oxicode_tui::vim_mode::{next_word_pos, prev_word_pos, word_end_pos, Mode, VimAction, VimState};
+use oxicode_tui::vim_mode::{
+    next_word_pos, prev_word_pos, word_end_pos, Mode, VimAction, VimState,
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
@@ -35,11 +37,17 @@ fn test_dd_yy_cc_operator_doubled() {
 
     // dd → DeleteLine
     vim.handle_key(key(KeyCode::Char('d')), 10);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('d')), 10), VimAction::DeleteLine);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('d')), 10),
+        VimAction::DeleteLine
+    );
 
     // yy → YankLine
     vim.handle_key(key(KeyCode::Char('y')), 10);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('y')), 10), VimAction::YankLine);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('y')), 10),
+        VimAction::YankLine
+    );
 
     // cc → DeleteLine + switch to Insert
     vim.handle_key(key(KeyCode::Char('c')), 10);
@@ -54,15 +62,24 @@ fn test_dw_db_d_dollar_motions() {
 
     // dw → DeleteWordForward
     vim.handle_key(key(KeyCode::Char('d')), 20);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('w')), 20), VimAction::DeleteWordForward);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('w')), 20),
+        VimAction::DeleteWordForward
+    );
 
     // db → DeleteWordBackward
     vim.handle_key(key(KeyCode::Char('d')), 20);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('b')), 20), VimAction::DeleteWordBackward);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('b')), 20),
+        VimAction::DeleteWordBackward
+    );
 
     // d$ → DeleteToEnd
     vim.handle_key(key(KeyCode::Char('d')), 20);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('$')), 20), VimAction::DeleteToEnd);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('$')), 20),
+        VimAction::DeleteToEnd
+    );
 }
 
 #[test]
@@ -71,7 +88,10 @@ fn test_cw_c_dollar_change_motions() {
 
     // cw → DeleteWordForward + Insert
     vim.handle_key(key(KeyCode::Char('c')), 20);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('w')), 20), VimAction::DeleteWordForward);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('w')), 20),
+        VimAction::DeleteWordForward
+    );
     assert_eq!(vim.mode, Mode::Insert);
 
     // Reset to normal.
@@ -79,7 +99,10 @@ fn test_cw_c_dollar_change_motions() {
 
     // c$ → ChangeToEnd + Insert
     vim.handle_key(key(KeyCode::Char('c')), 20);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('$')), 20), VimAction::ChangeToEnd);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('$')), 20),
+        VimAction::ChangeToEnd
+    );
     assert_eq!(vim.mode, Mode::Insert);
 }
 
@@ -154,11 +177,17 @@ fn test_count_prefix_with_motion() {
 
     // 5l → MoveCursorBy(5)
     vim.handle_key(key(KeyCode::Char('5')), 20);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('l')), 20), VimAction::MoveCursorBy(5));
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('l')), 20),
+        VimAction::MoveCursorBy(5)
+    );
 
     // 3h → MoveCursorBy(-3)
     vim.handle_key(key(KeyCode::Char('3')), 20);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('h')), 20), VimAction::MoveCursorBy(-3));
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('h')), 20),
+        VimAction::MoveCursorBy(-3)
+    );
 }
 
 #[test]
@@ -167,7 +196,10 @@ fn test_count_prefix_multi_digit() {
     // 12l → MoveCursorBy(12)
     vim.handle_key(key(KeyCode::Char('1')), 50);
     vim.handle_key(key(KeyCode::Char('2')), 50);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('l')), 50), VimAction::MoveCursorBy(12));
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('l')), 50),
+        VimAction::MoveCursorBy(12)
+    );
 }
 
 #[test]
@@ -175,18 +207,27 @@ fn test_count_prefix_with_word_motion() {
     let mut vim = VimState::new(true);
     // 3w → MoveWordForward(3)
     vim.handle_key(key(KeyCode::Char('3')), 50);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('w')), 50), VimAction::MoveWordForward(3));
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('w')), 50),
+        VimAction::MoveWordForward(3)
+    );
 
     // 2b → MoveWordBackward(2)
     vim.handle_key(key(KeyCode::Char('2')), 50);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('b')), 50), VimAction::MoveWordBackward(2));
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('b')), 50),
+        VimAction::MoveWordBackward(2)
+    );
 }
 
 #[test]
 fn test_zero_not_count_prefix_goes_to_line_start() {
     let mut vim = VimState::new(true);
     // '0' without prior digits → MoveToLineStart
-    assert_eq!(vim.handle_key(key(KeyCode::Char('0')), 10), VimAction::MoveToLineStart);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('0')), 10),
+        VimAction::MoveToLineStart
+    );
 }
 
 #[test]
@@ -195,7 +236,10 @@ fn test_esc_clears_pending_count() {
     vim.handle_key(key(KeyCode::Char('3')), 10);
     vim.handle_key(key(KeyCode::Esc), 10);
     // After Esc, next 'l' should use default count=1
-    assert_eq!(vim.handle_key(key(KeyCode::Char('l')), 10), VimAction::MoveCursorBy(1));
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('l')), 10),
+        VimAction::MoveCursorBy(1)
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -209,12 +253,30 @@ fn test_visual_mode_motions() {
     assert_eq!(vim.mode, Mode::Visual);
 
     // Motions in visual mode.
-    assert_eq!(vim.handle_key(key(KeyCode::Char('l')), 20), VimAction::MoveCursorBy(1));
-    assert_eq!(vim.handle_key(key(KeyCode::Char('h')), 20), VimAction::MoveCursorBy(-1));
-    assert_eq!(vim.handle_key(key(KeyCode::Char('w')), 20), VimAction::MoveWordForward(1));
-    assert_eq!(vim.handle_key(key(KeyCode::Char('b')), 20), VimAction::MoveWordBackward(1));
-    assert_eq!(vim.handle_key(key(KeyCode::Char('0')), 20), VimAction::MoveToLineStart);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('$')), 20), VimAction::MoveToLineEnd);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('l')), 20),
+        VimAction::MoveCursorBy(1)
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('h')), 20),
+        VimAction::MoveCursorBy(-1)
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('w')), 20),
+        VimAction::MoveWordForward(1)
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('b')), 20),
+        VimAction::MoveWordBackward(1)
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('0')), 20),
+        VimAction::MoveToLineStart
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('$')), 20),
+        VimAction::MoveToLineEnd
+    );
 }
 
 #[test]
@@ -342,10 +404,22 @@ fn test_insert_mode_arrows_and_home_end() {
     let mut vim = VimState::new(true);
     vim.handle_key(key(KeyCode::Char('i')), 10);
 
-    assert_eq!(vim.handle_key(key(KeyCode::Left), 10), VimAction::MoveCursorBy(-1));
-    assert_eq!(vim.handle_key(key(KeyCode::Right), 10), VimAction::MoveCursorBy(1));
-    assert_eq!(vim.handle_key(key(KeyCode::Home), 10), VimAction::MoveToLineStart);
-    assert_eq!(vim.handle_key(key(KeyCode::End), 10), VimAction::MoveToLineEnd);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Left), 10),
+        VimAction::MoveCursorBy(-1)
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Right), 10),
+        VimAction::MoveCursorBy(1)
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Home), 10),
+        VimAction::MoveToLineStart
+    );
+    assert_eq!(
+        vim.handle_key(key(KeyCode::End), 10),
+        VimAction::MoveToLineEnd
+    );
 }
 
 #[test]
@@ -420,35 +494,35 @@ fn test_G_moves_to_end() {
 #[test]
 fn test_next_word_pos_multiple_words() {
     let text = "hello world foo bar baz";
-    assert_eq!(next_word_pos(text, 0), 6);    // "hello " → "world"
-    assert_eq!(next_word_pos(text, 6), 12);   // "world " → "foo"
-    assert_eq!(next_word_pos(text, 12), 16);  // "foo " → "bar"
-    assert_eq!(next_word_pos(text, 16), 20);  // "bar " → "baz"
-    assert_eq!(next_word_pos(text, 20), 23);  // "baz" → end
+    assert_eq!(next_word_pos(text, 0), 6); // "hello " → "world"
+    assert_eq!(next_word_pos(text, 6), 12); // "world " → "foo"
+    assert_eq!(next_word_pos(text, 12), 16); // "foo " → "bar"
+    assert_eq!(next_word_pos(text, 16), 20); // "bar " → "baz"
+    assert_eq!(next_word_pos(text, 20), 23); // "baz" → end
 }
 
 #[test]
 fn test_prev_word_pos_multiple_words() {
     let text = "hello world foo bar baz";
-    assert_eq!(prev_word_pos(text, 23), 20);  // end → "baz"
-    assert_eq!(prev_word_pos(text, 20), 16);  // "baz" → "bar"
-    assert_eq!(prev_word_pos(text, 16), 12);  // "bar" → "foo"
-    assert_eq!(prev_word_pos(text, 12), 6);   // "foo" → "world"
-    assert_eq!(prev_word_pos(text, 6), 0);    // "world" → "hello"
-    assert_eq!(prev_word_pos(text, 0), 0);    // already at start
+    assert_eq!(prev_word_pos(text, 23), 20); // end → "baz"
+    assert_eq!(prev_word_pos(text, 20), 16); // "baz" → "bar"
+    assert_eq!(prev_word_pos(text, 16), 12); // "bar" → "foo"
+    assert_eq!(prev_word_pos(text, 12), 6); // "foo" → "world"
+    assert_eq!(prev_word_pos(text, 6), 0); // "world" → "hello"
+    assert_eq!(prev_word_pos(text, 0), 0); // already at start
 }
 
 #[test]
 fn test_word_end_pos_multiple_words() {
     let text = "hello world foo";
-    assert_eq!(word_end_pos(text, 0), 4);     // "hello" → end of "hello" (index 4)
-    assert_eq!(word_end_pos(text, 6), 10);    // "world" → end of "world" (index 10)
+    assert_eq!(word_end_pos(text, 0), 4); // "hello" → end of "hello" (index 4)
+    assert_eq!(word_end_pos(text, 6), 10); // "world" → end of "world" (index 10)
 }
 
 #[test]
 fn test_word_navigation_single_word() {
     let text = "hello";
-    assert_eq!(next_word_pos(text, 0), 5);   // past end
+    assert_eq!(next_word_pos(text, 0), 5); // past end
     assert_eq!(prev_word_pos(text, 5), 0);
     assert_eq!(word_end_pos(text, 0), 4);
 }
@@ -462,8 +536,8 @@ fn test_word_navigation_empty_string() {
 #[test]
 fn test_word_navigation_multiple_spaces() {
     let text = "hello   world";
-    assert_eq!(next_word_pos(text, 0), 8);   // skip multi-space gap
-    assert_eq!(prev_word_pos(text, 8), 0);   // back over multi-space gap
+    assert_eq!(next_word_pos(text, 0), 8); // skip multi-space gap
+    assert_eq!(prev_word_pos(text, 8), 0); // back over multi-space gap
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -500,12 +574,18 @@ fn test_vim_workflow_edit_delete_paste() {
 
     // Normal → i → type "hello" → Esc → dd → p workflow.
     // Step 1: Enter insert.
-    assert_eq!(vim.handle_key(key(KeyCode::Char('i')), 0), VimAction::SwitchToInsert);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('i')), 0),
+        VimAction::SwitchToInsert
+    );
     assert_eq!(vim.mode, Mode::Insert);
 
     // Step 2: Type characters.
     for c in "hello".chars() {
-        assert_eq!(vim.handle_key(key(KeyCode::Char(c)), 5), VimAction::InsertChar(c));
+        assert_eq!(
+            vim.handle_key(key(KeyCode::Char(c)), 5),
+            VimAction::InsertChar(c)
+        );
     }
 
     // Step 3: Esc to Normal.
@@ -514,7 +594,10 @@ fn test_vim_workflow_edit_delete_paste() {
 
     // Step 4: dd to delete line.
     vim.handle_key(key(KeyCode::Char('d')), 5);
-    assert_eq!(vim.handle_key(key(KeyCode::Char('d')), 5), VimAction::DeleteLine);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('d')), 5),
+        VimAction::DeleteLine
+    );
 
     // Step 5: p to paste.
     assert_eq!(vim.handle_key(key(KeyCode::Char('p')), 0), VimAction::Paste);
@@ -525,7 +608,10 @@ fn test_vim_workflow_search_and_command() {
     let mut vim = VimState::new(true);
 
     // '/' → EnterSearch
-    assert_eq!(vim.handle_key(key(KeyCode::Char('/')), 10), VimAction::EnterSearch);
+    assert_eq!(
+        vim.handle_key(key(KeyCode::Char('/')), 10),
+        VimAction::EnterSearch
+    );
 
     // ':wq' → Quit
     vim.handle_key(key(KeyCode::Char(':')), 10);
@@ -551,21 +637,49 @@ fn test_all_default_bindings_present() {
         (KeyModifiers::NONE, KeyCode::PageUp, Action::PageUp),
         (KeyModifiers::NONE, KeyCode::PageDown, Action::PageDown),
         (KeyModifiers::CONTROL, KeyCode::Char('k'), Action::ClearLine),
-        (KeyModifiers::CONTROL, KeyCode::Char('w'), Action::DeleteWordBackward),
-        (KeyModifiers::CONTROL, KeyCode::Char('u'), Action::DeleteToLineStart),
+        (
+            KeyModifiers::CONTROL,
+            KeyCode::Char('w'),
+            Action::DeleteWordBackward,
+        ),
+        (
+            KeyModifiers::CONTROL,
+            KeyCode::Char('u'),
+            Action::DeleteToLineStart,
+        ),
         (KeyModifiers::NONE, KeyCode::Home, Action::CursorHome),
         (KeyModifiers::NONE, KeyCode::End, Action::CursorEnd),
-        (KeyModifiers::CONTROL, KeyCode::Char('a'), Action::CursorHome),
+        (
+            KeyModifiers::CONTROL,
+            KeyCode::Char('a'),
+            Action::CursorHome,
+        ),
         (KeyModifiers::CONTROL, KeyCode::Char('e'), Action::CursorEnd),
         (KeyModifiers::ALT, KeyCode::Left, Action::CursorWordLeft),
         (KeyModifiers::ALT, KeyCode::Right, Action::CursorWordRight),
         (KeyModifiers::SHIFT, KeyCode::Enter, Action::InsertNewline),
         (KeyModifiers::ALT, KeyCode::Enter, Action::InsertNewline),
-        (KeyModifiers::CONTROL, KeyCode::Char('r'), Action::HistorySearch),
-        (KeyModifiers::CONTROL, KeyCode::Char('t'), Action::ToggleThinking),
-        (KeyModifiers::CONTROL, KeyCode::Char('f'), Action::OpenSearch),
+        (
+            KeyModifiers::CONTROL,
+            KeyCode::Char('r'),
+            Action::HistorySearch,
+        ),
+        (
+            KeyModifiers::CONTROL,
+            KeyCode::Char('t'),
+            Action::ToggleThinking,
+        ),
+        (
+            KeyModifiers::CONTROL,
+            KeyCode::Char('f'),
+            Action::OpenSearch,
+        ),
         (KeyModifiers::NONE, KeyCode::F(2), Action::OpenModelPicker),
-        (KeyModifiers::NONE, KeyCode::F(3), Action::OpenSessionBrowser),
+        (
+            KeyModifiers::NONE,
+            KeyCode::F(3),
+            Action::OpenSessionBrowser,
+        ),
     ];
 
     for (modifiers, code, expected_action) in &expected {
@@ -690,7 +804,11 @@ fn test_key_combo_label_various() {
         "PageUp"
     );
     assert_eq!(
-        KeyCombo::new(KeyModifiers::CONTROL | KeyModifiers::SHIFT, KeyCode::Char('a')).label(),
+        KeyCombo::new(
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            KeyCode::Char('a')
+        )
+        .label(),
         "Ctrl+Shift+A"
     );
 }
@@ -713,7 +831,11 @@ fn test_list_bindings_sorted() {
     let list = reg.list_bindings();
 
     // Should have all default bindings.
-    assert!(list.len() >= 20, "should have >= 20 default bindings, got: {}", list.len());
+    assert!(
+        list.len() >= 20,
+        "should have >= 20 default bindings, got: {}",
+        list.len()
+    );
 
     // Labels should be sorted.
     let labels: Vec<&str> = list.iter().map(|(label, _)| label.as_str()).collect();
