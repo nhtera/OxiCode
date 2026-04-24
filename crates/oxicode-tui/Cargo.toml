@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# Feature flag for the VirtualList<T> rendering path.
+# Default is OFF — flip to ["virtual-scroll"] after golden parity is confirmed.
+default = []
+virtual-scroll = []
+
 [lints]
 workspace = true
 

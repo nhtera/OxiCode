@@ -19,6 +19,12 @@ use crate::widgets::{
     RewindOverlayState, SearchOverlay, SessionBrowserState, ShortcutsState, SlashCommandMeta,
     SplitPane, StatsDashboardState,
 };
+
+#[cfg(feature = "virtual-scroll")]
+use crate::widgets::{
+    message_view_virtual::MessageItem,
+    virtual_list::VirtualList,
+};
 use oxicode_mcp::{ElicitationEnvelope, ElicitationResponse};
 
 // ── Submodules ────────────────────────────────────────────────────────────────
@@ -256,6 +262,10 @@ pub struct App {
     pub(super) agent_gen_rx: mpsc::Receiver<AgentGenerateMsg>,
     /// Cancel flag for the in-flight agent generation, if any.
     pub(super) agent_gen_cancel: Option<Arc<AtomicBool>>,
+    /// Persistent VirtualList used when the `virtual-scroll` feature is active.
+    /// Holds item-height cache and scroll state across frames.
+    #[cfg(feature = "virtual-scroll")]
+    pub(super) virtual_list: VirtualList<MessageItem>,
 }
 
 /// Result delivered from the spawned generator task back to the UI loop.
@@ -345,6 +355,8 @@ impl App {
             agent_gen_tx,
             agent_gen_rx,
             agent_gen_cancel: None,
+            #[cfg(feature = "virtual-scroll")]
+            virtual_list: VirtualList::new(),
         }
     }
 

@@ -28,6 +28,9 @@ pub mod suggestion_chips;
 pub mod task_panel;
 pub mod tool_call;
 pub mod tool_display;
+pub mod virtual_list;
+#[cfg(feature = "virtual-scroll")]
+pub mod message_view_virtual;
 
 pub use agent_panel::{AgentInfo, AgentPanel};
 pub use agents_overlay::{
