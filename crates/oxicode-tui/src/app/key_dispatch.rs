@@ -78,6 +78,12 @@ impl super::App {
             return;
         }
 
+        // Branches overlay captures keys when visible: navigate, switch, rename, delete.
+        if self.branches_overlay.is_visible() {
+            self.handle_branches_overlay_key(key).await;
+            return;
+        }
+
         // Stats dashboard captures keys when visible: tab switch, close.
         if self.stats_dashboard.is_visible() {
             self.handle_stats_key(key);
@@ -105,6 +111,12 @@ impl super::App {
         // Ctrl+, opens the settings overlay from anywhere in normal mode.
         if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char(',') {
             self.open_settings_screen();
+            return;
+        }
+
+        // Ctrl+B opens the branches overlay from anywhere in normal mode.
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('b') {
+            self.open_branches_overlay();
             return;
         }
 

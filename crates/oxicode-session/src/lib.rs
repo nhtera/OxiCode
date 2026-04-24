@@ -1,3 +1,4 @@
+pub mod branch;
 pub mod memdir;
 pub mod memory;
 pub mod memory_extractor;
@@ -20,6 +21,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A saved conversation session.
+///
+/// In the legacy flat-file format this maps 1:1 to a JSON file at
+/// `sessions/{id}.json`. In the tree format, each branch is stored as a
+/// separate file under `sessions/{session_id}/{branch_id}.json`.
+/// The `branch_id` / `parent_branch` / `parent_turn` fields are `None` for
+/// legacy sessions and populated after migration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
@@ -30,6 +37,18 @@ pub struct Session {
     /// User-assigned display name. None → derive from first user message.
     #[serde(default)]
     pub title: Option<String>,
+    /// When part of a `SessionTree`: the branch UUID for this session.
+    /// `None` in legacy flat-file sessions.
+    #[serde(default)]
+    pub branch_id: Option<String>,
+    /// When part of a `SessionTree`: parent branch UUID.
+    /// `None` for root branches and legacy sessions.
+    #[serde(default)]
+    pub parent_branch: Option<String>,
+    /// When part of a `SessionTree`: message index at which we forked from parent.
+    /// `None` for root branches and legacy sessions.
+    #[serde(default)]
+    pub parent_turn: Option<u32>,
 }
 
 impl Session {
@@ -42,6 +61,9 @@ impl Session {
             created_at: now,
             updated_at: now,
             title: None,
+            branch_id: None,
+            parent_branch: None,
+            parent_turn: None,
         }
     }
 
@@ -137,8 +159,16 @@ pub fn save_session(session: &Session, config_dir_override: Option<&Path>) -> Ox
 }
 
 /// Load a session from disk by ID.
+///
+/// Resolution order:
+/// 1. `sessions/{id}/{id}.json` — tree root branch (common post-migration case).
+/// 2. `sessions/{id}.json`      — legacy flat file (preserved for 1 release cycle).
+///
+/// No automatic migration is performed here — call
+/// [`branch::migrate_legacy_if_needed`] explicitly when you want to migrate a
+/// session to tree format.
 pub fn load_session(id: &str, config_dir_override: Option<&Path>) -> OxiResult<Session> {
-    // Reject path traversal in session IDs
+    // Reject path traversal in session IDs.
     if id.contains('/') || id.contains('\\') || id.contains("..") {
         return Err(OxiError::Session(format!(
             "Invalid session ID (contains path separators): {id}"
@@ -146,56 +176,83 @@ pub fn load_session(id: &str, config_dir_override: Option<&Path>) -> OxiResult<S
     }
 
     let dir = sessions_dir(config_dir_override);
-    let path = dir.join(format!("{id}.json"));
 
-    if !path.exists() {
+    // 1. Try tree root branch first: sessions/{id}/{id}.json
+    let tree_branch_path = dir.join(id).join(format!("{id}.json"));
+    if tree_branch_path.exists() {
+        let content = fs::read_to_string(&tree_branch_path)?;
+        let session: Session = serde_json::from_str(&content)?;
+        return Ok(session);
+    }
+
+    // 2. Fall back to legacy flat file.
+    let legacy_path = dir.join(format!("{id}.json"));
+    if !legacy_path.exists() {
         return Err(OxiError::Session(format!("Session not found: {id}")));
     }
 
-    let content = fs::read_to_string(&path)?;
-    let session: Session = serde_json::from_str(&content)?;
-    Ok(session)
+    let content = fs::read_to_string(&legacy_path)?;
+    Ok(serde_json::from_str(&content)?)
 }
 
 /// List all saved sessions (sorted by `updated_at` descending).
+///
+/// Discovers both:
+/// - Tree-layout sessions: `sessions/{session_id}/tree.json` + root branch
+/// - Legacy flat-file sessions: `sessions/{id}.json` (only if no tree dir exists)
 pub fn list_sessions(config_dir_override: Option<&Path>) -> OxiResult<Vec<SessionSummary>> {
     let dir = sessions_dir(config_dir_override);
     if !dir.exists() {
         return Ok(Vec::new());
     }
 
-    let mut summaries = Vec::new();
+    let mut summaries: Vec<SessionSummary> = Vec::new();
+    // Track IDs we've already added (prevents duplicates when both tree + legacy exist).
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "json") {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(session) = serde_json::from_str::<Session>(&content) {
-                    // H4 FIX: Use chars().take() to avoid byte-slicing panics on UTF-8.
-                    let preview = session
-                        .messages
-                        .iter()
-                        .find(|m| m.role == oxicode_common::Role::User)
-                        .map(|m| {
-                            let text = m.text();
-                            if text.chars().count() > 80 {
-                                let truncated: String = text.chars().take(77).collect();
-                                format!("{truncated}...")
-                            } else {
-                                text
-                            }
-                        });
 
-                    summaries.push(SessionSummary {
-                        id: session.id,
-                        model: session.model,
-                        message_count: session.messages.len(),
-                        created_at: session.created_at,
-                        updated_at: session.updated_at,
-                        preview,
-                        title: session.title,
-                    });
+        if path.is_dir() {
+            // Tree-layout: read the active branch from tree.json.
+            let manifest_path = path.join("tree.json");
+            if manifest_path.exists() {
+                if let Ok(manifest_content) = fs::read_to_string(&manifest_path) {
+                    #[derive(serde::Deserialize)]
+                    struct Manifest { current: uuid::Uuid, session_id: uuid::Uuid }
+                    if let Ok(manifest) = serde_json::from_str::<Manifest>(&manifest_content) {
+                        let branch_path = path.join(format!("{}.json", manifest.current));
+                        if let Ok(content) = fs::read_to_string(&branch_path) {
+                            if let Ok(session) = serde_json::from_str::<Session>(&content) {
+                                let id = manifest.session_id.to_string();
+                                if seen_ids.insert(id.clone()) {
+                                    summaries.push(session_to_summary(session, id));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if path.extension().is_some_and(|ext| ext == "json") {
+            // Legacy flat-file: only include when no tree dir exists for same ID.
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_string();
+            // Skip non-UUID-looking names (e.g. partial writes).
+            if !seen_ids.contains(&stem) {
+                // Check there's no corresponding tree dir (tree takes precedence).
+                let tree_dir_path = dir.join(&stem);
+                if !tree_dir_path.exists() {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Ok(session) = serde_json::from_str::<Session>(&content) {
+                            if seen_ids.insert(stem.clone()) {
+                                summaries.push(session_to_summary(session, stem));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -203,6 +260,36 @@ pub fn list_sessions(config_dir_override: Option<&Path>) -> OxiResult<Vec<Sessio
 
     summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(summaries)
+}
+
+/// Build a `SessionSummary` from a `Session`, overriding the stored `id` with the
+/// caller-supplied `effective_id` (needed for tree sessions where the session_id
+/// comes from the manifest, not the branch file's `id` field).
+fn session_to_summary(session: Session, effective_id: String) -> SessionSummary {
+    // H4 FIX: Use chars().take() to avoid byte-slicing panics on UTF-8.
+    let preview = session
+        .messages
+        .iter()
+        .find(|m| m.role == oxicode_common::Role::User)
+        .map(|m| {
+            let text = m.text();
+            if text.chars().count() > 80 {
+                let truncated: String = text.chars().take(77).collect();
+                format!("{truncated}...")
+            } else {
+                text
+            }
+        });
+
+    SessionSummary {
+        id: effective_id,
+        model: session.model,
+        message_count: session.messages.len(),
+        created_at: session.created_at,
+        updated_at: session.updated_at,
+        preview,
+        title: session.title,
+    }
 }
 
 /// Rename a session by updating its `title` and persisting to disk.

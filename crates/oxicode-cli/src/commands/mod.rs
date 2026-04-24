@@ -296,6 +296,7 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(session_view_commands::ResetCommand));
     reg.register(Box::new(session_view_commands::RetryCommand));
     reg.register(Box::new(session_view_commands::ForkCommand));
+    reg.register(Box::new(session_view_commands::BranchesCommand));
     reg.register(Box::new(session_view_commands::SystemPromptCommand));
     reg.register(Box::new(session_view_commands::ApproveCommand));
     reg.register(Box::new(session_view_commands::RejectCommand));

@@ -397,6 +397,12 @@ impl super::App {
                 frame.render_widget(viewer, content_area);
             }
 
+            // Branches overlay (/branches or Ctrl+B).
+            if self.branches_overlay.is_visible() {
+                use crate::widgets::BranchesOverlay;
+                frame.render_widget(BranchesOverlay::new(&self.branches_overlay), content_area);
+            }
+
             // Agents overlay.
             if self.agents_overlay.is_visible() {
                 frame.render_widget(

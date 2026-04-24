@@ -295,19 +295,142 @@ impl SlashCommand for RetryCommand {
     }
 }
 
+/// `/fork [title]` — fork the current session at the current turn.
+///
+/// Creates a new session branch starting from the last message in the active
+/// conversation. Title defaults to `"branch-{short_uuid}"`.
+///
+/// The TUI engine loop handles the actual `SessionTree::fork` call after
+/// receiving the `UiEvent::SlashCommand { name: "fork", args: title }` event.
+/// This struct registers the command for autocomplete and `/help`.
 pub struct ForkCommand;
 impl SlashCommand for ForkCommand {
     fn name(&self) -> &str {
         "fork"
     }
     fn description(&self) -> &str {
-        "Fork an agent in an isolated worktree"
+        "Fork session at current turn into a new branch (/fork [title])"
     }
-    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        if args.is_empty() {
-            CommandOutput::Error("Usage: /fork <branch-name> <task-prompt>".into())
+    fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
+        // Build a title: use args if provided, else "branch-{short_id}".
+        let title = if args.trim().is_empty() {
+            let short_id: String = uuid::Uuid::new_v4()
+                .to_string()
+                .chars()
+                .take(8)
+                .collect();
+            format!("branch-{short_id}")
         } else {
-            CommandOutput::Message(format!("Forking agent: {args}"))
+            args.trim().to_string()
+        };
+
+        // Load the current session tree (or legacy session) and fork.
+        let session_id = &ctx.session_id;
+
+        // Try to load existing tree from disk.
+        let tree_result =
+            oxicode_session::branch::SessionTree::load_or_migrate(session_id, None);
+
+        match tree_result {
+            Ok(mut tree) => {
+                let current_branch = tree.current;
+                let msg_count = tree
+                    .branches
+                    .get(&current_branch)
+                    .map(|b| b.messages.len())
+                    .unwrap_or(0);
+
+                // Also include in-memory messages from state that may not be persisted yet.
+                let state_msg_count = ctx.state_store.current().messages.len();
+                let effective_count = msg_count.max(state_msg_count);
+
+                if effective_count == 0 {
+                    return CommandOutput::Message(
+                        "Cannot fork an empty session — send at least one message first.".into(),
+                    );
+                }
+
+                let at_turn = (effective_count - 1) as u32;
+                match tree.fork(current_branch, at_turn, title.clone()) {
+                    Ok(new_branch_id) => {
+                        // Persist the updated tree.
+                        if let Err(e) = tree.save(None) {
+                            return CommandOutput::Error(format!(
+                                "Fork created in memory but save failed: {e}"
+                            ));
+                        }
+                        let short = new_branch_id.to_string().chars().take(8).collect::<String>();
+                        CommandOutput::Message(format!(
+                            "Forked at turn {at_turn} → branch \"{title}\" ({short})\n\
+                             Use /branches to switch between branches."
+                        ))
+                    }
+                    Err(e) => CommandOutput::Error(format!("Fork failed: {e}")),
+                }
+            }
+            Err(_) => {
+                // Session not on disk yet — provide guidance.
+                CommandOutput::Message(format!(
+                    "Session not yet saved. Fork will be created as \"{title}\" \
+                     on next save.\nSend a message first to establish a fork point."
+                ))
+            }
+        }
+    }
+}
+
+/// `/branches` — list all branches of the current session.
+pub struct BranchesCommand;
+impl SlashCommand for BranchesCommand {
+    fn name(&self) -> &str {
+        "branches"
+    }
+    fn description(&self) -> &str {
+        "List all branches of the current session tree"
+    }
+    fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
+        let session_id = &ctx.session_id;
+        match oxicode_session::branch::SessionTree::load_or_migrate(session_id, None) {
+            Ok(tree) => {
+                if tree.branches.len() <= 1 {
+                    return CommandOutput::Message(
+                        "Only one branch (main). Use /fork to create a branch.".into(),
+                    );
+                }
+
+                let mut lines = vec!["Branches:".to_string()];
+                // Collect and sort: root first, then by created_at.
+                let mut sorted: Vec<_> = tree.branches.values().collect();
+                sorted.sort_by(|a, b| {
+                    // Root (no parent) first, then creation order.
+                    match (a.parent, b.parent) {
+                        (None, Some(_)) => std::cmp::Ordering::Less,
+                        (Some(_), None) => std::cmp::Ordering::Greater,
+                        _ => a.created_at.cmp(&b.created_at),
+                    }
+                });
+
+                for branch in sorted {
+                    let active = if branch.id == tree.current { " *" } else { "  " };
+                    let short = branch.id.to_string().chars().take(8).collect::<String>();
+                    let fork_info = branch
+                        .parent_turn
+                        .map(|t| format!(" (fork at turn {t})"))
+                        .unwrap_or_default();
+                    lines.push(format!(
+                        "{active} [{short}] \"{}\" — {} msgs{}",
+                        branch.title,
+                        branch.messages.len(),
+                        fork_info,
+                    ));
+                }
+                lines.push(String::new());
+                lines.push("Use /fork to create a branch. Open TUI branches overlay with Ctrl+B.".into());
+                CommandOutput::Message(lines.join("\n"))
+            }
+            Err(_) => CommandOutput::Message(
+                "No session branches found. Use /fork to create one.".into(),
+            ),
         }
     }
 }

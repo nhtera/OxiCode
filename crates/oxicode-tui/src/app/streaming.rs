@@ -80,6 +80,11 @@ impl super::App {
                     self.open_agents_overlay();
                     return;
                 }
+                // Handle /branches — open branches overlay.
+                if trimmed == "branches" {
+                    self.open_branches_overlay();
+                    return;
+                }
                 // Handle /settings (no args) — open settings screen overlay.
                 if trimmed == "settings" {
                     self.open_settings_screen();

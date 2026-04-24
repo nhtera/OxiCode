@@ -889,6 +889,146 @@ impl super::App {
         self.rewind_overlay.open(&messages);
     }
 
+    /// Open the branches overlay with branch data from the current session tree.
+    pub(super) fn open_branches_overlay(&mut self) {
+        use crate::widgets::BranchEntry;
+
+        let session_id = self.state_rx.borrow().session_id.clone();
+        let entries = match oxicode_session::branch::SessionTree::load_or_migrate(&session_id, None)
+        {
+            Ok(tree) => {
+                // Build a depth map: root depth = 0, children = parent_depth + 1.
+                let mut depth_map: std::collections::HashMap<uuid::Uuid, usize> =
+                    std::collections::HashMap::new();
+
+                // Collect and sort: root(s) first, then by created_at.
+                let mut sorted: Vec<_> = tree.branches.values().collect();
+                sorted.sort_by(|a, b| {
+                    match (a.parent, b.parent) {
+                        (None, Some(_)) => std::cmp::Ordering::Less,
+                        (Some(_), None) => std::cmp::Ordering::Greater,
+                        _ => a.created_at.cmp(&b.created_at),
+                    }
+                });
+
+                // First pass: assign depths (process in sorted order so parents come first).
+                for branch in &sorted {
+                    let depth = branch
+                        .parent
+                        .and_then(|pid| depth_map.get(&pid))
+                        .map(|d| d + 1)
+                        .unwrap_or(0);
+                    depth_map.insert(branch.id, depth);
+                }
+
+                sorted
+                    .into_iter()
+                    .map(|b| BranchEntry {
+                        id: b.id,
+                        is_current: b.id == tree.current,
+                        title: b.title.clone(),
+                        message_count: b.messages.len(),
+                        parent_turn: b.parent_turn,
+                        parent: b.parent,
+                        depth: *depth_map.get(&b.id).unwrap_or(&0),
+                    })
+                    .collect()
+            }
+            Err(_) => Vec::new(),
+        };
+
+        if entries.is_empty() {
+            self.notifications.push(Notification::new(
+                "No branches found for this session. Use /fork to create one.".to_string(),
+                crate::widgets::notification::NotificationLevel::Info,
+            ));
+            return;
+        }
+
+        self.branches_overlay.open(entries);
+    }
+
+    /// Handle key events when the branches overlay is active.
+    pub(super) async fn handle_branches_overlay_key(&mut self, key: KeyEvent) {
+        use crate::widgets::BranchesOverlayMode;
+
+        match self.branches_overlay.mode().clone() {
+            BranchesOverlayMode::Browse => match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => self.branches_overlay.cancel(),
+                (_, KeyCode::Up) => self.branches_overlay.select_prev(),
+                (_, KeyCode::Down) => self.branches_overlay.select_next(),
+                (_, KeyCode::Char('r')) => self.branches_overlay.start_rename(),
+                (_, KeyCode::Char('d')) => self.branches_overlay.start_delete_confirm(),
+                (_, KeyCode::Enter) => {
+                    if let Some(branch_id) = self.branches_overlay.confirm_switch() {
+                        let branch_str = branch_id.to_string();
+                        // Hot-swap: send branch switch as a slash command to the engine loop.
+                        let _ = self
+                            .ui_tx
+                            .send(crate::events::UiEvent::SlashCommand {
+                                name: "switch-branch".to_string(),
+                                args: branch_str.clone(),
+                            })
+                            .await;
+                        self.notifications.push(Notification::new(
+                            format!(
+                                "Switching to branch {}",
+                                &branch_str[..8.min(branch_str.len())]
+                            ),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                    }
+                }
+                _ => {}
+            },
+            BranchesOverlayMode::Rename => match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => self.branches_overlay.cancel(),
+                (_, KeyCode::Enter) => {
+                    if let Some((branch_id, new_title)) = self.branches_overlay.confirm_rename() {
+                        self.notifications.push(Notification::new(
+                            format!("Renamed branch to \"{new_title}\""),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                        let _ = self
+                            .ui_tx
+                            .send(crate::events::UiEvent::SlashCommand {
+                                name: "rename-branch".to_string(),
+                                args: format!("{branch_id} {new_title}"),
+                            })
+                            .await;
+                    }
+                }
+                (_, KeyCode::Char(c)) => self.branches_overlay.push_rename_char(c),
+                (_, KeyCode::Backspace) => self.branches_overlay.pop_rename_char(),
+                _ => {}
+            },
+            BranchesOverlayMode::Confirm => match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) | (_, KeyCode::Char('n') | KeyCode::Char('N')) => {
+                    self.branches_overlay.cancel();
+                }
+                (_, KeyCode::Char('y') | KeyCode::Char('Y')) => {
+                    if let Some(branch_id) = self.branches_overlay.confirm_delete() {
+                        self.notifications.push(Notification::new(
+                            format!(
+                                "Deleted branch {}",
+                                &branch_id.to_string()[..8]
+                            ),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                        let _ = self
+                            .ui_tx
+                            .send(crate::events::UiEvent::SlashCommand {
+                                name: "delete-branch".to_string(),
+                                args: branch_id.to_string(),
+                            })
+                            .await;
+                    }
+                }
+                _ => {}
+            },
+        }
+    }
+
     /// Handle key events when the stats dashboard is visible.
     pub(super) fn handle_stats_key(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {

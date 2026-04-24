@@ -89,6 +89,13 @@ struct Cli {
     #[arg(short, long)]
     session: Option<String>,
 
+    /// Resume a specific branch within a session tree (UUID format).
+    ///
+    /// Use with `--session <session_id>` to resume a particular branch.
+    /// When omitted, the session's last-active branch is loaded.
+    #[arg(long, value_name = "BRANCH_ID")]
+    branch: Option<String>,
+
     /// Resume a previous conversation (Claude Code parity).
     ///
     /// With no value: opens an interactive session picker on startup.
@@ -164,6 +171,20 @@ struct Cli {
     /// Comma-separated list of tool names that should always be denied.
     #[arg(long, value_delimiter = ',')]
     disallowed_tools: Vec<String>,
+}
+
+/// Reject session IDs that contain path-separator characters or `..`.
+///
+/// This mirrors the guard in `oxicode_session::load_session` and must be
+/// applied before any `Path::join(session_id)` call so that a malicious
+/// value like `"../../etc/passwd"` cannot escape the sessions directory.
+fn validate_session_id(id: &str) -> Result<(), String> {
+    if id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(format!(
+            "Invalid session ID '{id}': must not contain path separators or '..'"
+        ));
+    }
+    Ok(())
 }
 
 /// Resolve the effective permission mode from CLI flags + settings.
@@ -340,14 +361,55 @@ async fn main() -> Result<()> {
 
     let load_id = resume_id.as_deref().or(cli.session.as_deref());
     let mut session = if let Some(session_id) = load_id {
-        match oxicode_session::load_session(session_id, None) {
-            Ok(s) => {
-                tracing::info!("Resumed session {}", session_id);
-                s
-            }
-            Err(e) => {
-                eprintln!("Failed to load session: {e}");
+        // When --branch is also specified, load that specific branch from the tree.
+        if let Some(ref branch_id) = cli.branch {
+            // Validate UUID format.
+            if branch_id.parse::<uuid::Uuid>().is_err() {
+                eprintln!(
+                    "Invalid --branch value '{branch_id}': must be a valid UUID \
+                     (e.g. a1b2c3d4-e5f6-7890-abcd-ef1234567890)."
+                );
                 std::process::exit(1);
+            }
+            // Reject path traversal in the user-supplied session ID (same guard as
+            // load_session in oxicode-session/src/lib.rs:172).
+            if let Err(e) = validate_session_id(session_id) {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+            // Load the branch file directly: sessions/{session_id}/{branch_id}.json
+            let branch_path = oxicode_session::sessions_dir(None)
+                .join(session_id)
+                .join(format!("{branch_id}.json"));
+            match std::fs::read_to_string(&branch_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<Session>(&s).ok())
+            {
+                Some(s) => {
+                    tracing::info!(
+                        "Resumed session {} branch {}",
+                        session_id,
+                        branch_id
+                    );
+                    s
+                }
+                None => {
+                    eprintln!(
+                        "Branch '{branch_id}' not found in session '{session_id}'."
+                    );
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            match oxicode_session::load_session(session_id, None) {
+                Ok(s) => {
+                    tracing::info!("Resumed session {}", session_id);
+                    s
+                }
+                Err(e) => {
+                    eprintln!("Failed to load session: {e}");
+                    std::process::exit(1);
+                }
             }
         }
     } else {
@@ -1195,6 +1257,241 @@ async fn run_tui(
                         continue;
                     }
 
+                    // Handle /switch-branch <branch-uuid> — hot-swap conversation
+                    // to the selected branch inside the current session tree.
+                    if name == "switch-branch" {
+                        let arg = args.trim().to_string();
+                        match arg.parse::<uuid::Uuid>() {
+                            Err(_) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!(
+                                        "Invalid branch ID '{arg}': must be a UUID."
+                                    )))
+                                    .await;
+                            }
+                            Ok(branch_id) => {
+                                let session_id = state_store_clone.current().session_id;
+                                match oxicode_session::branch::SessionTree::load_or_migrate(
+                                    &session_id,
+                                    None,
+                                ) {
+                                    Err(e) => {
+                                        let _ = core_tx_clone
+                                            .send(CoreEvent::Error(format!(
+                                                "Cannot load session tree: {e}"
+                                            )))
+                                            .await;
+                                    }
+                                    Ok(mut tree) => {
+                                        match tree.switch(branch_id) {
+                                            Err(e) => {
+                                                let _ = core_tx_clone
+                                                    .send(CoreEvent::Error(format!(
+                                                        "Cannot switch branch: {e}"
+                                                    )))
+                                                    .await;
+                                            }
+                                            Ok(()) => {
+                                                // Persist the updated current pointer.
+                                                if let Err(e) = tree.save(None) {
+                                                    let _ = core_tx_clone
+                                                        .send(CoreEvent::Error(format!(
+                                                            "Branch switch failed to persist: {e}"
+                                                        )))
+                                                        .await;
+                                                    continue;
+                                                }
+                                                let branch = tree
+                                                    .branches
+                                                    .get(&branch_id)
+                                                    .expect("just switched to it");
+                                                let new_messages = branch.messages.clone();
+                                                let title = branch.title.clone();
+                                                // Hot-swap conversation + state.
+                                                conversation
+                                                    .replace_messages(new_messages.clone());
+                                                state_store_clone.update(|s| {
+                                                    s.messages = new_messages;
+                                                });
+                                                // Notify TUI to rehydrate + redraw.
+                                                let _ = core_tx_clone
+                                                    .send(CoreEvent::SessionResumed {
+                                                        session_id: session_id.clone(),
+                                                    })
+                                                    .await;
+                                                let sys_msg = Message {
+                                                    id: uuid::Uuid::new_v4().to_string(),
+                                                    role: Role::Assistant,
+                                                    content: vec![ContentBlock::Text {
+                                                        text: format!(
+                                                            "Switched to branch: {title}"
+                                                        ),
+                                                    }],
+                                                    model: None,
+                                                    stop_reason: None,
+                                                    created_at: chrono::Utc::now(),
+                                                    usage: None,
+                                                };
+                                                state_store_clone.push_message(sys_msg);
+                                                let _ = core_tx_clone
+                                                    .send(CoreEvent::MessageComplete)
+                                                    .await;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Handle /rename-branch <branch-uuid> <new-title>
+                    if name == "rename-branch" {
+                        let mut parts = args.trim().splitn(2, ' ');
+                        let id_str = parts.next().unwrap_or("").trim();
+                        let new_title = parts.next().unwrap_or("").trim();
+                        match (id_str.parse::<uuid::Uuid>(), new_title.is_empty()) {
+                            (Err(_), _) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!(
+                                        "Invalid branch ID '{id_str}': must be a UUID."
+                                    )))
+                                    .await;
+                            }
+                            (_, true) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(
+                                        "rename-branch: new title cannot be empty.".into(),
+                                    ))
+                                    .await;
+                            }
+                            (Ok(branch_id), false) => {
+                                let session_id = state_store_clone.current().session_id;
+                                match oxicode_session::branch::SessionTree::load_or_migrate(
+                                    &session_id,
+                                    None,
+                                ) {
+                                    Err(e) => {
+                                        let _ = core_tx_clone
+                                            .send(CoreEvent::Error(format!(
+                                                "Cannot load session tree: {e}"
+                                            )))
+                                            .await;
+                                    }
+                                    Ok(mut tree) => {
+                                        if let Some(branch) = tree.branches.get_mut(&branch_id) {
+                                            branch.title = new_title.to_string();
+                                            match tree.save(None) {
+                                                Ok(()) => {
+                                                    let sys_msg = Message {
+                                                        id: uuid::Uuid::new_v4().to_string(),
+                                                        role: Role::Assistant,
+                                                        content: vec![ContentBlock::Text {
+                                                            text: format!(
+                                                                "Branch renamed to \"{new_title}\"."
+                                                            ),
+                                                        }],
+                                                        model: None,
+                                                        stop_reason: None,
+                                                        created_at: chrono::Utc::now(),
+                                                        usage: None,
+                                                    };
+                                                    state_store_clone.push_message(sys_msg);
+                                                    let _ = core_tx_clone
+                                                        .send(CoreEvent::MessageComplete)
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = core_tx_clone
+                                                        .send(CoreEvent::Error(format!(
+                                                            "Rename failed to persist: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        } else {
+                                            let _ = core_tx_clone
+                                                .send(CoreEvent::Error(format!(
+                                                    "Branch not found: {branch_id}"
+                                                )))
+                                                .await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Handle /delete-branch <branch-uuid>
+                    if name == "delete-branch" {
+                        let arg = args.trim().to_string();
+                        match arg.parse::<uuid::Uuid>() {
+                            Err(_) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!(
+                                        "Invalid branch ID '{arg}': must be a UUID."
+                                    )))
+                                    .await;
+                            }
+                            Ok(branch_id) => {
+                                let session_id = state_store_clone.current().session_id;
+                                match oxicode_session::branch::SessionTree::load_or_migrate(
+                                    &session_id,
+                                    None,
+                                ) {
+                                    Err(e) => {
+                                        let _ = core_tx_clone
+                                            .send(CoreEvent::Error(format!(
+                                                "Cannot load session tree: {e}"
+                                            )))
+                                            .await;
+                                    }
+                                    Ok(mut tree) => {
+                                        match tree.delete_branch(branch_id, None) {
+                                            Err(e) => {
+                                                let _ = core_tx_clone
+                                                    .send(CoreEvent::Error(format!(
+                                                        "Cannot delete branch: {e}"
+                                                    )))
+                                                    .await;
+                                            }
+                                            Ok(()) => match tree.save(None) {
+                                                Ok(()) => {
+                                                    let sys_msg = Message {
+                                                        id: uuid::Uuid::new_v4().to_string(),
+                                                        role: Role::Assistant,
+                                                        content: vec![ContentBlock::Text {
+                                                            text: format!(
+                                                                "Branch {branch_id} deleted."
+                                                            ),
+                                                        }],
+                                                        model: None,
+                                                        stop_reason: None,
+                                                        created_at: chrono::Utc::now(),
+                                                        usage: None,
+                                                    };
+                                                    state_store_clone.push_message(sys_msg);
+                                                    let _ = core_tx_clone
+                                                        .send(CoreEvent::MessageComplete)
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = core_tx_clone
+                                                        .send(CoreEvent::Error(format!(
+                                                            "Delete succeeded in memory but failed to persist: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            },
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
                     let current = state_store_clone.current();
                     let command_ctx = commands::CommandContext {
                         state_store: state_store_clone.clone(),
@@ -1458,6 +1755,29 @@ async fn run_mcp_server_mode() -> Result<()> {
     Ok(())
 }
 
+/// Switch-branch handler helper: load the tree, call `switch`, persist, return
+/// the new messages. Extracted so the logic can be unit-tested without the
+/// full async engine harness.
+#[cfg(test)]
+fn do_switch_branch(
+    session_id: &str,
+    branch_id: uuid::Uuid,
+    config_dir_override: Option<&std::path::Path>,
+) -> Result<(Vec<oxicode_common::Message>, String), String> {
+    let mut tree =
+        oxicode_session::branch::SessionTree::load_or_migrate(session_id, config_dir_override)
+            .map_err(|e| format!("Cannot load session tree: {e}"))?;
+    tree.switch(branch_id)
+        .map_err(|e| format!("Cannot switch branch: {e}"))?;
+    tree.save(config_dir_override)
+        .map_err(|e| format!("Branch switch failed to persist: {e}"))?;
+    let branch = tree
+        .branches
+        .get(&branch_id)
+        .expect("just switched to it");
+    Ok((branch.messages.clone(), branch.title.clone()))
+}
+
 #[cfg(test)]
 mod resume_lookup_tests {
     use super::*;
@@ -1539,5 +1859,119 @@ mod resume_lookup_tests {
             None => std::env::remove_var("HOME"),
         }
         result.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod switch_branch_tests {
+    use super::*;
+    use oxicode_common::{ContentBlock, Message, Role};
+    use oxicode_session::branch::SessionTree;
+
+    fn push_msg(branch: &mut oxicode_session::branch::SessionBranch, text: &str) {
+        branch.messages.push(Message {
+            id: uuid::Uuid::new_v4().to_string(),
+            role: Role::User,
+            content: vec![ContentBlock::Text { text: text.into() }],
+            model: None,
+            stop_reason: None,
+            created_at: chrono::Utc::now(),
+            usage: None,
+        });
+    }
+
+    /// do_switch_branch with a valid branch returns messages and does not error.
+    #[test]
+    fn switch_valid_branch_returns_messages() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = Some(tmp.path());
+
+        // Build a tree: root + one fork.
+        let mut tree = SessionTree::new("model-x");
+        let root_id = tree.current;
+        {
+            let root = tree.branches.get_mut(&root_id).unwrap();
+            push_msg(root, "root msg 0");
+            push_msg(root, "root msg 1");
+        }
+        let child_id = tree.fork(root_id, 1, "alt".to_string()).unwrap();
+        {
+            let child = tree.branches.get_mut(&child_id).unwrap();
+            push_msg(child, "child msg 2");
+        }
+        // Save tree using the temp dir as config root.
+        tree.save(config).unwrap();
+
+        let session_id = tree.session_id.to_string();
+
+        // Switch to root (child was current after fork).
+        let (msgs, title) =
+            do_switch_branch(&session_id, root_id, config).expect("should succeed");
+        assert_eq!(title, "main");
+        assert_eq!(msgs.len(), 2);
+
+        // Switch back to child.
+        let (msgs2, title2) =
+            do_switch_branch(&session_id, child_id, config).expect("should succeed");
+        assert_eq!(title2, "alt");
+        // Child was forked at turn 1 (2 msgs) + 1 extra = 3.
+        assert_eq!(msgs2.len(), 3);
+    }
+
+    /// do_switch_branch with an unknown UUID returns an error (no panic).
+    #[test]
+    fn switch_unknown_branch_returns_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = Some(tmp.path());
+
+        let tree = SessionTree::new("model-x");
+        tree.save(config).unwrap();
+        let session_id = tree.session_id.to_string();
+
+        let unknown = uuid::Uuid::new_v4();
+        let result = do_switch_branch(&session_id, unknown, config);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("not found") || msg.contains("Branch"),
+            "unexpected error: {msg}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod session_id_validation_tests {
+    use super::validate_session_id;
+
+    #[test]
+    fn valid_session_id_is_accepted() {
+        assert!(validate_session_id("a1b2c3d4-e5f6-7890-abcd-ef1234567890").is_ok());
+        assert!(validate_session_id("my-session-123").is_ok());
+        assert!(validate_session_id("session").is_ok());
+    }
+
+    #[test]
+    fn session_id_with_forward_slash_is_rejected() {
+        let result = validate_session_id("../../etc/passwd");
+        assert!(result.is_err(), "path traversal must be rejected");
+        let msg = result.unwrap_err();
+        assert!(msg.contains(".."), "error should mention the bad id: {msg}");
+    }
+
+    #[test]
+    fn session_id_with_backslash_is_rejected() {
+        let result = validate_session_id("..\\windows\\system32");
+        assert!(result.is_err(), "backslash must be rejected");
+    }
+
+    #[test]
+    fn session_id_with_dotdot_only_is_rejected() {
+        assert!(validate_session_id("..").is_err());
+        assert!(validate_session_id("a/../b").is_err());
+    }
+
+    #[test]
+    fn session_id_with_embedded_slash_is_rejected() {
+        assert!(validate_session_id("legit/attack").is_err());
     }
 }

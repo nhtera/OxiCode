@@ -1,5 +1,6 @@
 pub mod agent_panel;
 pub mod agents_overlay;
+pub mod branches_overlay;
 pub mod settings;
 pub mod settings_screen;
 pub mod code_block;
@@ -35,6 +36,7 @@ pub mod virtual_list;
 pub mod message_view_virtual;
 
 pub use agent_panel::{AgentInfo, AgentPanel};
+pub use branches_overlay::{BranchEntry, BranchesOverlay, BranchesOverlayMode, BranchesOverlayState};
 pub use agents_overlay::{
     AgentsAgentRow, AgentsOrigin, AgentsOverlay, AgentsOverlayState, AgentsRow, AgentsTab,
 };

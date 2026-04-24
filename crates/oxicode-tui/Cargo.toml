@@ -35,6 +35,7 @@ toml = { workspace = true }
 unicode-width = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
