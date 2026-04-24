@@ -374,9 +374,7 @@ impl<'a> MessageView<'a> {
             if i > 0 {
                 // Skip separator for tool-only user messages (ToolResult flows
                 // directly under the preceding ToolUse — no break line).
-                let is_tool_only = self
-                    .tool_only_indices
-                    .is_some_and(|set| set.contains(&i));
+                let is_tool_only = self.tool_only_indices.is_some_and(|set| set.contains(&i));
                 if is_tool_only {
                     // No separator — tool result continues from tool call above.
                 } else {
@@ -856,10 +854,7 @@ fn render_content_blocks_static(
                         "  \u{2514} ".to_string(), // └
                         Style::default().fg(color),
                     ),
-                    Span::styled(
-                        summary,
-                        Style::default().fg(color),
-                    ),
+                    Span::styled(summary, Style::default().fg(color)),
                 ]));
             }
             ContentBlock::Thinking { thinking } => {
@@ -968,10 +963,7 @@ fn render_image_gallery(image_numbers: &[usize], lines: &mut Vec<Line<'static>>)
         }
         let inner_width = label.chars().count() + 2; // 1 space padding each side
         let border = "\u{2500}".repeat(inner_width);
-        top_spans.push(Span::styled(
-            format!("\u{250c}{border}\u{2510}"),
-            box_style,
-        ));
+        top_spans.push(Span::styled(format!("\u{250c}{border}\u{2510}"), box_style));
     }
     lines.push(Line::from(top_spans));
 
@@ -995,10 +987,7 @@ fn render_image_gallery(image_numbers: &[usize], lines: &mut Vec<Line<'static>>)
         }
         let inner_width = label.chars().count() + 2;
         let border = "\u{2500}".repeat(inner_width);
-        bot_spans.push(Span::styled(
-            format!("\u{2514}{border}\u{2518}"),
-            box_style,
-        ));
+        bot_spans.push(Span::styled(format!("\u{2514}{border}\u{2518}"), box_style));
     }
     lines.push(Line::from(bot_spans));
 }

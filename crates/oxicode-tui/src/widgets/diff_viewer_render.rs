@@ -121,7 +121,11 @@ fn render_file_list(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
         Span::styled(
             " Files",
             Style::default()
-                .fg(if pane_active { DIALOG_ACCENT } else { DIALOG_MUTED })
+                .fg(if pane_active {
+                    DIALOG_ACCENT
+                } else {
+                    DIALOG_MUTED
+                })
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
@@ -182,13 +186,14 @@ fn render_file_list(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
         let base_style = Style::default().bg(bg);
 
         let line = Line::from(vec![
-            Span::styled(
-                format!(" {indicator}"),
-                base_style.fg(DIALOG_MUTED),
-            ),
+            Span::styled(format!(" {indicator}"), base_style.fg(DIALOG_MUTED)),
             Span::styled(
                 path,
-                base_style.fg(if is_selected { DIALOG_TEXT } else { DIFF_CONTEXT_FG }),
+                base_style.fg(if is_selected {
+                    DIALOG_TEXT
+                } else {
+                    DIFF_CONTEXT_FG
+                }),
             ),
             Span::styled(
                 format!(" {stats}"),
@@ -235,7 +240,10 @@ fn render_diff_detail(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
     let file = match state.files.get(state.selected_file) {
         Some(f) => f,
         None => {
-            let msg = Line::from(Span::styled(" No file selected", Style::default().fg(DIALOG_MUTED)));
+            let msg = Line::from(Span::styled(
+                " No file selected",
+                Style::default().fg(DIALOG_MUTED),
+            ));
             buf.set_line(area.x, area.y, &msg, area.width);
             return;
         }
@@ -283,7 +291,10 @@ fn render_diff_detail(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
     // Collect all lines from all hunks.
     let all_lines: Vec<_> = file.hunks.iter().flat_map(|h| h.lines.iter()).collect();
     if all_lines.is_empty() {
-        let msg = Line::from(Span::styled(" No changes", Style::default().fg(DIALOG_MUTED)));
+        let msg = Line::from(Span::styled(
+            " No changes",
+            Style::default().fg(DIALOG_MUTED),
+        ));
         if area.height > 1 {
             buf.set_line(area.x, area.y + 1, &msg, area.width);
         }
@@ -297,11 +308,7 @@ fn render_diff_detail(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
     let gutter_width: usize = 10; // "dddd dddd " = 4+1+4+1.
 
     // Detect file extension for syntax context (unused for now but ready).
-    let _ext = file
-        .path
-        .rsplit('.')
-        .next()
-        .unwrap_or("");
+    let _ext = file.path.rsplit('.').next().unwrap_or("");
 
     for (vi, line_idx) in (scroll..all_lines.len()).enumerate().take(visible_height) {
         let row = area.y + 1 + vi as u16;
@@ -322,7 +329,11 @@ fn render_diff_detail(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
 }
 
 /// Render a single diff line with gutter and content.
-fn render_diff_line(line: &super::diff_viewer::DiffLine, gutter_width: usize, _max_width: usize) -> Line<'static> {
+fn render_diff_line(
+    line: &super::diff_viewer::DiffLine,
+    gutter_width: usize,
+    _max_width: usize,
+) -> Line<'static> {
     let gutter = format_gutter(line.old_line_no, line.new_line_no, gutter_width);
 
     match line.kind {
@@ -440,12 +451,10 @@ fn render_footer(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
         DiffPane::Detail => "↑↓/PgUp/PgDn scroll · Tab files",
     };
 
-    let line = Line::from(vec![
-        Span::styled(
-            format!(" {pane_hint} · Esc close "),
-            Style::default().fg(DIALOG_MUTED),
-        ),
-    ]);
+    let line = Line::from(vec![Span::styled(
+        format!(" {pane_hint} · Esc close "),
+        Style::default().fg(DIALOG_MUTED),
+    )]);
     buf.set_line(area.x, area.y, &line, area.width);
 }
 
@@ -453,10 +462,7 @@ fn render_footer(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
 
 /// Compute word-level diff spans for adjacent removed→added line pairs.
 /// Returns (removed_spans, added_spans) with inline highlighting.
-pub fn word_diff_spans(
-    old_text: &str,
-    new_text: &str,
-) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+pub fn word_diff_spans(old_text: &str, new_text: &str) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
     use similar::{ChangeTag, TextDiff};
 
     let diff = TextDiff::from_words(old_text, new_text);
@@ -498,10 +504,10 @@ pub fn word_diff_spans(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::diff_viewer::{
         DiffHunk, DiffLine, DiffLineKind, DiffViewerState, FileDiffStats,
     };
+    use super::*;
 
     fn make_test_state() -> DiffViewerState {
         let mut state = DiffViewerState::new();

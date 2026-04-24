@@ -78,8 +78,8 @@ impl PermissionDialogKind {
     pub fn option_count(&self) -> usize {
         match self {
             Self::FileRead { .. } => 3, // allow once, allow session, deny
-            Self::Bash { .. } => 5,     // allow once, allow session, prefix allow, deny, always deny
-            _ => 4,                     // allow once, allow session, deny, always deny
+            Self::Bash { .. } => 5, // allow once, allow session, prefix allow, deny, always deny
+            _ => 4,                 // allow once, allow session, deny, always deny
         }
     }
 

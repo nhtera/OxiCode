@@ -22,10 +22,8 @@ impl super::App {
                 // FileRead (3 opts): 0=AllowOnce, 1=AlwaysAllow, 2=Deny
                 // Bash    (5 opts): 0=AllowOnce, 1=AlwaysAllow, 2=PrefixAllow, 3=Deny, 4=AlwaysDeny
                 // Others  (4 opts): 0=AllowOnce, 1=AlwaysAllow, 2=Deny, 3=AlwaysDeny
-                let is_bash = matches!(
-                    perm.kind,
-                    crate::widgets::PermissionDialogKind::Bash { .. }
-                );
+                let is_bash =
+                    matches!(perm.kind, crate::widgets::PermissionDialogKind::Bash { .. });
                 let selected = perm.selected;
 
                 if is_bash && selected == 2 {

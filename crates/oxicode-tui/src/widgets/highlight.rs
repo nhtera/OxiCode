@@ -336,11 +336,7 @@ mod tests {
         let lines = highlight_code_inline("let x = 1;", "rust").unwrap();
         assert!(!lines.is_empty());
         // First span should be code content, not a line number.
-        let first_content: String = lines[0]
-            .spans
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
+        let first_content: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
             first_content.contains("let"),
             "Inline highlight should contain code"

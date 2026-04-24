@@ -234,7 +234,11 @@ fn build_overview_lines(
         stat_row("Total Cost", &total_cost),
         stat_row(
             "Tokens",
-            &format!("{} in / {} out", format_tokens(input_tok), format_tokens(output_tok)),
+            &format!(
+                "{} in / {} out",
+                format_tokens(input_tok),
+                format_tokens(output_tok)
+            ),
         ),
     ];
 
@@ -312,7 +316,10 @@ fn build_models_lines(cost_tracker: &CostTracker, body_width: u16) -> Vec<Line<'
                 format!("  {model_cell:<model_w$}"),
                 Style::default().fg(DIALOG_ACCENT),
             ),
-            Span::styled(format!("  {in_cell:>in_w$}"), Style::default().fg(DIALOG_TEXT)),
+            Span::styled(
+                format!("  {in_cell:>in_w$}"),
+                Style::default().fg(DIALOG_TEXT),
+            ),
             Span::styled(
                 format!("  {out_cell:>out_w$}"),
                 Style::default().fg(DIALOG_TEXT),
@@ -609,7 +616,6 @@ mod tests {
         let tracker = CostTracker::new("empty".to_string());
         let area = Rect::new(0, 0, 100, 40);
         let mut buf = Buffer::empty(area);
-        StatsDashboard::new(&state, &tracker, &[], Duration::from_secs(0))
-            .render(area, &mut buf);
+        StatsDashboard::new(&state, &tracker, &[], Duration::from_secs(0)).render(area, &mut buf);
     }
 }

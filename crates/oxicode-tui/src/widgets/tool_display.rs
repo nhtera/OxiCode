@@ -412,10 +412,7 @@ fn render_edit(
             let muted = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
             lines.push(Line::from(vec![
                 Span::styled("    \u{2514} ".to_string(), muted),
-                Span::styled(
-                    format!("-{removed}/+{added} lines"),
-                    muted,
-                ),
+                Span::styled(format!("-{removed}/+{added} lines"), muted),
             ]));
         }
     }
@@ -465,7 +462,13 @@ fn render_search(
         input_summary.to_string()
     };
 
-    lines.push(tool_header(icon, color, tool_label, &header_summary, started_at));
+    lines.push(tool_header(
+        icon,
+        color,
+        tool_label,
+        &header_summary,
+        started_at,
+    ));
 
     // Result line: └ N results / └ N files
     if is_error && !content.is_empty() {
@@ -482,7 +485,11 @@ fn render_search(
         ]));
     } else {
         let result_count = content.lines().count();
-        let label = if tool_label == "Glob" { "files" } else { "results" };
+        let label = if tool_label == "Glob" {
+            "files"
+        } else {
+            "results"
+        };
         let muted = Style::default().fg(crate::render::TRANSCRIPT_MUTED);
         lines.push(Line::from(vec![
             Span::styled("    \u{2514} ".to_string(), muted),

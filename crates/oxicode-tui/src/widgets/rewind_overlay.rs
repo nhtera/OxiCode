@@ -163,9 +163,7 @@ impl RewindOverlayState {
 
     /// Number of turns that would be removed (everything after the selected turn).
     pub fn turns_to_remove(&self) -> usize {
-        self.turns
-            .len()
-            .saturating_sub(self.selected_idx + 1)
+        self.turns.len().saturating_sub(self.selected_idx + 1)
     }
 
     /// The selected turn entry, if any.
@@ -411,8 +409,11 @@ impl Widget for RewindOverlay<'_> {
                 if body.height > 0 {
                     let lines = build_turn_lines(self.state, body.width);
                     // Auto-scroll to keep selected item visible.
-                    let visual_selected =
-                        self.state.turns.len().saturating_sub(1 + self.state.selected_idx);
+                    let visual_selected = self
+                        .state
+                        .turns
+                        .len()
+                        .saturating_sub(1 + self.state.selected_idx);
                     let scroll_y = if lines.len() as u16 <= body.height {
                         0
                     } else if visual_selected as u16 + 2 >= body.height {
@@ -470,9 +471,7 @@ impl Widget for RewindOverlay<'_> {
                                 .add_modifier(Modifier::BOLD),
                         )),
                         Line::from(Span::styled(
-                            format!(
-                                "  This will remove {turns_rm} turn(s) ({msgs_rm} messages)."
-                            ),
+                            format!("  This will remove {turns_rm} turn(s) ({msgs_rm} messages)."),
                             Style::default().fg(DIALOG_MUTED),
                         )),
                     ];

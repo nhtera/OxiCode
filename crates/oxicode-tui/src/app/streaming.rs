@@ -78,9 +78,9 @@ impl super::App {
                     self.diff_viewer.open(&cwd);
                     return;
                 }
-                // Handle /agents — open agents menu overlay.
+                // Handle /agents — open agents overlay.
                 if trimmed == "agents" {
-                    self.open_agents_menu();
+                    self.open_agents_overlay();
                     return;
                 }
                 let (name, args) = match trimmed.split_once(char::is_whitespace) {

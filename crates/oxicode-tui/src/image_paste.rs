@@ -91,8 +91,7 @@ pub fn open_file_in_viewer(path: &Path) {
 /// Creates `~/.oxicode/image-cache/{session_id}/` if it doesn't exist.
 /// Returns the directory path.
 pub fn image_cache_dir(session_id: &str) -> PathBuf {
-    let home = std::env::var("HOME")
-        .map_or_else(|_| std::env::temp_dir(), PathBuf::from);
+    let home = std::env::var("HOME").map_or_else(|_| std::env::temp_dir(), PathBuf::from);
     let cache_dir = home.join(".oxicode").join("image-cache").join(session_id);
     let _ = std::fs::create_dir_all(&cache_dir);
     cache_dir

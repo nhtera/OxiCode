@@ -149,7 +149,10 @@ impl DiffViewerState {
 
     /// Whether the selected file is collapsed.
     pub fn is_selected_collapsed(&self) -> bool {
-        self.collapsed.get(self.selected_file).copied().unwrap_or(false)
+        self.collapsed
+            .get(self.selected_file)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Scroll detail pane up by `lines` lines.
@@ -357,10 +360,7 @@ fn parse_hunk_header(line: &str) -> (u32, u32, u32, u32) {
 fn parse_range(s: &str) -> (u32, u32) {
     let s = s.trim_start_matches(['-', '+']);
     if let Some((start, count)) = s.split_once(',') {
-        (
-            start.parse().unwrap_or(1),
-            count.parse().unwrap_or(1),
-        )
+        (start.parse().unwrap_or(1), count.parse().unwrap_or(1))
     } else {
         (s.parse().unwrap_or(1), 1)
     }
@@ -397,7 +397,9 @@ pub fn build_file_diff(path: &str, before: &str, after: &str) -> FileDiffStats {
         let display_new_start = new_start + 1;
         lines.push(DiffLine {
             kind: DiffLineKind::Header,
-            content: format!("@@ -{display_old_start},{old_count} +{display_new_start},{new_count} @@"),
+            content: format!(
+                "@@ -{display_old_start},{old_count} +{display_new_start},{new_count} @@"
+            ),
             old_line_no: None,
             new_line_no: None,
         });
@@ -523,10 +525,21 @@ new file mode 100644
         let hunk = &files[0].hunks[0];
         // Header + 1 context + 1 removed + 2 added + 1 context + 1 context = 7
         // Actually: header, " fn main() {", "-    println", "+    println", "+    println", "     let x", " }"
-        assert!(hunk.lines.len() >= 5, "Hunk should have header + diff lines");
+        assert!(
+            hunk.lines.len() >= 5,
+            "Hunk should have header + diff lines"
+        );
 
-        let added: Vec<_> = hunk.lines.iter().filter(|l| l.kind == DiffLineKind::Added).collect();
-        let removed: Vec<_> = hunk.lines.iter().filter(|l| l.kind == DiffLineKind::Removed).collect();
+        let added: Vec<_> = hunk
+            .lines
+            .iter()
+            .filter(|l| l.kind == DiffLineKind::Added)
+            .collect();
+        let removed: Vec<_> = hunk
+            .lines
+            .iter()
+            .filter(|l| l.kind == DiffLineKind::Removed)
+            .collect();
         assert_eq!(added.len(), 2);
         assert_eq!(removed.len(), 1);
     }
@@ -540,8 +553,14 @@ new file mode 100644
             .filter(|l| l.kind == DiffLineKind::Context)
             .collect();
         for line in &context_lines {
-            assert!(line.old_line_no.is_some(), "Context line should have old line number");
-            assert!(line.new_line_no.is_some(), "Context line should have new line number");
+            assert!(
+                line.old_line_no.is_some(),
+                "Context line should have old line number"
+            );
+            assert!(
+                line.new_line_no.is_some(),
+                "Context line should have new line number"
+            );
         }
     }
 
@@ -581,7 +600,8 @@ new file mode 100644
 
     #[test]
     fn parse_binary_file() {
-        let input = "diff --git a/image.png b/image.png\nBinary files a/image.png and b/image.png differ\n";
+        let input =
+            "diff --git a/image.png b/image.png\nBinary files a/image.png and b/image.png differ\n";
         let files = parse_unified_diff(input);
         assert_eq!(files.len(), 1);
         assert!(files[0].binary);
@@ -710,8 +730,22 @@ new file mode 100644
     fn state_summary_stats() {
         let mut state = DiffViewerState::new();
         let files = vec![
-            FileDiffStats { path: "a.rs".into(), added: 5, removed: 2, binary: false, is_new_file: false, hunks: vec![] },
-            FileDiffStats { path: "b.rs".into(), added: 3, removed: 1, binary: false, is_new_file: false, hunks: vec![] },
+            FileDiffStats {
+                path: "a.rs".into(),
+                added: 5,
+                removed: 2,
+                binary: false,
+                is_new_file: false,
+                hunks: vec![],
+            },
+            FileDiffStats {
+                path: "b.rs".into(),
+                added: 3,
+                removed: 1,
+                binary: false,
+                is_new_file: false,
+                hunks: vec![],
+            },
         ];
         state.open_with_files(files);
         let (count, added, removed) = state.summary_stats();
@@ -780,19 +814,32 @@ new file mode 100644
             removed: 0,
             binary: false,
             is_new_file: false,
-            hunks: vec![
-                DiffHunk {
-                    old_start: 1,
-                    old_count: 3,
-                    new_start: 1,
-                    new_count: 3,
-                    lines: vec![
-                        DiffLine { kind: DiffLineKind::Header, content: "@@".into(), old_line_no: None, new_line_no: None },
-                        DiffLine { kind: DiffLineKind::Context, content: "a".into(), old_line_no: Some(1), new_line_no: Some(1) },
-                        DiffLine { kind: DiffLineKind::Added, content: "b".into(), old_line_no: None, new_line_no: Some(2) },
-                    ],
-                },
-            ],
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_count: 3,
+                new_start: 1,
+                new_count: 3,
+                lines: vec![
+                    DiffLine {
+                        kind: DiffLineKind::Header,
+                        content: "@@".into(),
+                        old_line_no: None,
+                        new_line_no: None,
+                    },
+                    DiffLine {
+                        kind: DiffLineKind::Context,
+                        content: "a".into(),
+                        old_line_no: Some(1),
+                        new_line_no: Some(1),
+                    },
+                    DiffLine {
+                        kind: DiffLineKind::Added,
+                        content: "b".into(),
+                        old_line_no: None,
+                        new_line_no: Some(2),
+                    },
+                ],
+            }],
         };
         assert_eq!(file.total_lines(), 3);
     }

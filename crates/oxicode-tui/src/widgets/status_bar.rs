@@ -242,7 +242,11 @@ impl Widget for StatusBar<'_> {
 
         // Cost from CostTracker (accurate per-model pricing).
         // Normalize negative zero to positive zero for display.
-        let cost = if self.cost_usd == 0.0 { 0.0 } else { self.cost_usd };
+        let cost = if self.cost_usd == 0.0 {
+            0.0
+        } else {
+            self.cost_usd
+        };
         let cost_span = Span::styled(
             format!(" ${cost:.4} "),
             Style::default()

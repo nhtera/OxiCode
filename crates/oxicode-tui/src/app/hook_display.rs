@@ -3,12 +3,12 @@ use std::time::Instant;
 
 use crate::events::CoreEvent;
 use crate::prompt_suggestions::suggest_prompts;
-use crate::widgets::Notification;
 use crate::widgets::permission_dialog::RiskLevel;
+use crate::widgets::Notification;
 
-use super::{ActiveToolCall, HookKind, HookLogEntry};
-use super::utils::{display_name_and_summary, is_dangerous_operation};
 use super::truncate_hook_content;
+use super::utils::{display_name_and_summary, is_dangerous_operation};
+use super::{ActiveToolCall, HookKind, HookLogEntry};
 
 impl super::App {
     #[allow(clippy::too_many_lines)]
@@ -82,7 +82,10 @@ impl super::App {
                 // Deduplicate: abort_streaming emits TurnEvent::Error AND main.rs also
                 // sends CoreEvent::Error on the same Err return — both arrive in the
                 // same event-drain batch. Skip if last notification has the same text.
-                let is_dup = self.notifications.last().map_or(false, |n| n.message == msg);
+                let is_dup = self
+                    .notifications
+                    .last()
+                    .map_or(false, |n| n.message == msg);
                 if !is_dup {
                     self.notifications.push(Notification::new(
                         msg,
@@ -155,8 +158,7 @@ impl super::App {
                 {
                     risk_level = RiskLevel::High;
                 }
-                let kind =
-                    crate::widgets::PermissionDialogKind::detect(&tool_name, &input_summary);
+                let kind = crate::widgets::PermissionDialogKind::detect(&tool_name, &input_summary);
                 self.pending_permission = Some(super::PendingPermission {
                     tool_name,
                     input_summary,
@@ -226,7 +228,8 @@ impl super::App {
                     }
                     _ => crate::widgets::notification::NotificationLevel::Info,
                 };
-                self.notifications.push(Notification::new(display_line, level));
+                self.notifications
+                    .push(Notification::new(display_line, level));
                 self.hook_messages.push(HookLogEntry {
                     event,
                     kind,

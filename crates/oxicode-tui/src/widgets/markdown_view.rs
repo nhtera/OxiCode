@@ -192,7 +192,12 @@ impl<'a> MarkdownView<'a> {
                     }
                     TagEnd::Table => {
                         in_table = false;
-                        render_table_boxed(&table_headers, &table_rows, &table_alignments, &mut lines);
+                        render_table_boxed(
+                            &table_headers,
+                            &table_rows,
+                            &table_alignments,
+                            &mut lines,
+                        );
                         lines.push(Line::from(""));
                     }
                     _ => {}
@@ -387,8 +392,7 @@ pub fn parse_to_owned_lines(source: &str) -> Vec<Line<'static>> {
                 if in_table {
                     current_cell.push_str(&code);
                 } else {
-                    let code_style = Style::default()
-                        .fg(crate::render::STATUS_YELLOW);
+                    let code_style = Style::default().fg(crate::render::STATUS_YELLOW);
                     current_spans.push(Span::styled(format!("`{code}`"), code_style));
                 }
             }
@@ -431,10 +435,7 @@ fn render_code_block_boxed(code_lines: &[String], lang: &str, output: &mut Vec<L
 
     // Language label line (if language specified).
     if !lang.is_empty() {
-        output.push(Line::from(Span::styled(
-            format!("  {lang}"),
-            label_style,
-        )));
+        output.push(Line::from(Span::styled(format!("  {lang}"), label_style)));
     }
 
     // Highlighted or plain code lines with 4-space indent.
@@ -772,8 +773,7 @@ mod tests {
             .iter()
             .flat_map(|l| l.spans.iter())
             .filter(|s| {
-                s.style.add_modifier.contains(Modifier::BOLD)
-                    && s.content.contains("Sub Heading")
+                s.style.add_modifier.contains(Modifier::BOLD) && s.content.contains("Sub Heading")
             })
             .collect();
         assert!(!bold.is_empty(), "H2 should be bold");
