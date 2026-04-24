@@ -176,16 +176,12 @@ impl SlashCommand for RenameSessionCommand {
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
         let args = args.trim();
         let Some((session_id, new_name)) = args.split_once(char::is_whitespace) else {
-            return CommandOutput::Error(
-                "Usage: /rename-session <session_id> <new_name>".into(),
-            );
+            return CommandOutput::Error("Usage: /rename-session <session_id> <new_name>".into());
         };
         let session_id = session_id.trim();
         let new_name = truncate(new_name.trim(), 64);
         if session_id.is_empty() || new_name.is_empty() {
-            return CommandOutput::Error(
-                "Usage: /rename-session <session_id> <new_name>".into(),
-            );
+            return CommandOutput::Error("Usage: /rename-session <session_id> <new_name>".into());
         }
         match oxicode_session::rename_session(session_id, &new_name, None) {
             // Silent: the browser already shows its own "Renamed session to ..." toast.

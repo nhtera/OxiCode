@@ -320,23 +320,21 @@ async fn main() -> Result<()> {
             open_picker_on_start = true;
             None
         }
-        Some(query) => {
-            match resolve_resume_arg(query, "") {
-                ResumeLookup::Found(s) => Some(s.id),
-                ResumeLookup::NotFound => {
-                    eprintln!("Session '{query}' not found.");
-                    std::process::exit(1);
-                }
-                ResumeLookup::Multiple(n) => {
-                    eprintln!(
-                        "Found {n} sessions matching '{query}'. \
-                         Use `oxicode --resume` to pick one interactively."
-                    );
-                    std::process::exit(1);
-                }
-                ResumeLookup::SameAsCurrent => None,
+        Some(query) => match resolve_resume_arg(query, "") {
+            ResumeLookup::Found(s) => Some(s.id),
+            ResumeLookup::NotFound => {
+                eprintln!("Session '{query}' not found.");
+                std::process::exit(1);
             }
-        }
+            ResumeLookup::Multiple(n) => {
+                eprintln!(
+                    "Found {n} sessions matching '{query}'. \
+                         Use `oxicode --resume` to pick one interactively."
+                );
+                std::process::exit(1);
+            }
+            ResumeLookup::SameAsCurrent => None,
+        },
         None => None,
     };
 
@@ -399,9 +397,8 @@ async fn main() -> Result<()> {
     }
 
     let mcp_ref = std::sync::Arc::new(mcp_manager);
-    let file_state_ref = std::sync::Arc::new(
-        oxicode_tools::file_state_tracker::FileStateTracker::default(),
-    );
+    let file_state_ref =
+        std::sync::Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default());
     let tool_context = ToolContext {
         working_dir: cwd.clone(),
         file_state: file_state_ref.clone(),
@@ -435,7 +432,9 @@ async fn main() -> Result<()> {
     ));
 
     // Fire SessionStart hook.
-    hook_manager.fire_simple(oxicode_hooks::HookEvent::SessionStart).await;
+    hook_manager
+        .fire_simple(oxicode_hooks::HookEvent::SessionStart)
+        .await;
 
     if let Some(prompt) = cli.prompt {
         let result = match cli.output {
@@ -444,7 +443,9 @@ async fn main() -> Result<()> {
             }
             OutputFormat::Text => run_single_prompt(engine, &mut session, &prompt).await,
         };
-        hook_manager.fire_simple(oxicode_hooks::HookEvent::SessionEnd).await;
+        hook_manager
+            .fire_simple(oxicode_hooks::HookEvent::SessionEnd)
+            .await;
         mcp_ref.shutdown_all().await;
         return result;
     }
@@ -556,7 +557,9 @@ async fn main() -> Result<()> {
         open_picker_on_start,
     )
     .await;
-    hook_manager.fire_simple(oxicode_hooks::HookEvent::SessionEnd).await;
+    hook_manager
+        .fire_simple(oxicode_hooks::HookEvent::SessionEnd)
+        .await;
     mcp_ref.shutdown_all().await;
 
     // Show resume session hint after TUI exits.
@@ -641,7 +644,9 @@ async fn run_single_prompt_json(
         }
     });
 
-    let result = engine.execute_turn(&mut conversation, Some(&event_tx)).await;
+    let result = engine
+        .execute_turn(&mut conversation, Some(&event_tx))
+        .await;
     drop(event_tx);
     let _ = drain_handle.await;
 
@@ -1044,10 +1049,8 @@ async fn run_tui(
                                 let loaded_id = loaded.id.clone();
 
                                 // 1. Persist current session's costs so they're not lost.
-                                let cost_path =
-                                    oxicode_state::cost_tracker::default_cost_path();
-                                let current_tracker =
-                                    state_store_clone.current().cost_tracker;
+                                let cost_path = oxicode_state::cost_tracker::default_cost_path();
+                                let current_tracker = state_store_clone.current().cost_tracker;
                                 let _ = oxicode_state::cost_tracker::save_costs(
                                     &cost_path,
                                     &current_tracker,
@@ -1065,15 +1068,13 @@ async fn run_tui(
 
                                 // 4. Swap conversation + state in place.
                                 conversation.replace_messages(loaded.messages.clone());
-                                let target_tracker = oxicode_state::cost_tracker::load_costs(
-                                    &cost_path,
-                                    &loaded_id,
-                                )
-                                .unwrap_or_else(|| {
-                                    oxicode_state::cost_tracker::CostTracker::new(
-                                        loaded_id.clone(),
-                                    )
-                                });
+                                let target_tracker =
+                                    oxicode_state::cost_tracker::load_costs(&cost_path, &loaded_id)
+                                        .unwrap_or_else(|| {
+                                            oxicode_state::cost_tracker::CostTracker::new(
+                                                loaded_id.clone(),
+                                            )
+                                        });
                                 state_store_clone.update(|s| {
                                     s.messages = loaded.messages;
                                     s.session_id.clone_from(&loaded_id);
@@ -1103,9 +1104,7 @@ async fn run_tui(
                             }
                             ResumeLookup::NotFound => {
                                 let _ = core_tx_clone
-                                    .send(CoreEvent::Error(format!(
-                                        "Session '{arg}' not found."
-                                    )))
+                                    .send(CoreEvent::Error(format!("Session '{arg}' not found.")))
                                     .await;
                             }
                             ResumeLookup::Multiple(n) => {
@@ -1118,9 +1117,7 @@ async fn run_tui(
                             }
                             ResumeLookup::SameAsCurrent => {
                                 let _ = core_tx_clone
-                                    .send(CoreEvent::Error(
-                                        "Already on that session.".into(),
-                                    ))
+                                    .send(CoreEvent::Error("Already on that session.".into()))
                                     .await;
                             }
                         }
@@ -1445,7 +1442,9 @@ mod resume_lookup_tests {
         s.messages.push(Message {
             id: "m".into(),
             role: Role::User,
-            content: vec![ContentBlock::Text { text: preview.into() }],
+            content: vec![ContentBlock::Text {
+                text: preview.into(),
+            }],
             model: None,
             stop_reason: None,
             created_at: chrono::Utc::now(),
@@ -1476,10 +1475,7 @@ mod resume_lookup_tests {
 
             // Full UUID — Found.
             assert!(matches!(
-                resolve_resume_arg(
-                    "aaaaaaaa-1111-2222-3333-444444444444",
-                    "other"
-                ),
+                resolve_resume_arg("aaaaaaaa-1111-2222-3333-444444444444", "other"),
                 ResumeLookup::Found(_)
             ));
             // UUID prefix — Found.

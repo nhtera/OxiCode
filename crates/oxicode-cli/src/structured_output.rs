@@ -242,7 +242,10 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"type\":\"hook\""));
         assert!(json.contains("\"state\":\"running\""));
-        assert!(!json.contains("\"kind\""), "kind should be skipped when None");
+        assert!(
+            !json.contains("\"kind\""),
+            "kind should be skipped when None"
+        );
     }
 
     #[test]
