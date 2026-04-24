@@ -10,7 +10,8 @@ use ratatui::Terminal;
 use crate::widgets::{
     AgentPanel, AgentsOverlay, CommandAutocomplete, DiffViewerWidget, HistorySearchWidget,
     InputBox, MessageView, ModelPicker, NotificationWidget, PastePreview, PermissionDialog,
-    RewindOverlay, SearchBar, SessionBrowser, StatsDashboard, SuggestionChips, TaskPanel,
+    RewindOverlay, SearchBar, SessionBrowser, SettingsScreenWidget, StatsDashboard, SuggestionChips,
+    TaskPanel,
 };
 
 // When the `virtual-scroll` feature is active, pull in the VirtualList path.
@@ -402,6 +403,11 @@ impl super::App {
                     AgentsOverlay::new(&self.agents_overlay).with_frame(self.frame_count),
                     content_area,
                 );
+            }
+
+            // Settings screen overlay (Ctrl+, or /settings).
+            if let Some(ref screen) = self.pending_settings {
+                frame.render_widget(SettingsScreenWidget::new(screen), content_area);
             }
 
             // History search overlay (Ctrl+R reverse search).

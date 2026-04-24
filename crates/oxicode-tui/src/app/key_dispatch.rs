@@ -96,6 +96,18 @@ impl super::App {
             return;
         }
 
+        // Settings screen overlay (Ctrl+, or /settings).
+        if self.pending_settings.is_some() {
+            self.handle_settings_key(key);
+            return;
+        }
+
+        // Ctrl+, opens the settings overlay from anywhere in normal mode.
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char(',') {
+            self.open_settings_screen();
+            return;
+        }
+
         // Command autocomplete dropdown captures keys when active.
         if self.autocomplete.active {
             self.handle_autocomplete_key(key);

@@ -80,6 +80,11 @@ impl super::App {
                     self.open_agents_overlay();
                     return;
                 }
+                // Handle /settings (no args) — open settings screen overlay.
+                if trimmed == "settings" {
+                    self.open_settings_screen();
+                    return;
+                }
                 let (name, args) = match trimmed.split_once(char::is_whitespace) {
                     Some((n, a)) => (n.to_string(), a.trim().to_string()),
                     None => (trimmed.to_string(), String::new()),

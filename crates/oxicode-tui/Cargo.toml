@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 oxicode-common = { workspace = true }
+oxicode-config = { workspace = true }
 oxicode-session = { workspace = true }
 oxicode-state = { workspace = true }
 oxicode-agents = { workspace = true }

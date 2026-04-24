@@ -16,8 +16,8 @@ use crate::vim_mode::VimState;
 use crate::widgets::{
     permission_dialog::RiskLevel, AgentsOverlayState, AutocompleteState, DiffViewerState,
     ElicitationDialog, HistorySearchState, MessageRenderCache, ModelPickerState, Notification,
-    RewindOverlayState, SearchOverlay, SessionBrowserState, ShortcutsState, SlashCommandMeta,
-    SplitPane, StatsDashboardState,
+    RewindOverlayState, SearchOverlay, SessionBrowserState, SettingsScreen, ShortcutsState,
+    SlashCommandMeta, SplitPane, StatsDashboardState,
 };
 
 #[cfg(feature = "virtual-scroll")]
@@ -226,6 +226,8 @@ pub struct App {
     pub(super) diff_viewer: DiffViewerState,
     /// Agents overlay state (/agents entrypoint).
     pub(super) agents_overlay: AgentsOverlayState,
+    /// Settings screen overlay — `Some` when the overlay is open (Ctrl+, or /settings).
+    pub(super) pending_settings: Option<SettingsScreen>,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     pub(super) message_area: Rect,
     /// Frame counter — incremented each draw call, drives spinner animation.
@@ -340,6 +342,7 @@ impl App {
             stats_dashboard: StatsDashboardState::new(),
             diff_viewer: DiffViewerState::new(),
             agents_overlay: AgentsOverlayState::new(),
+            pending_settings: None,
             message_area: Rect::default(),
             frame_count: 0,
             session_start: Instant::now(),

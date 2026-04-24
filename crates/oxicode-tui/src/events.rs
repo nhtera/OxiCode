@@ -10,6 +10,13 @@ pub enum UiEvent {
     SlashCommand { name: String, args: String },
     /// User requested quit.
     Quit,
+    /// Settings saved from the in-TUI settings screen. Engine loop updates
+    /// the running `StateStore` so live components (status bar, model picker,
+    /// etc.) pick up the new values without restart.
+    SettingsSaved {
+        model: String,
+        permission_mode: String,
+    },
     /// User requested interrupt of the current turn (Ctrl+C during streaming).
     InterruptTurn,
     /// Terminal resized.

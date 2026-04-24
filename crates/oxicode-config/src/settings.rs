@@ -31,6 +31,12 @@ pub struct Settings {
     pub default_sonnet_model: Option<String>,
     /// Default Opus model name (from `ANTHROPIC_DEFAULT_OPUS_MODEL` env var).
     pub default_opus_model: Option<String>,
+    /// Tools always permitted without a prompt (persisted allow-list).
+    #[serde(default)]
+    pub always_allow_tools: Vec<String>,
+    /// Tools always denied without a prompt (persisted deny-list).
+    #[serde(default)]
+    pub always_deny_tools: Vec<String>,
 }
 
 impl Default for Settings {
@@ -49,6 +55,8 @@ impl Default for Settings {
             default_haiku_model: None,
             default_sonnet_model: None,
             default_opus_model: None,
+            always_allow_tools: Vec::new(),
+            always_deny_tools: Vec::new(),
         }
     }
 }

@@ -1047,4 +1047,90 @@ impl super::App {
             }
         }
     }
+
+    // ── Settings screen ──────────────────────────────────────────────────────
+
+    /// Open the settings overlay, snapshotting current config into memory.
+    ///
+    /// Blocked when the agents overlay or permission/elicitation dialogs are
+    /// visible — those take priority and cannot coexist with settings.
+    pub(super) fn open_settings_screen(&mut self) {
+        if self.agents_overlay.is_visible()
+            || self.pending_permission.is_some()
+            || self.pending_elicitation.is_some()
+        {
+            return;
+        }
+        let settings = oxicode_config::load_settings(None);
+        self.pending_settings = Some(crate::widgets::SettingsScreen::from_config(&settings));
+    }
+
+    /// Handle key events while the settings overlay is open.
+    pub(super) fn handle_settings_key(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        let Some(screen) = self.pending_settings.as_mut() else {
+            return;
+        };
+
+        // Provider edit dialog gets priority: Tab switches field, Ctrl+R reveals,
+        // Enter commits, Esc cancels.
+        if screen.is_providers_editing() {
+            match (key.modifiers, key.code) {
+                (_, KeyCode::Esc) => screen.cancel_provider_edit(),
+                (_, KeyCode::Enter) => screen.commit_provider_edit(),
+                (_, KeyCode::Tab) => screen.toggle_provider_field(),
+                (KeyModifiers::CONTROL, KeyCode::Char('r')) => screen.toggle_reveal(),
+                (_, KeyCode::Backspace) => screen.pop_char(),
+                (_, KeyCode::Char(c)) => screen.push_char(c),
+                _ => {}
+            }
+            return;
+        }
+
+        match (key.modifiers, key.code) {
+            // Close overlay.
+            (_, KeyCode::Esc) => {
+                self.pending_settings = None;
+            }
+            // Save to disk.
+            (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
+                match screen.save() {
+                    Ok(()) => {
+                        // Propagate changed model + permission_mode into the live
+                        // StateStore via the engine event loop (spec task 6).
+                        let model = screen.general.model.clone();
+                        let permission_mode =
+                            screen.permissions.mode.as_str().to_string();
+                        let _ = self.ui_tx.try_send(crate::events::UiEvent::SettingsSaved {
+                            model,
+                            permission_mode,
+                        });
+                        self.notifications.push(crate::widgets::Notification::new(
+                            "Settings saved to ~/.oxicode/settings.toml".to_string(),
+                            crate::widgets::notification::NotificationLevel::Info,
+                        ));
+                    }
+                    Err(e) => {
+                        self.notifications.push(crate::widgets::Notification::new(
+                            format!("Save failed: {e}"),
+                            crate::widgets::notification::NotificationLevel::Error,
+                        ));
+                    }
+                }
+            }
+            // Tab cycle (forward / backward).
+            (_, KeyCode::Tab) | (_, KeyCode::Right) => screen.next_tab(),
+            (KeyModifiers::SHIFT, KeyCode::BackTab) | (_, KeyCode::Left) => screen.prev_tab(),
+            // Navigation within the active tab.
+            (_, KeyCode::Down) => screen.select_next(),
+            (_, KeyCode::Up) => screen.select_prev(),
+            // Activate / toggle / open-edit for the focused element.
+            (_, KeyCode::Enter) => screen.activate(),
+            // Text input (for editable fields like model name, allow/deny lists).
+            (_, KeyCode::Backspace) => screen.pop_char(),
+            (_, KeyCode::Char(c)) => screen.push_char(c),
+            _ => {}
+        }
+    }
 }

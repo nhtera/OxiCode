@@ -1,5 +1,7 @@
 pub mod agent_panel;
 pub mod agents_overlay;
+pub mod settings;
+pub mod settings_screen;
 pub mod code_block;
 pub mod command_autocomplete;
 pub mod diff_view;
@@ -63,3 +65,4 @@ pub use status_bar::StatusBar;
 pub use suggestion_chips::SuggestionChips;
 pub use task_panel::{TaskInfo, TaskPanel};
 pub use tool_call::{ToolCallStatus, ToolCallWidget};
+pub use settings_screen::{SettingsScreen, SettingsScreenWidget, SettingsTab};

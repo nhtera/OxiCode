@@ -112,6 +112,9 @@ fn merge_settings(target: &mut Settings, source: &Settings) {
     }
     // Always take features from TOML — they are fully deserialized with defaults.
     target.features = source.features.clone();
+    // Always take tool lists from TOML (empty vec is valid and meaningful).
+    target.always_allow_tools.clone_from(&source.always_allow_tools);
+    target.always_deny_tools.clone_from(&source.always_deny_tools);
 }
 
 /// Load all CLAUDE.md / OXICODE.md content for the given working directory.

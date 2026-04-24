@@ -1259,6 +1259,16 @@ async fn run_tui(
                         }
                     }
                 }
+                UiEvent::SettingsSaved { model, permission_mode } => {
+                    // Propagate saved settings into the live StateStore so the
+                    // status bar and other reactive components update immediately.
+                    state_store_clone.update(|s| {
+                        s.current_model.clone_from(&model);
+                        s.permission_mode.clone_from(&permission_mode);
+                    });
+                    // Update the engine's active model if it changed.
+                    engine_clone.set_model(model);
+                }
                 UiEvent::InterruptTurn => {
                     // No-op: the TUI sets cancel_flag directly via the shared
                     // Arc<AtomicBool> (signal_interrupt), so the engine sees it
