@@ -38,13 +38,24 @@ WebSocket (future)
 
 All MCP tools use the `server__toolname` prefix to avoid collisions with built-in tools. Tool schemas are converted to Claude-format via `mcp_tool_to_schema()` which adds `[MCP:servername]` to description.
 
+### MCP Elicitation
+
+MCP servers can request user input mid-execution via the `elicitation/create` protocol message. The bridge is wired as follows:
+
+1. **`ChannelElicitationHandler`** (`bridge_ui_elicitation.rs`) — sync `ElicitationHandler` impl; creates a `oneshot` channel per request, forwards `(ElicitationRequest, reply_tx)` over `mpsc::UnboundedSender` to the TUI, then `blocking_recv()`s. Auto-denies on channel close or reply drop.
+2. **TUI** drains the `UnboundedReceiver<ElicitationEnvelope>` in the `tokio::select!` event loop. The active request is stored as `pending_elicitation: Option<PendingElicitation>` on `App`. A second concurrent request while one is active is auto-denied (servers must serialize UI requests).
+3. **`ElicitationDialog`** widget handles user interaction (see `06-tui.md`).
+
+Install via `McpServerManager::set_elicitation_handler(handler)` before wrapping in `Arc`.
+
 ### Error Handling
 
 - Server startup failure → logged, non-fatal
 - Tool discovery failure → logged, tools not added to registry
 - Tool execution failure → returned as CallToolResult with error flag
+- Elicitation channel closed → auto-deny sent to server
 
-**Source:** `crates/oxicode-mcp/src/manager.rs`, `types.rs`, `config.rs`
+**Source:** `crates/oxicode-mcp/src/manager.rs`, `types.rs`, `config.rs`, `bridge_ui_elicitation.rs`
 
 ---
 
@@ -84,6 +95,9 @@ pub struct HookPayload {
     pub data: serde_json::Value,          // Event-specific data
     pub session_id: Option<String>,
     pub model: Option<String>,
+    // Present only when hook fires inside a spawned subagent process:
+    pub agent_id: Option<String>,         // Value passed to HookManager::set_subagent()
+    pub agent_type: Option<String>,       // Snake_case AgentType; absent for general agents
 }
 
 pub enum HookResponse {
@@ -94,17 +108,55 @@ pub enum HookResponse {
 }
 ```
 
+Both `agent_id` and `agent_type` are serialized with `#[serde(skip_serializing_if = "Option::is_none")]`, so main-session payloads are unchanged. Hook scripts can inspect these fields to branch on subagent context.
+
 ### Configuration & Execution
 
-Config file: `~/.oxicode/hooks.yaml` maps events to handlers:
-```yaml
-hooks:
-  pre_query:
-    executor: agent | http
-    command: /path/to/script  # for agent executor
-    url: http://localhost:8888  # for HTTP executor
-    timeout_secs: 5
+`HooksConfig` stores `HashMap<String, Vec<MatcherHookGroup>>` — **multiple matcher groups per event are supported**. Every group whose `matcher` regex matches the firing context (e.g., `tool_name`) is dispatched; all matching hooks within each matching group are executed in declaration order.
+
+**TOML config** (`~/.oxicode/hooks.yaml` / `~/.oxicode/settings.toml`) accepts three shapes per event:
+
+```toml
+# Shape 1 — flat string shorthand (single hook, no matcher)
+SessionStart = "/path/to/script"
+
+# Shape 2 — flat HookDef table (single hook, with optional matcher)
+[hooks.ToolCallBefore]
+executor = "agent"
+command = "/path/to/script"
+matcher = "bash"          # regex matched against tool_name
+timeout_secs = 5
+
+# Shape 3 — Claude-JSON array-of-tables (multiple matcher groups per event)
+# hooks.json / ~/.claude/settings.json
 ```
+
+**Claude-JSON array format** (multiple hooks per event, each with its own matcher):
+
+```json
+{
+  "hooks": {
+    "ToolCallBefore": [
+      {
+        "matcher": "bash|python",
+        "hooks": [
+          { "type": "command", "command": "/scripts/log-tool.sh" }
+        ]
+      },
+      {
+        "matcher": "file_write",
+        "hooks": [
+          { "type": "command", "command": "/scripts/audit-write.sh" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+All matcher groups matching a given event fire; a single `Abort` from any hook short-circuits the remainder. Multiple `ModifyPrompt` responses are concatenated; multiple `Message` responses are merged. Regex patterns are compiled once at config load time (`MatcherHookGroup::compile()`); invalid patterns fail-closed silently after a one-time load warning.
+
+`/hooks` slash command loads via `load_layered()` so both TOML and Claude-JSON hooks are visible.
 
 **Executors:**
 - **Agent executor**: Spawns subprocess, passes HookPayload on stdin, reads HookResponse from stdout
@@ -112,7 +164,7 @@ hooks:
 
 **Error handling:** Failed hook logged non-fatal; execution continues.
 
-**Source:** `crates/oxicode-hooks/src/events.rs`, `manager.rs`, `executor.rs`
+**Source:** `crates/oxicode-hooks/src/config.rs`, `manager.rs`, `events.rs`
 
 ---
 
@@ -175,15 +227,51 @@ Auto-applied on config load with backup. Examples:
 
 ## 4. Session Management (`oxicode-session`)
 
-Persists conversations to disk for resumption. Storage at `~/.oxicode/sessions/{uuid}.json` (permissions 0o600).
+Persists conversations to disk for resumption. Default storage at `~/.oxicode/sessions/{uuid}.json` (permissions 0o600). Sessions with branches use a tree layout (see below).
 
 ### Session Lifecycle
 
 1. **new()** → UUID + timestamps
 2. **save()** → JSON to disk (atomic write)
-3. **load()** from disk
-4. **list_sessions()** → sorted by updated_at DESC
+3. **load()** → checks tree layout first, falls back to legacy flat file
+4. **list_sessions()** → sorted by updated_at DESC; dedupes legacy + tree entries
 5. **resume()** via `oxicode --session <uuid>`
+6. **branch** → `oxicode --session <uuid> --branch <branch-uuid>` loads a specific branch
+
+### Session Branching
+
+Sessions can be branched at any turn via `/fork [title]` in the TUI or CLI:
+
+```rust
+pub struct SessionBranch {
+    pub id: Uuid,
+    pub parent: Option<Uuid>,
+    pub parent_turn: Option<u32>,
+    pub title: String,
+    pub messages: Vec<Message>,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct SessionTree {
+    pub session_id: Uuid,
+    pub branches: HashMap<Uuid, SessionBranch>,
+    pub current: Uuid,                // active branch id
+}
+```
+
+**Storage layout** (tree sessions):
+```
+~/.oxicode/sessions/{session_id}/
+├── tree.json            # SessionTree manifest
+├── {root_branch_id}.json
+└── {fork_branch_id}.json
+```
+
+**Migration**: Legacy `~/.oxicode/sessions/{id}.json` files are migrated on load — the tree directory and root branch file are written, and the legacy file is preserved for one release cycle.
+
+**Slash commands:**
+- `/fork [title]` — fork current branch at current turn; title defaults to `"branch-{short-id}"`
+- `/branches` — open `BranchesOverlay` (also `Ctrl+B`)
 
 ### Memory Subsystem
 
@@ -619,6 +707,7 @@ enum OperatingMode {
 --model <MODEL>           Override active model
 --config-dir <DIR>        Custom config directory
 --session <UUID>          Resume previous session
+--branch <UUID>           Load a specific branch within a session tree
 -p, --prompt <MSG>        Single message (non-interactive)
 --output json             NDJSON structured output
 --completions SHELL       Generate shell completions

@@ -107,12 +107,16 @@ pub struct App {
     
     // Overlays & dialogs (modal state)
     pending_permission: Option<PendingPermission>,
+    pending_elicitation: Option<PendingElicitation>,   // MCP elicitation/create
+    pending_settings: Option<SettingsScreen>,          // Ctrl+, / /settings
+    pending_branches: Option<BranchesOverlay>,         // Ctrl+B / /branches
     search: SearchOverlay,
     shortcuts: ShortcutsState,
     pending_paste: Option<String>,
     autocomplete: AutocompleteState,
     model_picker: ModelPickerState,
     session_browser: SessionBrowserState,
+    elicitation_rx: Option<UnboundedReceiver<ElicitationEnvelope>>,  // set by CLI
     
     // Images & paste handling
     pending_images: Vec<crate::image_paste::PastedImage>,
@@ -297,46 +301,59 @@ The event loop is the core of the TUI. It coordinates terminal input, engine mes
 
 ## Keyboard Handling
 
-Keyboard input flows through a 10-layer priority stack. Each layer can consume the key or pass it down:
+Keyboard input flows through a 14-layer priority stack. Each layer can consume the key or pass it down:
 
 ```
 Priority 1: Permission Dialog
    └─ Consume: y/n/Tab/Enter for response, Esc to cancel
-   └─ Pass: Tab cycles between buttons
 
-Priority 2: Search Overlay
+Priority 2: Elicitation Dialog (MCP elicitation/create)
+   └─ Consume: text input (Text/Secret types), y/n/Left/Right/Tab (Confirm),
+              Up/Down/Enter (Select), Esc/Ctrl+C to deny
+
+Priority 3: Agents Overlay
+   └─ Consume: navigation keys while visible
+
+Priority 4: Settings Screen (Ctrl+,  or /settings)
+   └─ Consume: Tab (switch tabs), Ctrl+S (save), arrow keys, Esc to close
+   └─ Guard: blocked if permission/elicitation/agents overlay is active
+
+Priority 5: Branches Overlay (Ctrl+B or /branches)
+   └─ Consume: Up/Down navigate, Enter switch branch, r rename, d delete (confirm), Esc close
+
+Priority 6: Search Overlay
    └─ Consume: text input, Esc to close
    └─ Pass: Up/Down for history
 
-Priority 3: History Search (Ctrl+R)
+Priority 7: History Search (Ctrl+R)
    └─ Consume: text input, Up/Down in results, Enter to select
    └─ Pass: Esc to cancel
 
-Priority 4: Session Browser
+Priority 8: Session Browser
    └─ Consume: Up/Down to navigate, Enter to load, q to close
    └─ Pass: other keys
 
-Priority 5: Model Picker
+Priority 9: Model Picker
    └─ Consume: Up/Down to select, Enter to switch, q to close
    └─ Pass: / for filter
 
-Priority 6: Paste Preview Modal
+Priority 10: Paste Preview Modal
    └─ Consume: y/n to confirm/reject, Esc to cancel
    └─ Pass: none
 
-Priority 7: Autocomplete Dropdown
+Priority 11: Autocomplete Dropdown
    └─ Consume: Up/Down to navigate, Enter to insert, Esc to close
    └─ Pass: Tab (cycle), space (dismiss)
 
-Priority 8: Pager (Shortcuts Panel)
+Priority 12: Pager (Shortcuts Panel)
    └─ Consume: q to close, PgUp/PgDn to scroll
    └─ Pass: other keys
 
-Priority 9: Keybinding Registry
+Priority 13: Keybinding Registry
    └─ Match key combo → Action dispatch (submit, scroll, toggle vim, etc.)
-   └─ Pass: unbound keys to priority 10
+   └─ Pass: unbound keys to priority 14
 
-Priority 10: Input Box (handle_key_inner)
+Priority 14: Input Box (handle_key_inner)
    └─ Vim mode OR regular input mode
    └─ Consume: all keys for text manipulation or vim operations
 ```
@@ -529,6 +546,18 @@ All widget files found in `crates/oxicode-tui/src/widgets/`:
 | **shortcuts_overlay.rs** | ~17.5k | Help panel: keyboard shortcuts + slash command reference |
 | **paste_preview.rs** | ~4.5k | Large paste confirmation modal |
 | **pager.rs** | ~4.5k | Scrollable panel for help/shortcuts (PgUp/PgDn) |
+| **elicitation_dialog.rs** | ~400 | MCP `elicitation/create` form — 4 input types (Text, Secret, Confirm, Select) |
+| **settings_screen.rs** + `settings/` | ~1443 | In-TUI settings — 4 tabs (General/Providers/Permissions/Hooks-readonly), `Ctrl+,` / `/settings` |
+| **branches_overlay.rs** | ~390 | Session branch tree — Browse/Rename/Confirm modes, `Ctrl+B` / `/branches` |
+
+### Virtual Scroll Widgets (feature-gated)
+
+These widgets are compiled only when the `virtual-scroll` Cargo feature is enabled (default: OFF).
+
+| Widget | Lines | Purpose |
+|--------|-------|---------|
+| **virtual_list.rs** | ~380 | Generic `VirtualList<T: VirtualItem>` with per-item `Vec<Option<u16>>` height cache, sticky-bottom, width-change invalidation |
+| **message_view_virtual.rs** | ~195 | `MessageItem` implementing `VirtualItem`; `build_message_items()` for incremental rebuilds |
 
 ### Tool & Content Widgets
 
@@ -568,7 +597,13 @@ All widget files found in `crates/oxicode-tui/src/widgets/`:
 
 **Autocomplete**: Dropdown showing slash commands matching `/` prefix, filterable, selectable with arrows.
 
-(source: crates/oxicode-tui/src/widgets/ [26 files])
+**ElicitationDialog**: Modal for MCP `elicitation/create` requests. Four input types dispatched by a state machine — `Text` (single-line + cursor), `Secret` (same as Text but renders `●` mask; raw secret never written to frame buffer), `Confirm` (Yes/No buttons with y/n hotkeys and Tab toggle), `Select` (vertical choices list, pre-selects `default_value` if provided). `Esc`/`Ctrl+C` sends `approved: false`. A second concurrent request while one is active is auto-denied. Wired to `ChannelElicitationHandler` in `oxicode-mcp` via an `UnboundedReceiver<ElicitationEnvelope>` drained in `event_loop.rs`.
+
+**SettingsScreen**: Tabbed settings overlay with 4 tabs: `General` (model, output format, theme, vim mode, ghost completion), `Providers` (table with token masking; `Ctrl+R` reveals), `Permissions` (radio group + allow/deny tool lists), `Hooks` (readonly tree loaded from all config layers). Footer: `[Tab]` switch tab, `[Ctrl+S]` save, `[Esc]` close. On save fires `UiEvent::SettingsSaved { model, permission_mode }` consumed by the CLI engine loop, which calls `state_store.update()` + `engine.set_model()` for live reactivity without restart.
+
+**BranchesOverlay**: Session branch tree viewer. Three modes: `Browse` (list + current `>` highlight), `Rename` (inline text input), `Confirm` (delete confirmation). `Enter` switches to selected branch; `r` renames; `d` triggers delete confirm; `Esc` closes. On branch switch fires `CoreEvent::SessionResumed` so the TUI rehydrates message history.
+
+(source: crates/oxicode-tui/src/widgets/)
 
 ---
 
@@ -593,14 +628,18 @@ Rendering happens per-frame in response to terminal events or core messages:
 │   ├─   SplitPane (toggle right panel)            │
 │   ├─   Overlay Priority (topmost):              │
 │   │     1. PermissionDialog (if pending)         │
-│   │     2. PastePreview (if pending_paste)       │
-│   │     3. HistorySearch (if searching)          │
-│   │     4. SessionBrowser (if open)              │
-│   │     5. ModelPicker (if open)                 │
-│   │     6. Autocomplete (if "/" matched)         │
-│   │     7. SearchOverlay (if Ctrl+F active)      │
-│   │     8. Shortcuts pager (if open)             │
-│   │     9. Notifications (toast layer)           │
+│   │     2. ElicitationDialog (if pending)        │
+│   │     3. AgentsOverlay (if visible)            │
+│   │     4. SettingsScreen (if pending_settings)  │
+│   │     5. BranchesOverlay (if pending_branches) │
+│   │     6. PastePreview (if pending_paste)       │
+│   │     7. HistorySearch (if searching)          │
+│   │     8. SessionBrowser (if open)              │
+│   │     9. ModelPicker (if open)                 │
+│   │    10. Autocomplete (if "/" matched)         │
+│   │    11. SearchOverlay (if Ctrl+F active)      │
+│   │    12. Shortcuts pager (if open)             │
+│   │    13. Notifications (toast layer)           │
 │   └─ terminal.flush() → write buffer to stdout   │
 └──────────────────────────────────────────────────┘
 ```
@@ -750,9 +789,10 @@ Auto-deny on timeout (configurable).
 |-----------|-------------|
 | **oxicode-core** | Sends CoreEvent via channel; receives UiEvent |
 | **oxicode-state** | Subscribes to AppState via watch channel |
-| **oxicode-config** | Loads keybindings, theme from user config |
-| **oxicode-session** | Persistence of prompt history (PersistentHistory) |
+| **oxicode-config** | Loads keybindings, theme from user config; `SettingsScreen` reads + writes `~/.oxicode/settings.toml` |
+| **oxicode-session** | Persistence of prompt history (`PersistentHistory`); `SessionTree` / `SessionBranch` for branch operations |
 | **oxicode-permissions** | Displays PermissionAsk dialog, sends PermissionResponse |
+| **oxicode-mcp** | `ChannelElicitationHandler` delivers `ElicitationEnvelope` to TUI via unbounded channel |
 | **oxicode-common** | Message, Role, ContentBlock, PermissionResponse types |
 
 ---
