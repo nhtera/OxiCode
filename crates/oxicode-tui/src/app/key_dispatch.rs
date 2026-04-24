@@ -156,8 +156,7 @@ impl super::App {
                         self.message_cache.image_counter() + self.pending_images.len() + 1;
                     // Cache image to session-scoped directory.
                     let session_id = self.state_rx.borrow().session_id.clone();
-                    img.path =
-                        crate::image_paste::cache_image(&session_id, image_num, &img.path);
+                    img.path = crate::image_paste::cache_image(&session_id, image_num, &img.path);
                     let msg = match img.dimensions {
                         Some((w, h)) => {
                             format!("[Image #{image_num}] attached ({w}x{h})")

@@ -23,6 +23,19 @@ pub enum AgentType {
 }
 
 impl AgentType {
+    /// Canonical lowercase name (matches the serde `rename_all = "snake_case"` repr).
+    /// Used for hook payload `agent_type` and for logging.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Plan => "plan",
+            Self::Explore => "explore",
+            Self::Verify => "verify",
+            Self::General => "general",
+            Self::Guide => "guide",
+            Self::Statusline => "statusline",
+        }
+    }
+
     /// Parse a string into an AgentType (case-insensitive).
     pub fn from_str_loose(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {

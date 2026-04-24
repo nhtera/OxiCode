@@ -45,10 +45,7 @@ impl super::App {
                 }
                 // Handle /sessions (and /session) inline — open browser overlay.
                 // `/resume` and `/continue` with no args share the same UX.
-                if matches!(
-                    trimmed,
-                    "sessions" | "session" | "resume" | "continue"
-                ) {
+                if matches!(trimmed, "sessions" | "session" | "resume" | "continue") {
                     self.open_session_browser();
                     return;
                 }
@@ -105,10 +102,7 @@ impl super::App {
                 let images = std::mem::take(&mut self.pending_images);
                 let _ = self
                     .ui_tx
-                    .send(crate::events::UiEvent::UserInput {
-                        text,
-                        images,
-                    })
+                    .send(crate::events::UiEvent::UserInput { text, images })
                     .await;
             }
         }
@@ -155,8 +149,7 @@ impl super::App {
 
     /// Recompute ghost text completion based on current input.
     pub(super) fn update_ghost_text(&mut self) {
-        self.ghost_text =
-            crate::ghost_completion::complete(&self.input_text, &self.slash_commands);
+        self.ghost_text = crate::ghost_completion::complete(&self.input_text, &self.slash_commands);
     }
 
     /// Accept the current ghost text completion. Returns true if accepted.

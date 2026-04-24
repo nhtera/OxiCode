@@ -5,10 +5,10 @@ use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKin
 use crate::agent_editor;
 use crate::keybindings::Action;
 use crate::vim_mode;
+use crate::widgets::agents_overlay::{AgentSource, GenerateStatus, RunningAgentRow};
 use crate::widgets::{
     AgentsAgentRow, AgentsOrigin, AgentsRow, AgentsTab, Notification, SessionEntry,
 };
-use crate::widgets::agents_overlay::{AgentSource, GenerateStatus, RunningAgentRow};
 
 use super::utils::{char_to_byte_index, format_relative_time};
 
@@ -37,7 +37,8 @@ fn build_agent_markdown(name: &str, description: &str, model: &str, prompt: &str
 
 fn yaml_escape(s: &str) -> String {
     // Quote if the value contains characters that could confuse a YAML scalar parser.
-    let needs_quote = s.contains(':') || s.contains('#') || s.starts_with(['-', '?', '!', '&', '*']);
+    let needs_quote =
+        s.contains(':') || s.contains('#') || s.starts_with(['-', '?', '!', '&', '*']);
     if needs_quote {
         format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
     } else {
@@ -347,9 +348,11 @@ impl super::App {
             .into_iter()
             .filter(|s| s.id != current_id)
             .map(|s| {
-                let title = s.title.clone().or_else(|| s.preview.clone()).unwrap_or_else(
-                    || format!("[{}]", &s.id[..8.min(s.id.len())]),
-                );
+                let title = s
+                    .title
+                    .clone()
+                    .or_else(|| s.preview.clone())
+                    .unwrap_or_else(|| format!("[{}]", &s.id[..8.min(s.id.len())]));
                 let last_updated = format_relative_time(s.updated_at);
                 SessionEntry {
                     id: s.id,
@@ -402,11 +405,15 @@ impl super::App {
         }
         // User agents, dim if shadowed by any project agent with same name.
         for a in by_origin.user_oxicode {
-            let shadow = project_names.contains(&a.name).then_some(AgentsOrigin::Project);
+            let shadow = project_names
+                .contains(&a.name)
+                .then_some(AgentsOrigin::Project);
             push_agent(AgentsOrigin::User, AgentSource::UserOxiCode, shadow, a);
         }
         for a in by_origin.user_claude {
-            let shadow = project_names.contains(&a.name).then_some(AgentsOrigin::Project);
+            let shadow = project_names
+                .contains(&a.name)
+                .then_some(AgentsOrigin::Project);
             push_agent(AgentsOrigin::User, AgentSource::UserClaude, shadow, a);
         }
 
@@ -479,8 +486,7 @@ impl super::App {
             (_, KeyCode::Right) => self.agents_overlay.next_tab(),
             (_, KeyCode::Up) => match self.agents_overlay.mode() {
                 AgentsOverlayMode::Browse => self.agents_overlay.select_prev(18),
-                AgentsOverlayMode::CreateLocation
-                | AgentsOverlayMode::CreateMethod { .. } => {
+                AgentsOverlayMode::CreateLocation | AgentsOverlayMode::CreateMethod { .. } => {
                     self.agents_overlay.wizard_prev(2);
                 }
                 AgentsOverlayMode::CreateModel { .. } => {
@@ -490,8 +496,7 @@ impl super::App {
             },
             (_, KeyCode::Down) => match self.agents_overlay.mode() {
                 AgentsOverlayMode::Browse => self.agents_overlay.select_next(18),
-                AgentsOverlayMode::CreateLocation
-                | AgentsOverlayMode::CreateMethod { .. } => {
+                AgentsOverlayMode::CreateLocation | AgentsOverlayMode::CreateMethod { .. } => {
                     self.agents_overlay.wizard_next(2);
                 }
                 AgentsOverlayMode::CreateModel { .. } => {
@@ -506,16 +511,14 @@ impl super::App {
                     AgentsOverlayMode::Browse => {
                         match self.agents_overlay.active_tab() {
                             AgentsTab::Library => {
-                                let Some(selected) = self.agents_overlay.selected().cloned()
-                                else {
+                                let Some(selected) = self.agents_overlay.selected().cloned() else {
                                     return;
                                 };
                                 match selected {
                                     AgentsRow::CreateNew => self.agents_overlay.start_create(),
                                     AgentsRow::Agent(a) => {
                                         self.agents_overlay.close();
-                                        if let Err(e) =
-                                            agent_editor::open_in_editor(&a.source_path)
+                                        if let Err(e) = agent_editor::open_in_editor(&a.source_path)
                                         {
                                             self.notifications.push(Notification::new(
                                                 format!("Failed to open editor: {e}"),
@@ -570,9 +573,7 @@ impl super::App {
                         self.spawn_agent_generation(prompt);
                     }
                     AgentsOverlayMode::CreateType {
-                        location,
-                        method,
-                        ..
+                        location, method, ..
                     } => {
                         let slug = self.agents_overlay.wizard_input().trim().to_string();
                         if slug.is_empty() || !is_valid_slug(&slug) {
@@ -599,9 +600,8 @@ impl super::App {
                             ));
                             return;
                         }
-                        self.agents_overlay.set_create_prompt_step(
-                            location, method, agent_type, desc,
-                        );
+                        self.agents_overlay
+                            .set_create_prompt_step(location, method, agent_type, desc);
                     }
                     AgentsOverlayMode::CreatePrompt {
                         location,
@@ -771,8 +771,9 @@ impl super::App {
         };
 
         let dir = match location {
-            CreateAgentLocation::Project => std::env::current_dir()
-                .map(|c| c.join(".oxicode").join("agents")),
+            CreateAgentLocation::Project => {
+                std::env::current_dir().map(|c| c.join(".oxicode").join("agents"))
+            }
             CreateAgentLocation::User => dirs::home_dir()
                 .map(|h| h.join(".oxicode").join("agents"))
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir")),

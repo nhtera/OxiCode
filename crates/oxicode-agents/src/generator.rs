@@ -125,10 +125,14 @@ fn parse_response(text: &str) -> Result<GeneratedAgent, GenerateError> {
         if end > start {
             trimmed[start..=end].to_string()
         } else {
-            return Err(GenerateError::Parse("no JSON object in response".to_string()));
+            return Err(GenerateError::Parse(
+                "no JSON object in response".to_string(),
+            ));
         }
     } else {
-        return Err(GenerateError::Parse("no JSON object in response".to_string()));
+        return Err(GenerateError::Parse(
+            "no JSON object in response".to_string(),
+        ));
     };
 
     let value: serde_json::Value = serde_json::from_str(&json_str)

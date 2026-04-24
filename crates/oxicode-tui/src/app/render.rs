@@ -41,7 +41,8 @@ impl super::App {
         }
 
         // Prune expired notifications to prevent unbounded growth.
-        self.notifications.retain(crate::widgets::Notification::is_active);
+        self.notifications
+            .retain(crate::widgets::Notification::is_active);
 
         // ── Read only what we need from state (NO deep clone) ──
         // Borrow the watch receiver briefly, extract lightweight fields only.
@@ -165,16 +166,17 @@ impl super::App {
                 None
             };
             let provider_name = detect_provider_from_model_name(&current_model);
-            let status_bar = crate::widgets::StatusBar::new(&current_model, &total_usage, is_streaming)
-                .with_provider(&provider_name)
-                .with_vim_badge(vim_badge)
-                .with_auth_label(&auth_label)
-                .with_context_pct(context_pct)
-                .with_permission_mode(&permission_mode)
-                .with_cwd(&cwd)
-                .with_session_start(Some(self.session_start))
-                .with_cost(cost_usd)
-                .with_retry_status(&status_label);
+            let status_bar =
+                crate::widgets::StatusBar::new(&current_model, &total_usage, is_streaming)
+                    .with_provider(&provider_name)
+                    .with_vim_badge(vim_badge)
+                    .with_auth_label(&auth_label)
+                    .with_context_pct(context_pct)
+                    .with_permission_mode(&permission_mode)
+                    .with_cwd(&cwd)
+                    .with_session_start(Some(self.session_start))
+                    .with_cost(cost_usd)
+                    .with_retry_status(&status_label);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)

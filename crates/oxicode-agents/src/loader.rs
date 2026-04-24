@@ -78,7 +78,10 @@ pub fn discover_uncached_with_origins(cwd: Option<&Path>) -> AgentsByOrigin {
     }
 
     if let Some(cwd) = cwd {
-        load_dir_into(&cwd.join(".oxicode").join("agents"), &mut out.project_oxicode);
+        load_dir_into(
+            &cwd.join(".oxicode").join("agents"),
+            &mut out.project_oxicode,
+        );
         load_dir_into(&cwd.join(".claude").join("agents"), &mut out.project_claude);
     }
 
@@ -124,7 +127,8 @@ pub fn discover_uncached(cwd: Option<&Path>) -> Vec<CustomAgent> {
     // De-dupe by name with deterministic precedence:
     // project .oxicode > project .claude > user .oxicode > user .claude.
     let mut seen = std::collections::HashSet::new();
-    found.into_iter()
+    found
+        .into_iter()
         .filter(|a| seen.insert(a.name.clone()))
         .collect()
 }
@@ -155,8 +159,8 @@ pub fn load_agent_file(path: &Path) -> Result<CustomAgent, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("read {path:?}: {e}"))?;
     let (frontmatter, body) = split_frontmatter(&content)
         .ok_or_else(|| format!("missing YAML frontmatter in {path:?}"))?;
-    let meta: AgentFrontmatter = serde_yaml::from_str(frontmatter)
-        .map_err(|e| format!("invalid YAML in {path:?}: {e}"))?;
+    let meta: AgentFrontmatter =
+        serde_yaml::from_str(frontmatter).map_err(|e| format!("invalid YAML in {path:?}: {e}"))?;
 
     Ok(CustomAgent {
         name: meta.name,

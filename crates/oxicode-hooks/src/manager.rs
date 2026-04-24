@@ -78,10 +78,11 @@ impl HookManager {
     }
 
     /// Mark this manager as belonging to a sub-agent (sets `agent_id`/`agent_type`
-    /// on every payload — Claude Code parity).
-    pub fn set_subagent(&mut self, id: impl Into<String>, agent_type: impl Into<String>) {
+    /// on every payload — Claude Code parity). `agent_type` is optional because
+    /// subagents without a specialized type (plain `General`) may leave it unset.
+    pub fn set_subagent(&mut self, id: impl Into<String>, agent_type: Option<String>) {
         self.agent_id = Some(id.into());
-        self.agent_type = Some(agent_type.into());
+        self.agent_type = agent_type;
     }
 
     /// Check if any enabled hook is registered for the given event (regardless
@@ -196,8 +197,8 @@ impl HookManager {
     }
 
     /// Build a fully-populated HookPayload by overlaying `fields` onto the
-    /// manager's ambient session metadata.
-    fn build_payload(&self, event: HookEvent, fields: HookFields) -> HookPayload {
+    /// manager's ambient session metadata. `pub(crate)` for tests.
+    pub(crate) fn build_payload(&self, event: HookEvent, fields: HookFields) -> HookPayload {
         HookPayload {
             session_id: self.session_id.clone(),
             transcript_path: self.transcript_path.clone(),
@@ -354,6 +355,52 @@ mod tests {
         assert!(manager.has_hook(HookEvent::SessionStart));
         let resp = manager.fire_simple(HookEvent::SessionStart).await;
         assert!(matches!(resp, HookResponse::Pass));
+    }
+
+    #[test]
+    fn test_main_session_payload_omits_subagent_fields() {
+        let manager = HookManager::noop();
+        let payload = manager.build_payload(HookEvent::PreToolUse, HookFields::default());
+        assert!(payload.agent_id.is_none(), "main session leaks agent_id");
+        assert!(
+            payload.agent_type.is_none(),
+            "main session leaks agent_type"
+        );
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(!json.contains("agent_id"), "serialized JSON: {json}");
+        assert!(!json.contains("agent_type"), "serialized JSON: {json}");
+    }
+
+    #[test]
+    fn test_set_subagent_tags_every_payload() {
+        let mut manager = HookManager::noop();
+        manager.set_subagent("researcher-42", Some("explore".to_string()));
+
+        let payload = manager.build_payload(
+            HookEvent::PreToolUse,
+            HookFields::for_tool("Bash", serde_json::json!({"command": "ls"})),
+        );
+        assert_eq!(payload.agent_id.as_deref(), Some("researcher-42"));
+        assert_eq!(payload.agent_type.as_deref(), Some("explore"));
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["agent_id"], "researcher-42");
+        assert_eq!(json["agent_type"], "explore");
+    }
+
+    #[test]
+    fn test_set_subagent_without_type_keeps_only_id() {
+        // General-purpose subagents (no specialized type) still set agent_id
+        // so observers can tell "subagent vs. main session"; agent_type stays absent.
+        let mut manager = HookManager::noop();
+        manager.set_subagent("general-7", None);
+        let payload = manager.build_payload(HookEvent::Stop, HookFields::default());
+        assert_eq!(payload.agent_id.as_deref(), Some("general-7"));
+        assert!(payload.agent_type.is_none());
+
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"agent_id\":\"general-7\""));
+        assert!(!json.contains("agent_type"));
     }
 
     #[test]

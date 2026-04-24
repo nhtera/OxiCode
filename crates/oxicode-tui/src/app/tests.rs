@@ -1,28 +1,28 @@
 #[cfg(test)]
 mod tests {
     // Explicit imports required because tests.rs is a submodule of app, not app.rs itself.
-    use crate::app::App;
-    use crate::app::{MAX_HOOK_LINE_CHARS, PendingPermission};
     use crate::app::utils::{
         char_to_byte_index, detect_provider_from_model_name, is_dangerous_operation,
         summarize_input,
     };
+    use crate::app::App;
+    use crate::app::{PendingPermission, MAX_HOOK_LINE_CHARS};
     use crate::events::{CoreEvent, UiEvent};
-    use crate::widgets::{Notification, SessionEntry, SlashCommandMeta};
     use crate::widgets::permission_dialog::RiskLevel;
+    use crate::widgets::{Notification, SessionEntry, SlashCommandMeta};
     use crossterm::event::{
         Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
+    use insta::assert_snapshot;
+    use oxicode_common::{Message, PermissionResponse};
     use oxicode_state::StateStore;
+    use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
     use ratatui::Terminal;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     use tokio::sync::mpsc;
-    use insta::assert_snapshot;
-    use oxicode_common::{Message, PermissionResponse};
-    use ratatui::backend::TestBackend;
     use tokio::sync::oneshot;
 
     #[test]
@@ -1542,11 +1542,14 @@ mod tests {
         let flag = Arc::new(AtomicBool::new(false));
         app.set_cancel_flag(flag.clone());
         app.handle_core_event(CoreEvent::StreamStart);
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
         assert!(!app.is_turn_active, "Esc during turn must deactivate");
         assert!(flag.load(Ordering::SeqCst), "Esc must set cancel flag");
         assert!(
-            app.notifications.iter().any(|n| n.message.contains("Interrupting")),
+            app.notifications
+                .iter()
+                .any(|n| n.message.contains("Interrupting")),
             "should show Interrupting notification"
         );
     }
@@ -1560,7 +1563,8 @@ mod tests {
         // Double-Ctrl+C contract: first press during an active turn signals
         // interrupt (flips cancel_flag) but does NOT quit; second press within
         // 2s flips should_quit and emits UiEvent::Quit.
-        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
         assert!(
             flag.load(Ordering::Relaxed),
             "First Ctrl+C during turn should set cancel_flag"
@@ -1575,8 +1579,12 @@ mod tests {
             matches!(ui_rx.try_recv(), Ok(UiEvent::InterruptTurn)),
             "First Ctrl+C during turn should emit InterruptTurn"
         );
-        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
-        assert!(app.should_quit, "Second Ctrl+C within 2s should set should_quit");
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
+        assert!(
+            app.should_quit,
+            "Second Ctrl+C within 2s should set should_quit"
+        );
         assert!(
             matches!(ui_rx.try_recv(), Ok(UiEvent::Quit)),
             "Second Ctrl+C should emit Quit event"
@@ -1588,9 +1596,11 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.handle_core_event(CoreEvent::StreamStart);
         // First press arms the hint, second press within 2s force-quits.
-        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
         assert!(!app.should_quit, "First Ctrl+C must not quit");
-        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
         assert!(app.should_quit, "Double Ctrl+C must set should_quit");
     }
 
@@ -1616,7 +1626,7 @@ mod tests {
         app.handle_core_event(CoreEvent::StreamStart);
         app.signal_interrupt().await;
         let _ = ui_rx.try_recv(); // drain InterruptTurn
-        // Set input and submit
+                                  // Set input and submit
         app.input_text = "continue".to_string();
         app.input_cursor = 8;
         app.submit_input().await;
@@ -1627,9 +1637,14 @@ mod tests {
                 found_user_input = true;
             }
         }
-        assert!(found_user_input, "submit should work immediately after interrupt");
         assert!(
-            !app.notifications.iter().any(|n| n.message.contains("Waiting")),
+            found_user_input,
+            "submit should work immediately after interrupt"
+        );
+        assert!(
+            !app.notifications
+                .iter()
+                .any(|n| n.message.contains("Waiting")),
             "should not show 'Waiting' notification after interrupt"
         );
     }
@@ -1639,29 +1654,38 @@ mod tests {
     #[tokio::test]
     async fn test_autocomplete_activates_on_slash() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
         assert!(app.autocomplete.active, "/ should activate autocomplete");
     }
 
     #[tokio::test]
     async fn test_autocomplete_filters_by_prefix() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
         assert!(app.autocomplete.active);
         // Type 'h' to filter to "help"
-        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE))
+            .await;
         assert!(app.autocomplete.active, "should still be active with match");
         assert_eq!(app.input_text, "/h");
         // The filtered list should contain the index for "help"
-        assert!(!app.autocomplete.filtered.is_empty(), "should have at least one match for 'h'");
+        assert!(
+            !app.autocomplete.filtered.is_empty(),
+            "should have at least one match for 'h'"
+        );
     }
 
     #[tokio::test]
     async fn test_autocomplete_tab_selects_top_match() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+            .await;
         assert!(!app.autocomplete.active, "Tab should close autocomplete");
         assert_eq!(app.input_text, "/help");
     }
@@ -1669,28 +1693,41 @@ mod tests {
     #[tokio::test]
     async fn test_autocomplete_down_arrow_navigates() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
         let initial_selected = app.autocomplete.selected;
-        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
-        assert_eq!(app.autocomplete.selected, initial_selected + 1, "Down should advance selection");
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+            .await;
+        assert_eq!(
+            app.autocomplete.selected,
+            initial_selected + 1,
+            "Down should advance selection"
+        );
     }
 
     #[tokio::test]
     async fn test_autocomplete_up_arrow_wraps() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
         assert_eq!(app.autocomplete.selected, 0);
-        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))
+            .await;
         // Should wrap to last item
         let last = app.autocomplete.filtered.len().saturating_sub(1);
-        assert_eq!(app.autocomplete.selected, last, "Up from 0 should wrap to last");
+        assert_eq!(
+            app.autocomplete.selected, last,
+            "Up from 0 should wrap to last"
+        );
     }
 
     #[tokio::test]
     async fn test_autocomplete_enter_inserts_selected() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
         assert!(!app.autocomplete.active, "Enter should close autocomplete");
         // Should have inserted a command name
         assert!(app.input_text.starts_with('/'), "input should start with /");
@@ -1699,27 +1736,36 @@ mod tests {
     #[tokio::test]
     async fn test_autocomplete_esc_dismisses() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
         assert!(app.autocomplete.active);
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
         assert!(!app.autocomplete.active, "Esc should dismiss autocomplete");
     }
 
     #[tokio::test]
     async fn test_autocomplete_backspace_past_slash_deactivates() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
         assert!(app.autocomplete.active);
-        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)).await;
-        assert!(!app.autocomplete.active, "Backspace past / should deactivate");
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE))
+            .await;
+        assert!(
+            !app.autocomplete.active,
+            "Backspace past / should deactivate"
+        );
         assert!(app.input_text.is_empty());
     }
 
     #[tokio::test]
     async fn test_autocomplete_ghost_text_shows_suffix() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE))
+            .await;
         // Ghost text should show the rest of "help" → "elp" (or may be None)
         if let Some(ref ghost) = app.ghost_text {
             assert!(
@@ -1733,13 +1779,20 @@ mod tests {
     #[tokio::test]
     async fn test_autocomplete_no_match_deactivates() {
         let (mut app, _ui_rx, _core_tx) = make_test_app_with_commands();
-        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
         assert!(app.autocomplete.active);
         // Type something that matches nothing
-        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)).await;
-        assert!(!app.autocomplete.active, "No match should deactivate autocomplete");
+        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            !app.autocomplete.active,
+            "No match should deactivate autocomplete"
+        );
     }
 
     // ── PHASE 3: Search Overlay ──────────────────────────────────────────────
@@ -1748,7 +1801,8 @@ mod tests {
     async fn test_search_ctrl_f_activates_overlay() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         assert!(!app.search.is_active());
-        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL))
+            .await;
         assert!(app.search.is_active(), "Ctrl+F should activate search");
     }
 
@@ -1756,8 +1810,10 @@ mod tests {
     async fn test_search_typing_builds_query() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.search.activate();
-        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE))
+            .await;
         assert_eq!(app.search.query(), "hi", "typing should build search query");
     }
 
@@ -1765,9 +1821,12 @@ mod tests {
     async fn test_search_backspace_removes_char() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.search.activate();
-        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE))
+            .await;
         assert_eq!(app.search.query(), "a", "backspace should remove last char");
     }
 
@@ -1776,7 +1835,8 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.search.activate();
         assert!(app.search.is_active());
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
         assert!(!app.search.is_active(), "Esc should close search");
     }
 
@@ -1784,8 +1844,10 @@ mod tests {
     async fn test_search_enter_confirms_and_closes() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.search.activate();
-        app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
         assert!(!app.search.is_active(), "Enter should close search");
     }
 
@@ -1794,7 +1856,8 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.search.activate();
         // Enter with empty query should not crash
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
         assert!(!app.search.is_active());
     }
 
@@ -1803,21 +1866,28 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.search.activate();
         // Typing should go to search, not input box
-        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)).await;
-        assert!(app.input_text.is_empty(), "search should capture keys, not input box");
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.input_text.is_empty(),
+            "search should capture keys, not input box"
+        );
         assert_eq!(app.search.query(), "x");
     }
 
     #[tokio::test]
     async fn test_search_ctrl_f_toggles() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
-        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL))
+            .await;
         assert!(app.search.is_active());
         // Esc to close
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
         assert!(!app.search.is_active());
         // Ctrl+F again to reopen
-        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL))
+            .await;
         assert!(app.search.is_active(), "Ctrl+F should reopen search");
     }
 
@@ -1827,8 +1897,12 @@ mod tests {
     async fn test_history_search_ctrl_r_activates() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         assert!(app.history_search.is_none());
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
-        assert!(app.history_search.is_some(), "Ctrl+R should open history search");
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
+        assert!(
+            app.history_search.is_some(),
+            "Ctrl+R should open history search"
+        );
     }
 
     #[tokio::test]
@@ -1837,10 +1911,12 @@ mod tests {
         // Add some history first
         app.history.add("hello world", None);
         app.history.add("goodbye world", None);
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
         assert!(app.history_search.is_some());
         // Type to filter
-        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE))
+            .await;
         let hs = app.history_search.as_ref().unwrap();
         assert!(
             app.input_text.contains("hello") || hs.query == "h",
@@ -1853,9 +1929,11 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.history.add("first", None);
         app.history.add("second", None);
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
         let first_selected = app.history_search.as_ref().unwrap().selected;
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
         let second_selected = app.history_search.as_ref().unwrap().selected;
         let result_count = app.history_search.as_ref().unwrap().matches.len();
         // Should have advanced or wrapped (if only 1 match it stays the same)
@@ -1869,9 +1947,14 @@ mod tests {
     async fn test_history_search_enter_confirms() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.history.add("test command", None);
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
-        assert!(app.history_search.is_none(), "Enter should close history search");
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.history_search.is_none(),
+            "Enter should close history search"
+        );
     }
 
     #[tokio::test]
@@ -1879,23 +1962,35 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.input_text = "original".to_string();
         app.input_cursor = 8;
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
         assert!(app.history_search.is_some());
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
-        assert!(app.history_search.is_none(), "Esc should close history search");
-        assert_eq!(app.input_text, "original", "Esc should restore original input");
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.history_search.is_none(),
+            "Esc should close history search"
+        );
+        assert_eq!(
+            app.input_text, "original",
+            "Esc should restore original input"
+        );
     }
 
     #[tokio::test]
     async fn test_history_search_backspace_narrows() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.history.add("hello", None);
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE))
+            .await;
         let query_before = app.history_search.as_ref().unwrap().query.clone();
         assert_eq!(query_before, "he");
-        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE))
+            .await;
         assert_eq!(
             app.history_search.as_ref().unwrap().query,
             "h",
@@ -1906,11 +2001,18 @@ mod tests {
     #[tokio::test]
     async fn test_history_search_no_match_stays_open() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE)).await;
-        assert!(app.history_search.is_some(), "no match should keep overlay open");
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.history_search.is_some(),
+            "no match should keep overlay open"
+        );
     }
 
     // ── PHASE 5: Model Picker ────────────────────────────────────────────────
@@ -1927,25 +2029,35 @@ mod tests {
     async fn test_model_picker_esc_closes() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.model_picker.open("claude-sonnet-4-20250514");
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
-        assert!(!app.model_picker.is_visible(), "Esc should close model picker");
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
+        assert!(
+            !app.model_picker.is_visible(),
+            "Esc should close model picker"
+        );
     }
 
     #[tokio::test]
     async fn test_model_picker_up_down_navigates() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.model_picker.open("claude-sonnet-4-20250514");
-        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+            .await;
         // Just verify no crash, selection moved
-        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)).await;
-        assert!(app.model_picker.is_visible(), "should still be open after navigation");
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.model_picker.is_visible(),
+            "should still be open after navigation"
+        );
     }
 
     #[tokio::test]
     async fn test_model_picker_enter_selects() {
         let (mut app, mut ui_rx, _core_tx) = make_test_app();
         app.model_picker.open("claude-sonnet-4-20250514");
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
         assert!(!app.model_picker.is_visible(), "Enter should close picker");
         // Check if SlashCommand was emitted
         let mut found_slash = false;
@@ -1961,34 +2073,52 @@ mod tests {
     async fn test_model_picker_typing_filters() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.model_picker.open("claude-sonnet-4-20250514");
-        app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)).await;
-        assert!(app.model_picker.is_visible(), "should remain open while typing filter");
+        app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.model_picker.is_visible(),
+            "should remain open while typing filter"
+        );
     }
 
     #[tokio::test]
     async fn test_model_picker_left_right_effort() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.model_picker.open("claude-sonnet-4-20250514");
-        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).await;
-        assert!(app.model_picker.is_visible(), "effort adjustments should not close picker");
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.model_picker.is_visible(),
+            "effort adjustments should not close picker"
+        );
     }
 
     #[tokio::test]
     async fn test_model_picker_blocks_normal_input() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.model_picker.open("claude-sonnet-4-20250514");
-        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)).await;
-        assert!(app.input_text.is_empty(), "model picker should capture keys, not input box");
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.input_text.is_empty(),
+            "model picker should capture keys, not input box"
+        );
     }
 
     #[tokio::test]
     async fn test_model_picker_backspace_clears_filter() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.model_picker.open("claude-sonnet-4-20250514");
-        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)).await;
-        assert!(app.model_picker.is_visible(), "backspace should not close picker");
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.model_picker.is_visible(),
+            "backspace should not close picker"
+        );
     }
 
     // ── PHASE 6: Session Browser ─────────────────────────────────────────────
@@ -2024,25 +2154,38 @@ mod tests {
     async fn test_session_browser_esc_closes() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.session_browser.open(make_test_sessions());
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
-        assert!(!app.session_browser.is_visible(), "Esc should close session browser");
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
+        assert!(
+            !app.session_browser.is_visible(),
+            "Esc should close session browser"
+        );
     }
 
     #[tokio::test]
     async fn test_session_browser_up_down_navigates() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.session_browser.open(make_test_sessions());
-        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)).await;
-        assert!(app.session_browser.is_visible(), "navigation should not close browser");
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.session_browser.is_visible(),
+            "navigation should not close browser"
+        );
     }
 
     #[tokio::test]
     async fn test_session_browser_enter_resumes() {
         let (mut app, mut ui_rx, _core_tx) = make_test_app();
         app.session_browser.open(make_test_sessions());
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
-        assert!(!app.session_browser.is_visible(), "Enter should close browser");
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
+        assert!(
+            !app.session_browser.is_visible(),
+            "Enter should close browser"
+        );
         // Check if resume SlashCommand was emitted
         let mut found = false;
         while let Ok(ev) = ui_rx.try_recv() {
@@ -2057,33 +2200,50 @@ mod tests {
     async fn test_session_browser_r_enters_rename() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.session_browser.open(make_test_sessions());
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)).await;
-        assert!(app.session_browser.is_visible(), "rename mode should keep browser open");
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.session_browser.is_visible(),
+            "rename mode should keep browser open"
+        );
         // mode should be Rename now
         use crate::widgets::session_browser::SessionBrowserMode;
-        assert!(matches!(app.session_browser.mode(), SessionBrowserMode::Rename));
+        assert!(matches!(
+            app.session_browser.mode(),
+            SessionBrowserMode::Rename
+        ));
     }
 
     #[tokio::test]
     async fn test_session_browser_rename_typing() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.session_browser.open(make_test_sessions());
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)).await; // enter rename
-        app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE))
+            .await; // enter rename
+        app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE))
+            .await;
         // Should still be in rename mode, characters added
         use crate::widgets::session_browser::SessionBrowserMode;
-        assert!(matches!(app.session_browser.mode(), SessionBrowserMode::Rename));
+        assert!(matches!(
+            app.session_browser.mode(),
+            SessionBrowserMode::Rename
+        ));
     }
 
     #[tokio::test]
     async fn test_session_browser_rename_enter_confirms() {
         let (mut app, mut ui_rx, _core_tx) = make_test_app();
         app.session_browser.open(make_test_sessions());
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE)).await;
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE))
+            .await;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
         // Should have emitted rename-session SlashCommand
         let mut found = false;
         while let Ok(ev) = ui_rx.try_recv() {
@@ -2091,17 +2251,25 @@ mod tests {
                 found = true;
             }
         }
-        assert!(found, "rename Enter should emit rename-session SlashCommand");
+        assert!(
+            found,
+            "rename Enter should emit rename-session SlashCommand"
+        );
     }
 
     #[tokio::test]
     async fn test_session_browser_cancel_in_rename() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.session_browser.open(make_test_sessions());
-        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE))
+            .await;
         // Esc in Rename mode cancels back to Browse (not close)
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
-        assert!(app.session_browser.is_visible(), "Esc in rename should return to browse, not close");
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.session_browser.is_visible(),
+            "Esc in rename should return to browse, not close"
+        );
         use crate::widgets::session_browser::SessionBrowserMode;
         assert!(
             matches!(app.session_browser.mode(), SessionBrowserMode::Browse),
@@ -2116,7 +2284,10 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.handle_paste("short text");
         assert_eq!(app.input_text, "short text");
-        assert!(app.pending_paste.is_none(), "small paste should not trigger preview");
+        assert!(
+            app.pending_paste.is_none(),
+            "small paste should not trigger preview"
+        );
     }
 
     #[test]
@@ -2124,8 +2295,14 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         let large = "line1\nline2\nline3\nline4\nline5\nline6\n"; // 6 lines > threshold of 5
         app.handle_paste(large);
-        assert!(app.pending_paste.is_some(), "large paste should set pending_paste");
-        assert!(app.input_text.is_empty(), "large paste should not insert directly");
+        assert!(
+            app.pending_paste.is_some(),
+            "large paste should set pending_paste"
+        );
+        assert!(
+            app.input_text.is_empty(),
+            "large paste should not insert directly"
+        );
     }
 
     #[tokio::test]
@@ -2134,9 +2311,16 @@ mod tests {
         let large = "line1\nline2\nline3\nline4\nline5\nline6\n";
         app.handle_paste(large);
         assert!(app.pending_paste.is_some());
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
-        assert!(app.pending_paste.is_none(), "Enter should clear pending_paste");
-        assert!(app.input_text.contains("line1"), "Enter should insert pasted text");
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.pending_paste.is_none(),
+            "Enter should clear pending_paste"
+        );
+        assert!(
+            app.input_text.contains("line1"),
+            "Enter should insert pasted text"
+        );
     }
 
     #[tokio::test]
@@ -2144,7 +2328,8 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         let large = "line1\nline2\nline3\nline4\nline5\nline6\n";
         app.handle_paste(large);
-        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
         assert!(app.pending_paste.is_none(), "Esc should discard paste");
         assert!(app.input_text.is_empty(), "Esc should not insert paste");
     }
@@ -2154,8 +2339,12 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         let large = "line1\nline2\nline3\nline4\nline5\nline6\n";
         app.handle_paste(large);
-        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)).await;
-        assert!(app.input_text.is_empty(), "paste preview should block normal input");
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.input_text.is_empty(),
+            "paste preview should block normal input"
+        );
     }
 
     #[test]
@@ -2195,7 +2384,11 @@ mod tests {
             max_retries: 3,
             retry_in_secs: 30.0,
         });
-        assert_eq!(app.notifications.len(), before + 1, "RateLimited should add notification");
+        assert_eq!(
+            app.notifications.len(),
+            before + 1,
+            "RateLimited should add notification"
+        );
     }
 
     #[test]
@@ -2263,7 +2456,11 @@ mod tests {
             max_retries: 5,
             retry_in_secs: 10.0,
         });
-        assert_eq!(app.notifications.len(), before + 1, "Retrying should add notification");
+        assert_eq!(
+            app.notifications.len(),
+            before + 1,
+            "Retrying should add notification"
+        );
     }
 
     #[test]
@@ -2277,7 +2474,10 @@ mod tests {
             prompt: "Allow bash?".to_string(),
             reply_tx: tx,
         });
-        assert!(app.pending_permission.is_some(), "PermissionAsk should create dialog");
+        assert!(
+            app.pending_permission.is_some(),
+            "PermissionAsk should create dialog"
+        );
     }
 
     #[test]
@@ -2296,7 +2496,10 @@ mod tests {
         assert!(app.is_turn_active);
         // Skip StreamEnd, go straight to MessageComplete
         app.handle_core_event(CoreEvent::MessageComplete);
-        assert!(!app.is_turn_active, "MessageComplete should deactivate even without StreamEnd");
+        assert!(
+            !app.is_turn_active,
+            "MessageComplete should deactivate even without StreamEnd"
+        );
         assert!(app.streaming_text.is_empty());
         assert!(app.active_tools.is_empty());
     }
@@ -2377,8 +2580,12 @@ mod tests {
         });
         assert!(app.pending_permission.is_some());
         // Ctrl+C in permission dialog
-        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
-        assert!(app.pending_permission.is_none(), "Ctrl+C should dismiss permission");
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
+        assert!(
+            app.pending_permission.is_none(),
+            "Ctrl+C should dismiss permission"
+        );
         // Check that deny was sent
         let response = rx.await.unwrap();
         assert!(matches!(response, oxicode_common::PermissionResponse::Deny));
@@ -2391,7 +2598,10 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         assert!(app.stall_start.is_none());
         app.handle_core_event(CoreEvent::StreamStart);
-        assert!(app.stall_start.is_some(), "StreamStart should set stall timer");
+        assert!(
+            app.stall_start.is_some(),
+            "StreamStart should set stall timer"
+        );
     }
 
     #[test]
@@ -2401,7 +2611,10 @@ mod tests {
         // stall_start should be Some after StreamStart
         app.handle_core_event(CoreEvent::TextDelta("text".to_string()));
         // stall_start should still be Some (reset/refreshed on each delta)
-        assert!(app.stall_start.is_some(), "stall timer should be reset on TextDelta");
+        assert!(
+            app.stall_start.is_some(),
+            "stall timer should be reset on TextDelta"
+        );
     }
 
     #[test]
@@ -2419,7 +2632,10 @@ mod tests {
         app.handle_core_event(CoreEvent::StreamStart);
         assert!(app.stall_start.is_some());
         app.handle_core_event(CoreEvent::MessageComplete);
-        assert!(app.stall_start.is_none(), "MessageComplete should clear stall timer");
+        assert!(
+            app.stall_start.is_none(),
+            "MessageComplete should clear stall timer"
+        );
     }
 
     #[test]
@@ -2427,7 +2643,10 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.last_turn_duration = Some(std::time::Duration::from_secs(5));
         app.handle_core_event(CoreEvent::StreamStart);
-        assert!(app.last_turn_duration.is_none(), "StreamStart should clear last_turn_duration");
+        assert!(
+            app.last_turn_duration.is_none(),
+            "StreamStart should clear last_turn_duration"
+        );
     }
 
     // --- Phase 11: Split Pane & Keyboard Actions ---
@@ -2521,7 +2740,7 @@ mod tests {
         // Reduce far below min
         app.split_pane.adjust_ratio(-100);
         assert_eq!(app.split_pane.ratio(), 30); // min is 30
-        // Increase far above max
+                                                // Increase far above max
         app.split_pane.adjust_ratio(200);
         assert_eq!(app.split_pane.ratio(), 90); // max is 90
     }
@@ -2535,7 +2754,8 @@ mod tests {
         // Start in insert mode (default when vim enabled)
         app.vim.mode = crate::vim_mode::Mode::Insert;
         // Pressing Esc → normal mode
-        app.handle_vim_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
         assert_eq!(app.vim.mode, crate::vim_mode::Mode::Normal);
     }
 
@@ -2545,7 +2765,8 @@ mod tests {
         app.vim.set_enabled(true);
         app.vim.mode = crate::vim_mode::Mode::Normal;
         // 'i' in normal mode → insert mode
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE))
+            .await;
         assert_eq!(app.vim.mode, crate::vim_mode::Mode::Insert);
     }
 
@@ -2557,8 +2778,10 @@ mod tests {
         app.input_cursor = 0;
         app.vim.mode = crate::vim_mode::Mode::Normal;
         // 'd' then 'd' → DeleteLine
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE)).await;
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE))
+            .await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE))
+            .await;
         assert!(app.input_text.is_empty(), "dd should clear the input line");
         assert_eq!(app.input_cursor, 0);
     }
@@ -2569,8 +2792,12 @@ mod tests {
         app.vim.set_enabled(true);
         app.vim.mode = crate::vim_mode::Mode::Normal;
         // '/' in normal mode → open search
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)).await;
-        assert!(app.search.is_active(), "'/' in vim normal mode should activate search");
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .await;
+        assert!(
+            app.search.is_active(),
+            "'/' in vim normal mode should activate search"
+        );
     }
 
     #[tokio::test]
@@ -2579,11 +2806,14 @@ mod tests {
         app.vim.set_enabled(true);
         app.vim.mode = crate::vim_mode::Mode::Normal;
         // ':' enters command mode
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE))
+            .await;
         // Type 'q'
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE))
+            .await;
         // Enter executes command
-        app.handle_vim_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await;
         assert!(app.should_quit, ":q Enter should quit");
     }
 
@@ -2605,8 +2835,12 @@ mod tests {
         app.input_text = "keep this text".to_string();
         app.input_cursor = 5;
         // Switch to normal mode via Esc
-        app.handle_vim_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
-        assert_eq!(app.input_text, "keep this text", "Mode switch should preserve text");
+        app.handle_vim_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await;
+        assert_eq!(
+            app.input_text, "keep this text",
+            "Mode switch should preserve text"
+        );
     }
 
     #[tokio::test]
@@ -2617,9 +2851,11 @@ mod tests {
         app.is_turn_active = false;
         // Vim-mode Ctrl+C passes through to handle_ctrl_c which follows the
         // double-press contract: first press arms the hint, second quits.
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
         assert!(!app.should_quit, "First Ctrl+C in vim normal must not quit");
-        app.handle_vim_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await;
+        app.handle_vim_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .await;
         assert!(app.should_quit, "Second Ctrl+C in vim normal should quit");
     }
 
@@ -2627,21 +2863,39 @@ mod tests {
 
     #[test]
     fn test_notification_info_level() {
-        let n = Notification::new("test info", crate::widgets::notification::NotificationLevel::Info);
-        assert_eq!(n.level, crate::widgets::notification::NotificationLevel::Info);
+        let n = Notification::new(
+            "test info",
+            crate::widgets::notification::NotificationLevel::Info,
+        );
+        assert_eq!(
+            n.level,
+            crate::widgets::notification::NotificationLevel::Info
+        );
         assert_eq!(n.message, "test info");
     }
 
     #[test]
     fn test_notification_warning_level() {
-        let n = Notification::new("test warn", crate::widgets::notification::NotificationLevel::Warning);
-        assert_eq!(n.level, crate::widgets::notification::NotificationLevel::Warning);
+        let n = Notification::new(
+            "test warn",
+            crate::widgets::notification::NotificationLevel::Warning,
+        );
+        assert_eq!(
+            n.level,
+            crate::widgets::notification::NotificationLevel::Warning
+        );
     }
 
     #[test]
     fn test_notification_error_level() {
-        let n = Notification::new("test err", crate::widgets::notification::NotificationLevel::Error);
-        assert_eq!(n.level, crate::widgets::notification::NotificationLevel::Error);
+        let n = Notification::new(
+            "test err",
+            crate::widgets::notification::NotificationLevel::Error,
+        );
+        assert_eq!(
+            n.level,
+            crate::widgets::notification::NotificationLevel::Error
+        );
     }
 
     #[tokio::test]
@@ -2650,7 +2904,10 @@ mod tests {
         app.input_text = String::new();
         app.submit_input().await;
         // No event should be sent for empty input
-        assert!(ui_rx.try_recv().is_err(), "Empty input should not produce a UiEvent");
+        assert!(
+            ui_rx.try_recv().is_err(),
+            "Empty input should not produce a UiEvent"
+        );
     }
 
     #[test]
@@ -2672,7 +2929,8 @@ mod tests {
         let (mut app, _ui_rx, _core_tx) = make_test_app();
         app.input_text = "hello".to_string();
         app.input_cursor = 5;
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)).await;
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT))
+            .await;
         assert_eq!(app.input_text, "hello\n", "Alt+Enter should insert newline");
         assert_eq!(app.input_cursor, 6);
     }
@@ -2712,7 +2970,10 @@ mod tests {
         app.input_text = "check".to_string();
         app.input_cursor = 5;
         app.submit_input().await;
-        assert!(app.pending_images.is_empty(), "pending_images should be cleared after submit");
+        assert!(
+            app.pending_images.is_empty(),
+            "pending_images should be cleared after submit"
+        );
     }
 
     #[tokio::test]
@@ -2752,7 +3013,10 @@ mod tests {
         app.input_cursor = app.input_text.chars().count();
         app.submit_input().await;
         // The image counter starts at 0 (from message_cache), so first image is at index 1
-        assert!(!app.sent_image_paths.is_empty(), "sent_image_paths should track submitted images");
+        assert!(
+            !app.sent_image_paths.is_empty(),
+            "sent_image_paths should track submitted images"
+        );
     }
 
     #[tokio::test]
@@ -2798,7 +3062,9 @@ mod tests {
                             data: Some(b64),
                         },
                     },
-                    ContentBlock::Text { text: "look".into() },
+                    ContentBlock::Text {
+                        text: "look".into(),
+                    },
                 ],
                 model: None,
                 stop_reason: None,
@@ -2814,7 +3080,11 @@ mod tests {
 
         app.hydrate_image_paths_from_session();
 
-        assert_eq!(app.sent_image_paths.len(), 2, "both images should be mapped");
+        assert_eq!(
+            app.sent_image_paths.len(),
+            2,
+            "both images should be mapped"
+        );
         let p1 = app.sent_image_paths.get(&1).unwrap();
         let p2 = app.sent_image_paths.get(&2).unwrap();
         assert_eq!(p1, &cache_dir.join("1.png"));

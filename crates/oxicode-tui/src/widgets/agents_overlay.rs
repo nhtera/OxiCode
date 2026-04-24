@@ -98,7 +98,9 @@ pub enum GenerateStatus {
 pub enum AgentsOverlayMode {
     Browse,
     CreateLocation,
-    CreateMethod { location: CreateAgentLocation },
+    CreateMethod {
+        location: CreateAgentLocation,
+    },
     /// AI-driven generation step. User describes the agent, we ask the model
     /// for a JSON config, then jump straight to the model selector.
     CreateGenerate {
@@ -272,7 +274,9 @@ impl AgentsOverlayState {
         if view_height == 0 {
             return;
         }
-        let bottom = self.scroll_offset.saturating_add(view_height.saturating_sub(1));
+        let bottom = self
+            .scroll_offset
+            .saturating_add(view_height.saturating_sub(1));
         if selected > bottom {
             self.scroll_offset = selected.saturating_sub(view_height.saturating_sub(1));
         }
@@ -352,10 +356,7 @@ impl AgentsOverlayState {
     /// Mark the current generate step as in-flight and snapshot the prompt the
     /// async task is using.
     pub fn mark_generate_running(&mut self) {
-        if let AgentsOverlayMode::CreateGenerate {
-            status, prompt, ..
-        } = &mut self.mode
-        {
+        if let AgentsOverlayMode::CreateGenerate { status, prompt, .. } = &mut self.mode {
             *prompt = self.wizard_input.clone();
             *status = GenerateStatus::Generating;
         }
@@ -380,7 +381,11 @@ impl AgentsOverlayState {
         }
     }
 
-    pub fn set_create_type_step(&mut self, location: CreateAgentLocation, method: CreateAgentMethod) {
+    pub fn set_create_type_step(
+        &mut self,
+        location: CreateAgentLocation,
+        method: CreateAgentMethod,
+    ) {
         self.mode = AgentsOverlayMode::CreateType {
             location,
             method,
@@ -475,7 +480,8 @@ impl AgentsOverlayState {
     }
 
     pub fn wizard_push_char(&mut self, c: char) {
-        let byte_idx = crate::app::utils::char_to_byte_index(&self.wizard_input, self.wizard_cursor);
+        let byte_idx =
+            crate::app::utils::char_to_byte_index(&self.wizard_input, self.wizard_cursor);
         self.wizard_input.insert(byte_idx, c);
         self.wizard_cursor += 1;
     }
@@ -785,7 +791,9 @@ fn render_library_list(buf: &mut Buffer, area: Rect, state: &AgentsOverlayState)
                 let l = Line::from(vec![
                     Span::styled(
                         format!("  {label}"),
-                        Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(DIALOG_TEXT)
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(format!(" ({path})"), Style::default().fg(DIALOG_MUTED)),
                 ]);
@@ -795,9 +803,7 @@ fn render_library_list(buf: &mut Buffer, area: Rect, state: &AgentsOverlayState)
                 let selected = *idx == state.selected_idx;
 
                 let (title, meta, dimmed) = match row {
-                    AgentsRow::CreateNew => {
-                        ("Create new agent".to_string(), String::new(), false)
-                    }
+                    AgentsRow::CreateNew => ("Create new agent".to_string(), String::new(), false),
                     AgentsRow::Agent(a) => {
                         let mut m = String::new();
                         if let Some(model) = &a.model {
@@ -851,7 +857,9 @@ fn render_generate_step(
     let header_lines = [
         Line::from(vec![Span::styled(
             "Create new agent".to_string(),
-            Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(DIALOG_TEXT)
+                .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![Span::styled(
             "Describe what this agent should do (be comprehensive for best results)".to_string(),
@@ -941,7 +949,9 @@ fn render_confirm_step(
     let lines = [
         Line::from(vec![Span::styled(
             "Create new agent".to_string(),
-            Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(DIALOG_TEXT)
+                .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![Span::styled(
             "Review and confirm".to_string(),
@@ -989,7 +999,11 @@ fn header_line(active: AgentsTab) -> Line<'static> {
     let inactive_style = Style::default().fg(DIALOG_MUTED);
 
     let pill = |label: &'static str, tab: AgentsTab| {
-        let s = if active == tab { active_style } else { inactive_style };
+        let s = if active == tab {
+            active_style
+        } else {
+            inactive_style
+        };
         Span::styled(format!(" {label} "), s)
     };
 
@@ -1082,10 +1096,7 @@ impl Widget for AgentsOverlay<'_> {
                     self.state.wizard_selected_idx,
                 );
             }
-            AgentsOverlayMode::CreateGenerate {
-                status,
-                ..
-            } => {
+            AgentsOverlayMode::CreateGenerate { status, .. } => {
                 render_generate_step(
                     buf,
                     body,
@@ -1134,12 +1145,7 @@ impl Widget for AgentsOverlay<'_> {
                     body,
                     "Create new agent",
                     "Model",
-                    &[
-                        "default (inherit from session)",
-                        "sonnet",
-                        "opus",
-                        "haiku",
-                    ],
+                    &["default (inherit from session)", "sonnet", "opus", "haiku"],
                     self.state.wizard_selected_idx,
                 );
             }
@@ -1150,14 +1156,7 @@ impl Widget for AgentsOverlay<'_> {
                 model,
                 ..
             } => {
-                render_confirm_step(
-                    buf,
-                    body,
-                    location,
-                    agent_type,
-                    description,
-                    model,
-                );
+                render_confirm_step(buf, body, location, agent_type, description, model);
             }
         }
 
@@ -1186,8 +1185,7 @@ impl Widget for AgentsOverlay<'_> {
             }
         }
         // Render hints on the bottom row of the footer area (top row is blank).
-        let footer_y =
-            layout.footer_area.y + layout.footer_area.height.saturating_sub(1);
+        let footer_y = layout.footer_area.y + layout.footer_area.height.saturating_sub(1);
         buf.set_line(
             layout.footer_area.x,
             footer_y,

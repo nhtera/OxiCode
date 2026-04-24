@@ -8,8 +8,8 @@ use ratatui::layout::Rect;
 use tokio::sync::{mpsc, watch};
 
 use crate::events::{CoreEvent, UiEvent};
-use crate::message_queue::MessageQueue;
 use crate::keybindings::KeybindingRegistry;
+use crate::message_queue::MessageQueue;
 use crate::prompt_suggestions::PromptSuggestion;
 use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::VimState;
@@ -21,17 +21,17 @@ use crate::widgets::{
 };
 
 // ── Submodules ────────────────────────────────────────────────────────────────
-pub(crate) mod utils;
-mod state;
 mod event_loop;
-mod render;
+mod hook_display;
 mod key_dispatch;
 mod overlay_keys;
-mod streaming;
 mod permission_handler;
-mod hook_display;
+mod render;
+mod state;
+mod streaming;
 #[cfg(test)]
 mod tests;
+pub(crate) mod utils;
 
 // ── Private types ─────────────────────────────────────────────────────────────
 
@@ -355,8 +355,7 @@ impl App {
                     let path = cache_dir.join(format!("{counter}.png"));
                     if !path.exists() {
                         if let Some(b64) = source.data.as_deref() {
-                            if let Ok(bytes) =
-                                base64::engine::general_purpose::STANDARD.decode(b64)
+                            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64)
                             {
                                 let _ = std::fs::write(&path, bytes);
                             }

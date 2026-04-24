@@ -1342,8 +1342,15 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
     let permission_mode = PermissionMode::parse(&config.permission_mode);
     let permission_pipeline = Arc::new(PermissionPipeline::new(permission_mode, vec![]));
 
-    // Child agent gets its own HookManager from settings.
-    let hook_manager = Arc::new(HookManager::from_settings());
+    // Child agent gets its own HookManager from settings. Tag it with
+    // agent_id/agent_type so every hook payload fired from this subagent
+    // process carries the subagent identity (Claude Code parity).
+    let mut child_hook_manager = HookManager::from_settings();
+    child_hook_manager.set_subagent(
+        config.name.clone(),
+        config.agent_type.map(|t| t.as_str().to_string()),
+    );
+    let hook_manager = Arc::new(child_hook_manager);
 
     let tool_context = ToolContext {
         working_dir: cwd,
