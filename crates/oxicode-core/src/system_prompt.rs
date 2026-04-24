@@ -20,10 +20,7 @@ pub fn assemble_system_prompt(
 ///
 /// Includes working dir, git detection, platform, OS version, shell, date,
 /// model info, and knowledge cutoff.
-pub fn build_env_info_section(
-    working_dir: Option<&str>,
-    model_id: Option<&str>,
-) -> String {
+pub fn build_env_info_section(working_dir: Option<&str>, model_id: Option<&str>) -> String {
     let platform = if cfg!(target_os = "windows") {
         "win32"
     } else if cfg!(target_os = "macos") {
@@ -91,9 +88,9 @@ pub fn build_env_info_section(
     let model_desc = model_id.map_or(String::new(), |id| {
         let marketing_name = get_marketing_name(id);
         match marketing_name {
-            Some(name) => format!(
-                " - You are powered by the model named {name}. The exact model ID is {id}."
-            ),
+            Some(name) => {
+                format!(" - You are powered by the model named {name}. The exact model ID is {id}.")
+            }
             None => format!(" - You are powered by the model {id}."),
         }
     });
@@ -140,9 +137,7 @@ pub fn mode_injection_text(active_skills: &[String]) -> Option<String> {
 }
 
 /// Build the MCP server instructions section from connected servers.
-pub fn build_mcp_instructions_section(
-    servers: &[(String, String)],
-) -> Option<String> {
+pub fn build_mcp_instructions_section(servers: &[(String, String)]) -> Option<String> {
     if servers.is_empty() {
         return None;
     }

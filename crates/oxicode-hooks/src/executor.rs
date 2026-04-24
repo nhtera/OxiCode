@@ -333,9 +333,7 @@ mod tests {
 
     #[test]
     fn parse_openclaude_additional_context() {
-        let resp = parse_hook_output(
-            r#"{"hookSpecificOutput":{"additionalContext":"some ctx"}}"#,
-        );
+        let resp = parse_hook_output(r#"{"hookSpecificOutput":{"additionalContext":"some ctx"}}"#);
         match resp {
             HookResponse::Message {
                 additional_context, ..

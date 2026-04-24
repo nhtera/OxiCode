@@ -425,9 +425,7 @@ mod tests {
         let parsed: StreamEvent = serde_json::from_str(&json).unwrap();
         match parsed {
             StreamEvent::ApiError {
-                status,
-                error_type,
-                ..
+                status, error_type, ..
             } => {
                 assert_eq!(status, 502);
                 assert!(error_type.is_none());
