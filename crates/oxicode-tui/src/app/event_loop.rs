@@ -89,10 +89,13 @@ impl super::App {
 
             // Dynamic tick: 50ms during active streaming for smooth spinner,
             // 100ms when idle (notifications, permission countdown).
+            // Also tick while the agent-generator is in flight so its spinner animates.
+            let agent_generating = self.agent_gen_cancel.is_some();
             let tick_ms = if self.is_turn_active { 50 } else { 100 };
             let needs_tick = self.is_turn_active
                 || !self.notifications.is_empty()
-                || self.pending_permission.is_some();
+                || self.pending_permission.is_some()
+                || agent_generating;
 
             tokio::select! {
                 Some(ev) = term_rx.recv() => {
@@ -118,6 +121,10 @@ impl super::App {
                         // Engine channel closed — quit gracefully.
                         self.should_quit = true;
                     }
+                }
+                Some(msg) = self.agent_gen_rx.recv() => {
+                    self.handle_agent_generate_msg(msg);
+                    self.draw(terminal)?;
                 }
                 // Tick for spinner animation, notification expiry, and permission countdown.
                 () = tokio::time::sleep(Duration::from_millis(tick_ms)), if needs_tick => {

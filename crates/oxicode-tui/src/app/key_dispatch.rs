@@ -84,15 +84,9 @@ impl super::App {
             return;
         }
 
-        // Agents menu overlay (/agents).
-        if self.agents_menu.is_visible() {
-            self.handle_agents_menu_key(key).await;
-            return;
-        }
-
-        // Agents list overlay.
-        if self.agents_list.is_visible() {
-            self.handle_agents_list_key(key);
+        // Agents overlay (/agents).
+        if self.agents_overlay.is_visible() {
+            self.handle_agents_overlay_key(key).await;
             return;
         }
 

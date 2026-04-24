@@ -5,11 +5,45 @@ use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKin
 use crate::agent_editor;
 use crate::keybindings::Action;
 use crate::vim_mode;
-use crate::widgets::{AgentsMenuAction, CustomAgentEntry, Notification, SessionEntry};
+use crate::widgets::{
+    AgentsAgentRow, AgentsOrigin, AgentsRow, AgentsTab, Notification, SessionEntry,
+};
+use crate::widgets::agents_overlay::{AgentSource, GenerateStatus, RunningAgentRow};
 
 use super::utils::{char_to_byte_index, format_relative_time};
 
 use oxicode_agents::loader as agent_loader;
+
+fn is_valid_slug(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn build_agent_markdown(name: &str, description: &str, model: &str, prompt: &str) -> String {
+    let mut out = String::from("---\n");
+    out.push_str(&format!("name: {name}\n"));
+    out.push_str(&format!("description: {}\n", yaml_escape(description)));
+    if model != "default" {
+        out.push_str(&format!("model: {model}\n"));
+    }
+    out.push_str("---\n\n");
+    out.push_str(prompt);
+    if !prompt.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+fn yaml_escape(s: &str) -> String {
+    // Quote if the value contains characters that could confuse a YAML scalar parser.
+    let needs_quote = s.contains(':') || s.contains('#') || s.starts_with(['-', '?', '!', '&', '*']);
+    if needs_quote {
+        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        s.to_string()
+    }
+}
 
 impl super::App {
     /// Handle mouse events: scroll wheel, scrollbar click/drag, Cmd+click image, hover.
@@ -329,91 +363,466 @@ impl super::App {
         self.session_browser.open(entries);
     }
 
-    pub(super) fn open_agents_menu(&mut self) {
-        self.agents_menu.open();
-    }
+    pub(super) fn open_agents_overlay(&mut self) {
+        let by_origin = agent_loader::refresh_with_origins();
 
-    pub(super) fn open_agents_list(&mut self) {
-        let agents = agent_loader::refresh()
-            .into_iter()
-            .map(|a| CustomAgentEntry {
+        let mut rows: Vec<AgentsRow> = Vec::new();
+        rows.push(AgentsRow::CreateNew);
+
+        let mut project_names = std::collections::HashSet::new();
+        for a in &by_origin.project_oxicode {
+            project_names.insert(a.name.clone());
+        }
+        for a in &by_origin.project_claude {
+            project_names.insert(a.name.clone());
+        }
+
+        let mut push_agent = |origin: AgentsOrigin,
+                              source: AgentSource,
+                              shadowed_by: Option<AgentsOrigin>,
+                              a: oxicode_agents::loader::CustomAgent| {
+            rows.push(AgentsRow::Agent(AgentsAgentRow {
                 name: a.name,
                 description: a.description,
+                model: a.model,
+                memory: None,
+                origin,
+                source,
+                shadowed_by,
                 source_path: a.source_path,
+            }));
+        };
+
+        // Project agents first (.oxicode preferred, then legacy .claude).
+        for a in by_origin.project_oxicode {
+            push_agent(AgentsOrigin::Project, AgentSource::ProjectOxiCode, None, a);
+        }
+        for a in by_origin.project_claude {
+            push_agent(AgentsOrigin::Project, AgentSource::ProjectClaude, None, a);
+        }
+        // User agents, dim if shadowed by any project agent with same name.
+        for a in by_origin.user_oxicode {
+            let shadow = project_names.contains(&a.name).then_some(AgentsOrigin::Project);
+            push_agent(AgentsOrigin::User, AgentSource::UserOxiCode, shadow, a);
+        }
+        for a in by_origin.user_claude {
+            let shadow = project_names.contains(&a.name).then_some(AgentsOrigin::Project);
+            push_agent(AgentsOrigin::User, AgentSource::UserClaude, shadow, a);
+        }
+
+        // Running: snapshot active agents from state.
+        let state = self.state_rx.borrow();
+        let running: Vec<RunningAgentRow> = state
+            .active_agents
+            .iter()
+            .map(|a| RunningAgentRow {
+                name: a.name.clone(),
+                status: a.status.clone(),
+                started_at: a.started_at.clone(),
             })
             .collect();
-        self.agents_list.open(agents);
+        drop(state);
+
+        self.agents_overlay.open(rows, running);
     }
 
-    pub(super) async fn handle_agents_menu_key(&mut self, key: KeyEvent) {
+    pub(super) async fn handle_agents_overlay_key(&mut self, key: KeyEvent) {
+        use crate::widgets::agents_overlay::{
+            AgentsOverlayMode, CreateAgentLocation, CreateAgentMethod,
+        };
+
+        // The CreateGenerate prompt is also a text-input field, but only while idle/error —
+        // during in-flight generation we ignore typing and only honor Esc (to cancel).
+        let is_text_input = matches!(
+            self.agents_overlay.mode(),
+            AgentsOverlayMode::CreateType { .. }
+                | AgentsOverlayMode::CreateDescription { .. }
+                | AgentsOverlayMode::CreatePrompt { .. }
+        ) || matches!(
+            self.agents_overlay.mode(),
+            AgentsOverlayMode::CreateGenerate { status, .. }
+                if !matches!(status, GenerateStatus::Generating)
+        );
+
         match (key.modifiers, key.code) {
-            (_, KeyCode::Esc) => self.agents_menu.cancel(),
-            (_, KeyCode::Up) => self.agents_menu.select_prev(),
-            (_, KeyCode::Down) => self.agents_menu.select_next(),
-            (_, KeyCode::Enter) => match self.agents_menu.selected_action() {
-                AgentsMenuAction::List => {
-                    self.agents_menu.cancel();
-                    self.open_agents_list();
+            (_, KeyCode::Esc) => {
+                // If a generation is in flight, Esc aborts it but keeps the wizard open.
+                if let AgentsOverlayMode::CreateGenerate {
+                    status: GenerateStatus::Generating,
+                    ..
+                } = self.agents_overlay.mode()
+                {
+                    if let Some(flag) = self.agent_gen_cancel.take() {
+                        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    self.agents_overlay
+                        .mark_generate_error("Generation cancelled".to_string());
+                } else {
+                    self.agents_overlay.cancel();
                 }
-                AgentsMenuAction::Create => {
-                    if let Some(home) = dirs::home_dir() {
-                        let dir = home.join(".claude").join("agents");
-                        if let Err(e) = std::fs::create_dir_all(&dir) {
-                            self.notifications.push(Notification::new(
-                                format!("Failed to create agents dir: {e}"),
-                                crate::widgets::notification::NotificationLevel::Error,
-                            ));
-                            return;
+            }
+            (_, KeyCode::Backspace) if is_text_input => {
+                self.agents_overlay.wizard_backspace();
+            }
+            (_, KeyCode::Char('e'))
+                if matches!(
+                    self.agents_overlay.mode(),
+                    AgentsOverlayMode::CreateConfirm { .. }
+                ) =>
+            {
+                self.save_agent_from_wizard(true);
+            }
+            (_, KeyCode::Char(c)) if is_text_input => {
+                self.agents_overlay.wizard_push_char(c);
+            }
+            (_, KeyCode::Left) => self.agents_overlay.prev_tab(),
+            (_, KeyCode::Right) => self.agents_overlay.next_tab(),
+            (_, KeyCode::Up) => match self.agents_overlay.mode() {
+                AgentsOverlayMode::Browse => self.agents_overlay.select_prev(18),
+                AgentsOverlayMode::CreateLocation
+                | AgentsOverlayMode::CreateMethod { .. } => {
+                    self.agents_overlay.wizard_prev(2);
+                }
+                AgentsOverlayMode::CreateModel { .. } => {
+                    self.agents_overlay.wizard_prev(4);
+                }
+                _ => {}
+            },
+            (_, KeyCode::Down) => match self.agents_overlay.mode() {
+                AgentsOverlayMode::Browse => self.agents_overlay.select_next(18),
+                AgentsOverlayMode::CreateLocation
+                | AgentsOverlayMode::CreateMethod { .. } => {
+                    self.agents_overlay.wizard_next(2);
+                }
+                AgentsOverlayMode::CreateModel { .. } => {
+                    self.agents_overlay.wizard_next(4);
+                }
+                _ => {}
+            },
+            (_, KeyCode::Enter) => {
+                // Clone the current mode so we can mutate state while reading values.
+                let mode = self.agents_overlay.mode().clone();
+                match mode {
+                    AgentsOverlayMode::Browse => {
+                        match self.agents_overlay.active_tab() {
+                            AgentsTab::Library => {
+                                let Some(selected) = self.agents_overlay.selected().cloned()
+                                else {
+                                    return;
+                                };
+                                match selected {
+                                    AgentsRow::CreateNew => self.agents_overlay.start_create(),
+                                    AgentsRow::Agent(a) => {
+                                        self.agents_overlay.close();
+                                        if let Err(e) =
+                                            agent_editor::open_in_editor(&a.source_path)
+                                        {
+                                            self.notifications.push(Notification::new(
+                                                format!("Failed to open editor: {e}"),
+                                                crate::widgets::notification::NotificationLevel::Error,
+                                            ));
+                                            return;
+                                        }
+                                        self.open_agents_overlay();
+                                    }
+                                }
+                            }
+                            AgentsTab::Running => {} // v1: read-only
                         }
-                        let path = dir.join("new-agent.md");
-                        if !path.exists() {
-                            if let Err(e) = std::fs::write(
-                                &path,
-                                "---\nname: new-agent\ndescription: TODO\n---\n\nYou are a subagent.\n",
-                            ) {
-                                self.notifications.push(Notification::new(
-                                    format!("Failed to write agent file: {e}"),
-                                    crate::widgets::notification::NotificationLevel::Error,
-                                ));
-                                return;
+                    }
+                    AgentsOverlayMode::CreateLocation => {
+                        let location = if self.agents_overlay.wizard_selected_idx() == 0 {
+                            CreateAgentLocation::Project
+                        } else {
+                            CreateAgentLocation::User
+                        };
+                        self.agents_overlay.set_create_method_step(location);
+                    }
+                    AgentsOverlayMode::CreateMethod { location } => {
+                        let method = if self.agents_overlay.wizard_selected_idx() == 0 {
+                            CreateAgentMethod::Generate
+                        } else {
+                            CreateAgentMethod::Manual
+                        };
+                        match method {
+                            CreateAgentMethod::Generate => {
+                                self.agents_overlay.set_create_generate_step(location);
+                            }
+                            CreateAgentMethod::Manual => {
+                                self.agents_overlay.set_create_type_step(location, method);
                             }
                         }
-                        self.agents_menu.cancel();
-                        if let Err(e) = agent_editor::open_in_editor(&path) {
+                    }
+                    AgentsOverlayMode::CreateGenerate { status, .. } => {
+                        // Ignore Enter while a request is already in flight — prevents
+                        // double-spawn and the orphaned cancel flag that comes with it.
+                        if matches!(status, GenerateStatus::Generating) {
+                            return;
+                        }
+                        let prompt = self.agents_overlay.wizard_input().trim().to_string();
+                        if prompt.is_empty() {
                             self.notifications.push(Notification::new(
-                                format!("Failed to open editor: {e}"),
-                                crate::widgets::notification::NotificationLevel::Error,
+                                "Describe what the agent should do.".to_string(),
+                                crate::widgets::notification::NotificationLevel::Warning,
                             ));
                             return;
                         }
-                        self.open_agents_list();
+                        self.spawn_agent_generation(prompt);
                     }
-                }
-            },
-            _ => {}
-        }
-    }
-
-    pub(super) fn handle_agents_list_key(&mut self, key: KeyEvent) {
-        match (key.modifiers, key.code) {
-            (_, KeyCode::Esc) => self.agents_list.cancel(),
-            (_, KeyCode::Up) => self.agents_list.select_prev(14),
-            (_, KeyCode::Down) => self.agents_list.select_next(14),
-            (_, KeyCode::Enter) => {
-                if let Some(path) = self.agents_list.open_selected_action() {
-                    self.agents_list.cancel();
-                    if let Err(e) = agent_editor::open_in_editor(&path) {
-                        self.notifications.push(Notification::new(
-                            format!("Failed to open editor: {e}"),
-                            crate::widgets::notification::NotificationLevel::Error,
-                        ));
-                        return;
+                    AgentsOverlayMode::CreateType {
+                        location,
+                        method,
+                        ..
+                    } => {
+                        let slug = self.agents_overlay.wizard_input().trim().to_string();
+                        if slug.is_empty() || !is_valid_slug(&slug) {
+                            self.notifications.push(Notification::new(
+                                "Type must be a non-empty slug (a-z, 0-9, - or _).".to_string(),
+                                crate::widgets::notification::NotificationLevel::Warning,
+                            ));
+                            return;
+                        }
+                        self.agents_overlay
+                            .set_create_description_step(location, method, slug);
                     }
-                    self.open_agents_list();
+                    AgentsOverlayMode::CreateDescription {
+                        location,
+                        method,
+                        agent_type,
+                        ..
+                    } => {
+                        let desc = self.agents_overlay.wizard_input().trim().to_string();
+                        if desc.is_empty() {
+                            self.notifications.push(Notification::new(
+                                "Description cannot be empty.".to_string(),
+                                crate::widgets::notification::NotificationLevel::Warning,
+                            ));
+                            return;
+                        }
+                        self.agents_overlay.set_create_prompt_step(
+                            location, method, agent_type, desc,
+                        );
+                    }
+                    AgentsOverlayMode::CreatePrompt {
+                        location,
+                        method,
+                        agent_type,
+                        description,
+                        ..
+                    } => {
+                        let prompt = self.agents_overlay.wizard_input().trim().to_string();
+                        if prompt.is_empty() {
+                            self.notifications.push(Notification::new(
+                                "System prompt cannot be empty.".to_string(),
+                                crate::widgets::notification::NotificationLevel::Warning,
+                            ));
+                            return;
+                        }
+                        self.agents_overlay.set_create_model_step(
+                            location,
+                            method,
+                            agent_type,
+                            description,
+                            prompt,
+                        );
+                    }
+                    AgentsOverlayMode::CreateModel {
+                        location,
+                        method,
+                        agent_type,
+                        description,
+                        prompt,
+                        ..
+                    } => {
+                        let model = match self.agents_overlay.wizard_selected_idx() {
+                            1 => "sonnet",
+                            2 => "opus",
+                            3 => "haiku",
+                            _ => "default",
+                        }
+                        .to_string();
+                        self.agents_overlay.set_create_confirm_step(
+                            location,
+                            method,
+                            agent_type,
+                            description,
+                            prompt,
+                            model,
+                        );
+                    }
+                    AgentsOverlayMode::CreateConfirm { .. } => {
+                        self.save_agent_from_wizard(false);
+                    }
                 }
             }
             _ => {}
         }
+    }
+
+    fn spawn_agent_generation(&mut self, prompt: String) {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+
+        // Snapshot what existing identifiers we have so the model avoids collisions.
+        let existing_ids: Vec<String> = self
+            .agents_overlay
+            .rows()
+            .iter()
+            .filter_map(|row| match row {
+                crate::widgets::AgentsRow::Agent(a) => Some(a.name.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let model = {
+            let state = self.state_rx.borrow();
+            state.current_model.clone()
+        };
+
+        // Move into Generating state and store wizard prompt.
+        // `location` lives inside the CreateGenerate mode itself, so no need to thread it.
+        self.agents_overlay.mark_generate_running();
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.agent_gen_cancel = Some(Arc::clone(&cancel));
+
+        let tx = self.agent_gen_tx.clone();
+        tokio::spawn(async move {
+            let result =
+                oxicode_agents::generate_agent(&prompt, &model, &existing_ids, cancel).await;
+            let msg = match result {
+                Ok(g) => super::AgentGenerateMsg::Ok(g),
+                Err(oxicode_agents::GenerateError::Cancelled) => return,
+                Err(e) => super::AgentGenerateMsg::Err(e.to_string()),
+            };
+            let _ = tx.send(msg).await;
+        });
+    }
+
+    pub(super) fn handle_agent_generate_msg(&mut self, msg: super::AgentGenerateMsg) {
+        use crate::widgets::agents_overlay::{
+            AgentsOverlayMode, CreateAgentMethod, GenerateStatus,
+        };
+
+        // If user has navigated away from CreateGenerate, drop the message.
+        let Some((location, _)) = self.agents_overlay.current_generate_state() else {
+            self.agent_gen_cancel = None;
+            return;
+        };
+        // Only react if we're still in Generating; otherwise the user cancelled.
+        if !matches!(
+            self.agents_overlay.mode(),
+            AgentsOverlayMode::CreateGenerate {
+                status: GenerateStatus::Generating,
+                ..
+            }
+        ) {
+            self.agent_gen_cancel = None;
+            return;
+        }
+
+        self.agent_gen_cancel = None;
+        match msg {
+            super::AgentGenerateMsg::Ok(g) => {
+                // Reject anything we wouldn't accept from the manual flow — the
+                // identifier becomes a filename, so guard against path traversal,
+                // separators, and other unsafe characters.
+                if !is_valid_slug(&g.identifier) {
+                    self.agents_overlay.mark_generate_error(format!(
+                        "Model returned an invalid identifier '{}' (must be a-z, 0-9, - or _). Try again.",
+                        g.identifier
+                    ));
+                    return;
+                }
+                // Pre-fill prompt + identifier + description, jump straight to model select
+                // (matches openclaude jumping to ToolsStep for the same reason — Tools UI
+                // is out of scope v1, so we land on Model).
+                self.agents_overlay.set_create_model_step(
+                    location,
+                    CreateAgentMethod::Generate,
+                    g.identifier,
+                    g.when_to_use,
+                    g.system_prompt,
+                );
+                self.notifications.push(Notification::new(
+                    "Generated agent — review the model and confirm.".to_string(),
+                    crate::widgets::notification::NotificationLevel::Info,
+                ));
+            }
+            super::AgentGenerateMsg::Err(e) => {
+                self.agents_overlay.mark_generate_error(e);
+            }
+        }
+    }
+
+    fn save_agent_from_wizard(&mut self, open_editor: bool) {
+        use crate::widgets::agents_overlay::{AgentsOverlayMode, CreateAgentLocation};
+
+        let AgentsOverlayMode::CreateConfirm {
+            location,
+            agent_type,
+            description,
+            prompt,
+            model,
+            ..
+        } = self.agents_overlay.mode().clone()
+        else {
+            return;
+        };
+
+        let dir = match location {
+            CreateAgentLocation::Project => std::env::current_dir()
+                .map(|c| c.join(".oxicode").join("agents")),
+            CreateAgentLocation::User => dirs::home_dir()
+                .map(|h| h.join(".oxicode").join("agents"))
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir")),
+        };
+        let dir = match dir {
+            Ok(d) => d,
+            Err(e) => {
+                self.notifications.push(Notification::new(
+                    format!("Cannot resolve target directory: {e}"),
+                    crate::widgets::notification::NotificationLevel::Error,
+                ));
+                return;
+            }
+        };
+
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.notifications.push(Notification::new(
+                format!("Failed to create {}: {e}", dir.display()),
+                crate::widgets::notification::NotificationLevel::Error,
+            ));
+            return;
+        }
+
+        let path = dir.join(format!("{agent_type}.md"));
+        let body = build_agent_markdown(&agent_type, &description, &model, &prompt);
+
+        if let Err(e) = std::fs::write(&path, body) {
+            self.notifications.push(Notification::new(
+                format!("Failed to write {}: {e}", path.display()),
+                crate::widgets::notification::NotificationLevel::Error,
+            ));
+            return;
+        }
+
+        self.notifications.push(Notification::new(
+            format!("Created agent {} at {}", agent_type, path.display()),
+            crate::widgets::notification::NotificationLevel::Info,
+        ));
+
+        if open_editor {
+            if let Err(e) = agent_editor::open_in_editor(&path) {
+                self.notifications.push(Notification::new(
+                    format!("Failed to open editor: {e}"),
+                    crate::widgets::notification::NotificationLevel::Warning,
+                ));
+            }
+        }
+
+        self.agents_overlay.set_browse_mode();
+        self.open_agents_overlay();
     }
 
     /// Handle key events when the rewind overlay is visible.

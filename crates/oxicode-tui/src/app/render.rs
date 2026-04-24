@@ -8,10 +8,9 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Terminal;
 
 use crate::widgets::{
-    AgentPanel, AgentsList, AgentsMenu, CommandAutocomplete, DiffViewerWidget,
-    HistorySearchWidget, InputBox, MessageView, ModelPicker, NotificationWidget, PastePreview,
-    PermissionDialog, RewindOverlay, SearchBar, SessionBrowser, StatsDashboard, SuggestionChips,
-    TaskPanel,
+    AgentPanel, AgentsOverlay, CommandAutocomplete, DiffViewerWidget, HistorySearchWidget,
+    InputBox, MessageView, ModelPicker, NotificationWidget, PastePreview, PermissionDialog,
+    RewindOverlay, SearchBar, SessionBrowser, StatsDashboard, SuggestionChips, TaskPanel,
 };
 
 use super::utils::{char_to_byte_index, detect_provider_from_model_name};
@@ -343,14 +342,12 @@ impl super::App {
                 frame.render_widget(viewer, content_area);
             }
 
-            // Agents menu overlay.
-            if self.agents_menu.is_visible() {
-                frame.render_widget(AgentsMenu::new(&self.agents_menu), content_area);
-            }
-
-            // Agents list overlay.
-            if self.agents_list.is_visible() {
-                frame.render_widget(AgentsList::new(&self.agents_list), content_area);
+            // Agents overlay.
+            if self.agents_overlay.is_visible() {
+                frame.render_widget(
+                    AgentsOverlay::new(&self.agents_overlay).with_frame(self.frame_count),
+                    content_area,
+                );
             }
 
             // History search overlay (Ctrl+R reverse search).

@@ -14,10 +14,10 @@ use crate::prompt_suggestions::PromptSuggestion;
 use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::VimState;
 use crate::widgets::{
-    permission_dialog::RiskLevel, AgentsListState, AgentsMenuState, AutocompleteState,
-    DiffViewerState, HistorySearchState, MessageRenderCache, ModelPickerState, Notification,
-    RewindOverlayState, SearchOverlay, SessionBrowserState, ShortcutsState, SlashCommandMeta,
-    SplitPane, StatsDashboardState,
+    permission_dialog::RiskLevel, AgentsOverlayState, AutocompleteState, DiffViewerState,
+    HistorySearchState, MessageRenderCache, ModelPickerState, Notification, RewindOverlayState,
+    SearchOverlay, SessionBrowserState, ShortcutsState, SlashCommandMeta, SplitPane,
+    StatsDashboardState,
 };
 
 // ── Submodules ────────────────────────────────────────────────────────────────
@@ -201,10 +201,8 @@ pub struct App {
     pub(super) stats_dashboard: StatsDashboardState,
     /// Interactive diff viewer overlay state (two-pane file diff review).
     pub(super) diff_viewer: DiffViewerState,
-    /// Agents menu overlay state (/agents entrypoint).
-    pub(super) agents_menu: AgentsMenuState,
-    /// Agents list overlay state (browse ~/.claude/agents/*.md).
-    pub(super) agents_list: AgentsListState,
+    /// Agents overlay state (/agents entrypoint).
+    pub(super) agents_overlay: AgentsOverlayState,
     /// Cached message area rect from last draw (for scrollbar hit-testing).
     pub(super) message_area: Rect,
     /// Frame counter — incremented each draw call, drives spinner animation.
@@ -235,6 +233,18 @@ pub struct App {
     /// Used to detect when the engine commits the response to state before
     /// MessageComplete fires, suppressing duplicate display.
     pub(super) pre_streaming_msg_count: usize,
+    /// Channel used by the spawned agent-generator task to deliver its result
+    /// (or error) back to the UI thread for state updates.
+    pub(super) agent_gen_tx: mpsc::Sender<AgentGenerateMsg>,
+    pub(super) agent_gen_rx: mpsc::Receiver<AgentGenerateMsg>,
+    /// Cancel flag for the in-flight agent generation, if any.
+    pub(super) agent_gen_cancel: Option<Arc<AtomicBool>>,
+}
+
+/// Result delivered from the spawned generator task back to the UI loop.
+pub(crate) enum AgentGenerateMsg {
+    Ok(oxicode_agents::GeneratedAgent),
+    Err(String),
 }
 
 impl App {
@@ -252,6 +262,8 @@ impl App {
             .map(|c| (c.name.clone(), c.description.clone(), c.category.clone()))
             .collect();
         let help_shortcuts = crate::widgets::shortcuts_overlay::default_shortcut_entries();
+
+        let (agent_gen_tx, agent_gen_rx) = mpsc::channel::<AgentGenerateMsg>(8);
 
         Self {
             state_rx: state_store.subscribe(),
@@ -298,8 +310,7 @@ impl App {
             rewind_overlay: RewindOverlayState::new(),
             stats_dashboard: StatsDashboardState::new(),
             diff_viewer: DiffViewerState::new(),
-            agents_menu: AgentsMenuState::new(),
-            agents_list: AgentsListState::new(),
+            agents_overlay: AgentsOverlayState::new(),
             message_area: Rect::default(),
             frame_count: 0,
             session_start: Instant::now(),
@@ -312,6 +323,9 @@ impl App {
             active_hook: None,
             hook_messages: Vec::new(),
             pre_streaming_msg_count: 0,
+            agent_gen_tx,
+            agent_gen_rx,
+            agent_gen_cancel: None,
         }
     }
 

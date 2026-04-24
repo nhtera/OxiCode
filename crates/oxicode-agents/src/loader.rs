@@ -1,7 +1,9 @@
 //! Filesystem-defined sub-agent loader.
 //!
-//! Discovers agent definitions from `~/.claude/agents/*.md` and project
-//! `.claude/agents/*.md` (Claude Code parity). Each `.md` file has a YAML
+//! Discovers agent definitions from `~/.oxicode/agents/*.md` and project
+//! `.oxicode/agents/*.md` (OxiCode). During transition we also discover
+//! `~/.claude/agents/*.md` and `.claude/agents/*.md` for backward-compat.
+//! Each `.md` file has a YAML
 //! frontmatter block with `name`, `description`, optional `tools` and
 //! `model`, followed by the system prompt body.
 //!
@@ -42,6 +44,47 @@ pub struct CustomAgent {
 /// In-process cache so each tool invocation doesn't re-read the filesystem.
 static DISCOVERED: OnceLock<Vec<CustomAgent>> = OnceLock::new();
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentOrigin {
+    ProjectOxiCode,
+    ProjectClaude,
+    UserOxiCode,
+    UserClaude,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentsByOrigin {
+    pub project_oxicode: Vec<CustomAgent>,
+    pub project_claude: Vec<CustomAgent>,
+    pub user_oxicode: Vec<CustomAgent>,
+    pub user_claude: Vec<CustomAgent>,
+}
+
+pub fn refresh_with_origins() -> AgentsByOrigin {
+    discover_uncached_with_origins(std::env::current_dir().ok().as_deref())
+}
+
+pub fn discover_uncached_with_origins(cwd: Option<&Path>) -> AgentsByOrigin {
+    let mut out = AgentsByOrigin {
+        project_oxicode: Vec::new(),
+        project_claude: Vec::new(),
+        user_oxicode: Vec::new(),
+        user_claude: Vec::new(),
+    };
+
+    if let Some(home) = dirs::home_dir() {
+        load_dir_into(&home.join(".oxicode").join("agents"), &mut out.user_oxicode);
+        load_dir_into(&home.join(".claude").join("agents"), &mut out.user_claude);
+    }
+
+    if let Some(cwd) = cwd {
+        load_dir_into(&cwd.join(".oxicode").join("agents"), &mut out.project_oxicode);
+        load_dir_into(&cwd.join(".claude").join("agents"), &mut out.project_claude);
+    }
+
+    out
+}
+
 /// Discover all custom agents (cached on first call). Project-local agents
 /// take precedence over user-global ones with the same `name`.
 pub fn discover() -> &'static Vec<CustomAgent> {
@@ -58,25 +101,31 @@ pub fn refresh() -> Vec<CustomAgent> {
 pub fn discover_uncached(cwd: Option<&Path>) -> Vec<CustomAgent> {
     let mut found: Vec<CustomAgent> = Vec::new();
 
-    // User-global: ~/.claude/agents/*.md
+    // User-global: ~/.oxicode/agents/*.md
     if let Some(home) = dirs::home_dir() {
-        let user_dir = home.join(".claude").join("agents");
+        let user_dir = home.join(".oxicode").join("agents");
         load_dir_into(&user_dir, &mut found);
+
+        // Back-compat: ~/.claude/agents/*.md
+        let legacy_user_dir = home.join(".claude").join("agents");
+        load_dir_into(&legacy_user_dir, &mut found);
     }
 
-    // Project-local: .claude/agents/*.md (relative to cwd, takes precedence).
+    // Project-local: .oxicode/agents/*.md (relative to cwd, takes precedence).
     if let Some(cwd) = cwd {
-        let project_dir = cwd.join(".claude").join("agents");
+        let project_dir = cwd.join(".oxicode").join("agents");
         load_dir_into(&project_dir, &mut found);
+
+        // Back-compat: .claude/agents/*.md
+        let legacy_project_dir = cwd.join(".claude").join("agents");
+        load_dir_into(&legacy_project_dir, &mut found);
     }
 
-    // De-dupe by name, project entries (loaded later) win.
+    // De-dupe by name with deterministic precedence:
+    // project .oxicode > project .claude > user .oxicode > user .claude.
     let mut seen = std::collections::HashSet::new();
-    found.into_iter().rev()
+    found.into_iter()
         .filter(|a| seen.insert(a.name.clone()))
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
         .collect()
 }
 
@@ -230,15 +279,19 @@ mod tests {
     fn discover_uncached_picks_up_files() {
         let tmp = tempfile::tempdir().unwrap();
         let cwd = tmp.path();
-        let agents_dir = cwd.join(".claude").join("agents");
+        let agents_dir = cwd.join(".oxicode").join("agents");
         std::fs::create_dir_all(&agents_dir).unwrap();
+
+        // Back-compat: legacy directory also works.
+        let legacy_agents_dir = cwd.join(".claude").join("agents");
+        std::fs::create_dir_all(&legacy_agents_dir).unwrap();
         write_agent_md(
             &agents_dir,
             "alpha",
             "---\nname: alpha\ndescription: A\n---\nA body.",
         );
         write_agent_md(
-            &agents_dir,
+            &legacy_agents_dir,
             "beta",
             "---\nname: beta\ndescription: B\n---\nB body.",
         );

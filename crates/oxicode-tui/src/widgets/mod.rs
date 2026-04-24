@@ -1,6 +1,5 @@
 pub mod agent_panel;
-pub mod agents_menu;
-pub mod agents_list;
+pub mod agents_overlay;
 pub mod code_block;
 pub mod command_autocomplete;
 pub mod diff_view;
@@ -30,8 +29,9 @@ pub mod tool_call;
 pub mod tool_display;
 
 pub use agent_panel::{AgentInfo, AgentPanel};
-pub use agents_list::{AgentsList, AgentsListState, CustomAgentEntry};
-pub use agents_menu::{AgentsMenu, AgentsMenuAction, AgentsMenuState};
+pub use agents_overlay::{
+    AgentsAgentRow, AgentsOrigin, AgentsOverlay, AgentsOverlayState, AgentsRow, AgentsTab,
+};
 pub use code_block::CodeBlockWidget;
 pub use command_autocomplete::{AutocompleteState, CommandAutocomplete, SlashCommandMeta};
 pub use diff_view::DiffView;
