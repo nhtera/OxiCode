@@ -370,6 +370,12 @@ impl super::App {
                 frame.render_widget(dialog, content_area);
             }
 
+            // MCP elicitation overlay (rendered after permission so both can
+            // co-exist in the state machine; key dispatch only routes to one).
+            if let Some(ref pending) = self.pending_elicitation {
+                frame.render_widget(&pending.dialog, content_area);
+            }
+
             // Paste preview overlay.
             if let Some(ref paste) = self.pending_paste {
                 frame.render_widget(PastePreview::new(paste), content_area);

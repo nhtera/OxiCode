@@ -396,6 +396,13 @@ async fn main() -> Result<()> {
         tracing::info!("MCP servers started: {}", started.join(", "));
     }
 
+    // Route MCP `elicitation/create` requests to the TUI dialog.
+    // The App receiver is installed on `app` after construction below.
+    let (elicitation_tx, elicitation_rx) = tokio::sync::mpsc::unbounded_channel();
+    mcp_manager.set_elicitation_handler(Arc::new(
+        oxicode_mcp::ChannelElicitationHandler::from_sender(elicitation_tx),
+    ));
+
     let mcp_ref = std::sync::Arc::new(mcp_manager);
     let file_state_ref =
         std::sync::Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default());
@@ -555,6 +562,7 @@ async fn main() -> Result<()> {
         hook_manager.clone(),
         file_state_ref,
         open_picker_on_start,
+        elicitation_rx,
     )
     .await;
     hook_manager
@@ -890,6 +898,7 @@ async fn run_tui(
     hook_manager: Arc<oxicode_hooks::HookManager>,
     file_state: Arc<oxicode_tools::file_state_tracker::FileStateTracker>,
     open_picker_on_start: bool,
+    elicitation_rx: tokio::sync::mpsc::UnboundedReceiver<oxicode_mcp::ElicitationEnvelope>,
 ) -> Result<()> {
     let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(32);
     let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(256);
@@ -920,6 +929,7 @@ async fn run_tui(
         .collect();
 
     let mut app = App::new(&state_store, ui_tx, core_rx, slash_command_meta);
+    app.set_elicitation_rx(elicitation_rx);
 
     // Rebuild click-to-open map for `[Image #N]` tags from resumed session data.
     app.hydrate_image_paths_from_session();

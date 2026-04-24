@@ -12,6 +12,7 @@ oxicode-common = { workspace = true }
 oxicode-session = { workspace = true }
 oxicode-state = { workspace = true }
 oxicode-agents = { workspace = true }
+oxicode-mcp = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tokio = { workspace = true }

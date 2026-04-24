@@ -15,12 +15,14 @@ use crate::streaming_markdown::MarkdownStreamCollector;
 use crate::vim_mode::VimState;
 use crate::widgets::{
     permission_dialog::RiskLevel, AgentsOverlayState, AutocompleteState, DiffViewerState,
-    HistorySearchState, MessageRenderCache, ModelPickerState, Notification, RewindOverlayState,
-    SearchOverlay, SessionBrowserState, ShortcutsState, SlashCommandMeta, SplitPane,
-    StatsDashboardState,
+    ElicitationDialog, HistorySearchState, MessageRenderCache, ModelPickerState, Notification,
+    RewindOverlayState, SearchOverlay, SessionBrowserState, ShortcutsState, SlashCommandMeta,
+    SplitPane, StatsDashboardState,
 };
+use oxicode_mcp::{ElicitationEnvelope, ElicitationResponse};
 
 // ── Submodules ────────────────────────────────────────────────────────────────
+mod elicitation_handler;
 mod event_loop;
 mod hook_display;
 mod key_dispatch;
@@ -97,6 +99,16 @@ pub(crate) fn truncate_hook_content(s: &str, max: usize) -> String {
     out
 }
 
+/// A pending MCP `elicitation/create` request awaiting user response.
+///
+/// The dialog holds the input state; `reply_tx` is fulfilled on submit/cancel
+/// so the MCP `ElicitationHandler::handle()` call (blocked on `blocking_recv`)
+/// can return the user's value back to the MCP server.
+pub(crate) struct PendingElicitation {
+    dialog: ElicitationDialog,
+    reply_tx: tokio::sync::oneshot::Sender<ElicitationResponse>,
+}
+
 /// A pending permission request awaiting user response.
 pub(crate) struct PendingPermission {
     tool_name: String,
@@ -148,6 +160,11 @@ pub struct App {
     pub(super) active_tools: Vec<ActiveToolCall>,
     /// Permission dialog state (blocks input while active).
     pub(super) pending_permission: Option<PendingPermission>,
+    /// MCP elicitation dialog state (blocks input while active).
+    pub(super) pending_elicitation: Option<PendingElicitation>,
+    /// Receiver drained in the event loop; fires each time MCP asks for input.
+    /// `None` when no MCP integration is wired (e.g., TUI-only tests).
+    pub(super) elicitation_rx: Option<mpsc::UnboundedReceiver<ElicitationEnvelope>>,
     /// Vim mode state machine.
     pub(super) vim: VimState,
     /// Keybinding registry.
@@ -284,6 +301,8 @@ impl App {
             notifications: Vec::new(),
             active_tools: Vec::new(),
             pending_permission: None,
+            pending_elicitation: None,
+            elicitation_rx: None,
             vim: VimState::new(false),
             keybindings,
             search: SearchOverlay::new(),
@@ -332,6 +351,14 @@ impl App {
     /// Set the cancel flag shared with the engine task.
     pub fn set_cancel_flag(&mut self, flag: Arc<AtomicBool>) {
         self.cancel_flag = Some(flag);
+    }
+
+    /// Install the receiver paired with an MCP `ChannelElicitationHandler`.
+    /// CLI calls this once at startup after installing the handler on the
+    /// `McpServerManager`. Without this wiring the App never observes
+    /// elicitation requests (acceptable for headless / test contexts).
+    pub fn set_elicitation_rx(&mut self, rx: mpsc::UnboundedReceiver<ElicitationEnvelope>) {
+        self.elicitation_rx = Some(rx);
     }
 
     /// Rebuild `sent_image_paths` from the resumed session's messages.

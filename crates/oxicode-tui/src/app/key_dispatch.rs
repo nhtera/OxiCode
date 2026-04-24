@@ -35,6 +35,12 @@ impl super::App {
             return;
         }
 
+        // MCP elicitation dialog — same priority tier as permissions.
+        if self.pending_elicitation.is_some() {
+            self.handle_elicitation_key(key);
+            return;
+        }
+
         // Search overlay captures keys when active.
         if self.search.is_active() {
             self.handle_search_key(key);

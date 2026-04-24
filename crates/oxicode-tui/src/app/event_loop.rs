@@ -126,6 +126,15 @@ impl super::App {
                     self.handle_agent_generate_msg(msg);
                     self.draw(terminal)?;
                 }
+                Some(envelope) = async {
+                    match self.elicitation_rx.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    self.accept_elicitation_envelope(envelope);
+                    self.draw(terminal)?;
+                }
                 // Tick for spinner animation, notification expiry, and permission countdown.
                 () = tokio::time::sleep(Duration::from_millis(tick_ms)), if needs_tick => {
                     // Auto-deny permission if countdown expired (30s).

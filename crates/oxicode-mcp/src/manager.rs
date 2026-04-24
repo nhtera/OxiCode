@@ -4,6 +4,7 @@
 //! Manages multiple MCP server connections, tool discovery, and execution.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use oxicode_common::{OxiError, OxiResult};
 use rmcp::model::{CallToolRequestParams, CallToolResult, GetPromptRequestParams, Prompt, Tool};
@@ -12,6 +13,7 @@ use rmcp::transport::TokioChildProcess;
 use rmcp::{RoleClient, ServiceExt};
 
 use crate::config::{McpConfig, McpServerConfig, McpTransportType};
+use crate::elicitation::ElicitationHandler;
 
 /// Type-erased rmcp client for storing heterogeneous transports in a HashMap.
 type DynClient = RunningService<RoleClient, Box<dyn rmcp::service::DynService<RoleClient>>>;
@@ -30,6 +32,11 @@ struct ManagedClient {
 /// All clients are type-erased via `DynService` for uniform storage.
 pub struct McpServerManager {
     clients: HashMap<String, ManagedClient>,
+    /// Handler for MCP `elicitation/create` requests. When set, MCP servers
+    /// that prompt the user for input route through this handler (typically
+    /// the TUI dialog). `None` falls back to per-request behavior at the
+    /// call site (default: deny).
+    elicitation_handler: Option<Arc<dyn ElicitationHandler>>,
 }
 
 impl McpServerManager {
@@ -37,7 +44,18 @@ impl McpServerManager {
     pub fn new() -> Self {
         Self {
             clients: HashMap::new(),
+            elicitation_handler: None,
         }
+    }
+
+    /// Install the handler used for incoming `elicitation/create` requests.
+    pub fn set_elicitation_handler(&mut self, handler: Arc<dyn ElicitationHandler>) {
+        self.elicitation_handler = Some(handler);
+    }
+
+    /// Current elicitation handler (if installed).
+    pub fn elicitation_handler(&self) -> Option<&Arc<dyn ElicitationHandler>> {
+        self.elicitation_handler.as_ref()
     }
 
     /// Start all enabled servers from config. Returns names of successfully started servers.

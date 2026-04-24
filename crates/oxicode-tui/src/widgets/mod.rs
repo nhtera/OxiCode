@@ -5,6 +5,7 @@ pub mod command_autocomplete;
 pub mod diff_view;
 pub mod diff_viewer;
 pub mod diff_viewer_render;
+pub mod elicitation_dialog;
 pub mod highlight;
 pub mod history_search;
 pub mod input_box;
@@ -37,6 +38,7 @@ pub use command_autocomplete::{AutocompleteState, CommandAutocomplete, SlashComm
 pub use diff_view::DiffView;
 pub use diff_viewer::{DiffViewerState, FileDiffStats};
 pub use diff_viewer_render::DiffViewerWidget;
+pub use elicitation_dialog::{ElicitationDialog, ElicitationOutcome};
 pub use history_search::{HistorySearchState, HistorySearchWidget};
 pub use input_box::InputBox;
 pub use markdown_view::MarkdownView;

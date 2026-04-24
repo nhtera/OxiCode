@@ -193,6 +193,97 @@ mod tests {
         assert_eq!(detect_provider_from_model_name(""), "");
     }
 
+    // ── MCP elicitation overlay wiring ───────────────────────────────────────
+
+    fn elicitation_envelope(
+        input_type: oxicode_mcp::ElicitationInputType,
+        choices: Vec<String>,
+        default_value: Option<String>,
+    ) -> (oxicode_mcp::ElicitationEnvelope, oneshot::Receiver<oxicode_mcp::ElicitationResponse>) {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let req = oxicode_mcp::ElicitationRequest {
+            id: "test-req".to_string(),
+            message: "Pick one".to_string(),
+            input_type,
+            choices,
+            default_value,
+        };
+        ((req, reply_tx), reply_rx)
+    }
+
+    #[test]
+    fn test_elicitation_envelope_promotes_to_pending_dialog() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (envelope, _reply_rx) = elicitation_envelope(
+            oxicode_mcp::ElicitationInputType::Text,
+            vec![],
+            None,
+        );
+        assert!(app.pending_elicitation.is_none());
+        app.accept_elicitation_envelope(envelope);
+        assert!(app.pending_elicitation.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_elicitation_text_submit_sends_response_through_reply_tx() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (envelope, reply_rx) = elicitation_envelope(
+            oxicode_mcp::ElicitationInputType::Text,
+            vec![],
+            None,
+        );
+        app.accept_elicitation_envelope(envelope);
+
+        // Type "abc" and press Enter.
+        for c in "abc".chars() {
+            app.handle_elicitation_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::empty()));
+        }
+        app.handle_elicitation_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+
+        assert!(app.pending_elicitation.is_none(), "dialog cleared on submit");
+        let response = reply_rx.await.expect("reply");
+        assert!(response.approved);
+        assert_eq!(response.value, "abc");
+        assert_eq!(response.id, "test-req");
+    }
+
+    #[tokio::test]
+    async fn test_elicitation_esc_sends_denial() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (envelope, reply_rx) = elicitation_envelope(
+            oxicode_mcp::ElicitationInputType::Confirm,
+            vec![],
+            None,
+        );
+        app.accept_elicitation_envelope(envelope);
+        app.handle_elicitation_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
+        let response = reply_rx.await.expect("reply");
+        assert!(!response.approved);
+        assert!(response.value.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_elicitation_second_request_denied_while_first_active() {
+        let (mut app, _ui_rx, _core_tx) = make_test_app();
+        let (envelope1, _reply_rx1) = elicitation_envelope(
+            oxicode_mcp::ElicitationInputType::Text,
+            vec![],
+            None,
+        );
+        let (envelope2, reply_rx2) = elicitation_envelope(
+            oxicode_mcp::ElicitationInputType::Text,
+            vec![],
+            None,
+        );
+        app.accept_elicitation_envelope(envelope1);
+        app.accept_elicitation_envelope(envelope2);
+
+        // First dialog still active; second was auto-denied.
+        assert!(app.pending_elicitation.is_some());
+        let denied = reply_rx2.await.expect("reply");
+        assert!(!denied.approved);
+    }
+
     #[test]
     fn test_handle_core_event_stream_start_activates_turn() {
         let (mut app, _ui_rx, _core_tx) = make_test_app();

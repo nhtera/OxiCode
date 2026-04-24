@@ -29,12 +29,16 @@ pub mod bridge_status_tracker;
 // ---------------------------------------------------------------------------
 
 pub mod bridge_ui_config_dialog;
+pub mod bridge_ui_elicitation;
 pub mod bridge_ui_notification;
 pub mod bridge_ui_permission_dialog;
 
 pub use config::{McpAuthConfig, McpConfig, McpServerConfig};
 pub use doctor::{diagnose_all, diagnose_server, DiagResult, DiagStatus};
-pub use elicitation::{ElicitationHandler, ElicitationRequest, ElicitationResponse};
+pub use bridge_ui_elicitation::{ChannelElicitationHandler, ElicitationEnvelope};
+pub use elicitation::{
+    ElicitationHandler, ElicitationInputType, ElicitationRequest, ElicitationResponse,
+};
 pub use env_expansion::expand_env;
 pub use manager::McpServerManager;
 pub use oauth::McpOAuth;
