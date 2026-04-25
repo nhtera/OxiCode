@@ -66,34 +66,78 @@ impl Tool for GrepTool {
                 message: "pattern is required".into(),
             })?;
 
-        let search_path = input["path"].as_str().map_or_else(
-            || ctx.working_dir.clone(),
-            |p| resolve_path(p, &ctx.working_dir),
-        );
         let output_mode = input["output_mode"]
             .as_str()
             .unwrap_or("files_with_matches");
 
-        let args = build_rg_args(pattern, &input, output_mode, &search_path);
-        let (stdout, stderr, code) = match run_rg(&args, &ctx.working_dir).await {
-            Ok(result) => result,
-            Err(msg) => return Ok(ToolResult::error(msg)),
+        // When an explicit path is given, search only that path (original behaviour).
+        // When no path is given, search working_dir AND all extra_working_dirs.
+        let explicit_path = input["path"].as_str();
+
+        let search_roots: Vec<std::path::PathBuf> = if let Some(p) = explicit_path {
+            vec![resolve_path(p, &ctx.working_dir)]
+        } else {
+            let mut roots = vec![ctx.working_dir.clone()];
+            for extra in &ctx.extra_working_dirs {
+                if !roots.contains(extra) {
+                    roots.push(extra.clone());
+                    tracing::info!("grep: searching extra working dir {}", extra.display());
+                }
+            }
+            roots
         };
 
-        match code {
-            0 => Ok(format_output(
-                &stdout,
-                output_mode,
-                &input,
-                &ctx.working_dir,
-            )),
-            1 => Ok(ToolResult::success("No matches found.")),
-            _ => Ok(ToolResult::error(if stderr.is_empty() {
-                stdout
-            } else {
-                stderr
-            })),
+        // Run rg against each root and merge results.
+        let mut combined_stdout = String::new();
+        let mut last_error: Option<String> = None;
+        let mut any_match = false;
+
+        for search_path in &search_roots {
+            let args = build_rg_args(pattern, &input, output_mode, search_path);
+            let (stdout, stderr, code) = match run_rg(&args, &ctx.working_dir).await {
+                Ok(result) => result,
+                Err(msg) => {
+                    last_error = Some(msg);
+                    continue;
+                }
+            };
+            match code {
+                0 => {
+                    any_match = true;
+                    if !stdout.is_empty() {
+                        if !combined_stdout.is_empty() && !combined_stdout.ends_with('\n') {
+                            combined_stdout.push('\n');
+                        }
+                        combined_stdout.push_str(&stdout);
+                    }
+                }
+                1 => {} // no matches in this root — continue
+                _ => {
+                    last_error = Some(if stderr.is_empty() {
+                        stdout
+                    } else {
+                        stderr
+                    });
+                }
+            }
         }
+
+        if let Some(err) = last_error {
+            if !any_match && combined_stdout.is_empty() {
+                return Ok(ToolResult::error(err));
+            }
+        }
+
+        if !any_match || combined_stdout.is_empty() {
+            return Ok(ToolResult::success("No matches found."));
+        }
+
+        Ok(format_output(
+            &combined_stdout,
+            output_mode,
+            &input,
+            &ctx.working_dir,
+        ))
     }
 }
 

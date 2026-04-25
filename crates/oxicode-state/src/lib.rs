@@ -1,5 +1,7 @@
 pub mod cost_tracker;
 
+use std::path::PathBuf;
+
 use oxicode_common::{FeatureFlags, Message, RateLimitInfo, Usage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -57,6 +59,12 @@ pub struct AppState {
     pub permission_mode: String,
     /// Current working directory (for status bar display).
     pub cwd: String,
+    /// Extra working directories added via `/add-dir`. CWD is implicit; never duplicated here.
+    #[serde(default)]
+    pub working_dirs: Vec<PathBuf>,
+    /// Number of registered slash commands (set once on startup).
+    #[serde(default)]
+    pub slash_command_count: usize,
 }
 
 /// Snapshot of a rate limit event for display in /status.
@@ -89,6 +97,8 @@ impl Default for AppState {
             context_window_max: 0,
             permission_mode: "ask".to_string(),
             cwd: String::new(),
+            working_dirs: Vec::new(),
+            slash_command_count: 0,
         }
     }
 }
@@ -424,5 +434,72 @@ mod tests {
         assert_eq!(parsed.info.retry_after_secs, Some(45.0));
         assert_eq!(parsed.info.limit_type, RateLimitType::TokensPerDay);
         assert_eq!(parsed.occurred_at, "2026-04-04T12:00:00Z");
+    }
+
+    // ── working_dirs ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_working_dirs_default_empty() {
+        let state = AppState::default();
+        assert!(state.working_dirs.is_empty());
+    }
+
+    #[test]
+    fn test_working_dirs_state_roundtrip() {
+        let store = StateStore::default();
+        let dir = PathBuf::from("/tmp/test_working_dir");
+
+        // Add a directory.
+        store.update(|s| s.working_dirs.push(dir.clone()));
+        let state = store.current();
+        assert_eq!(state.working_dirs.len(), 1);
+        assert_eq!(state.working_dirs[0], dir);
+    }
+
+    #[test]
+    fn test_working_dirs_set_semantics() {
+        let store = StateStore::default();
+        let dir = PathBuf::from("/tmp/test_dir");
+
+        // Push twice; second is only a no-op if the command layer enforces it.
+        // The StateStore itself doesn't deduplicate — the command layer does.
+        // This test verifies the update closure works correctly.
+        store.update(|s| {
+            if !s.working_dirs.contains(&dir) {
+                s.working_dirs.push(dir.clone());
+            }
+        });
+        store.update(|s| {
+            if !s.working_dirs.contains(&dir) {
+                s.working_dirs.push(dir.clone());
+            }
+        });
+
+        assert_eq!(store.current().working_dirs.len(), 1);
+    }
+
+    #[test]
+    fn test_working_dirs_serde_roundtrip() {
+        let mut state = AppState::default();
+        state.working_dirs.push(PathBuf::from("/tmp/foo"));
+        state.working_dirs.push(PathBuf::from("/home/user/project"));
+
+        let json = serde_json::to_string(&state).unwrap();
+        let parsed: AppState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.working_dirs.len(), 2);
+        assert_eq!(parsed.working_dirs[0], PathBuf::from("/tmp/foo"));
+    }
+
+    #[test]
+    fn test_working_dirs_backward_compat_missing_field() {
+        // Serialize a default AppState, then strip out working_dirs to simulate legacy JSON.
+        let state = AppState::default();
+        let mut json_val: serde_json::Value = serde_json::to_value(&state).unwrap();
+        json_val.as_object_mut().unwrap().remove("working_dirs");
+        let json_str = serde_json::to_string(&json_val).unwrap();
+
+        // Deserialization should succeed and produce an empty working_dirs.
+        let parsed: AppState = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed.working_dirs.is_empty());
     }
 }

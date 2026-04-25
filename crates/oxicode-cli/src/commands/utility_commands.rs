@@ -1,4 +1,5 @@
-//! Utility commands: /upgrade, /privacy-settings, /add-dir, /extra-usage, /mcp-doctor.
+//! Utility commands: /upgrade, /privacy-settings, /add-dir, /list-dirs,
+//! /remove-dir, /extra-usage, /mcp-doctor.
 //!
 //! General-purpose utility commands for system management and diagnostics.
 
@@ -125,7 +126,7 @@ impl SlashCommand for AddDirCommand {
         "Add a working directory"
     }
 
-    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
+    fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         let path_str = args.trim();
         if path_str.is_empty() {
             return CommandOutput::Error("Usage: /add-dir <path>".into());
@@ -139,16 +140,110 @@ impl SlashCommand for AddDirCommand {
             return CommandOutput::Error(format!("Not a directory: {path_str}"));
         }
 
-        // Canonicalize for display.
-        let canonical = path
+        // Canonicalize to resolve symlinks and prevent path traversal.
+        let canonical = match path.canonicalize() {
+            Ok(p) => p,
+            Err(e) => return CommandOutput::Error(format!("Failed to canonicalize path: {e}")),
+        };
+
+        // Set semantics: no-op if already present.
+        let already_present = ctx
+            .state_store
+            .current()
+            .working_dirs
+            .contains(&canonical);
+
+        if already_present {
+            return CommandOutput::Message(format!(
+                "Directory already in working set: {}",
+                canonical.display()
+            ));
+        }
+
+        ctx.state_store
+            .update(|s| s.working_dirs.push(canonical.clone()));
+
+        tracing::info!("Added working directory: {}", canonical.display());
+
+        CommandOutput::Message(format!(
+            "Added working directory: {}\nUse /list-dirs to see all extra directories.",
+            canonical.display()
+        ))
+    }
+}
+
+// ── /list-dirs ────────────────────────────────────────────────────────────
+
+/// /list-dirs — list all extra working directories added via /add-dir.
+pub struct ListDirsCommand;
+
+impl SlashCommand for ListDirsCommand {
+    fn name(&self) -> &str {
+        "list-dirs"
+    }
+    fn description(&self) -> &str {
+        "List extra working directories"
+    }
+
+    fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
+        let dirs = ctx.state_store.current().working_dirs;
+        if dirs.is_empty() {
+            return CommandOutput::Message(
+                "No extra working directories. Use /add-dir <path> to add one.".into(),
+            );
+        }
+
+        let mut output = String::from("Extra working directories:\n");
+        for dir in &dirs {
+            let _ = writeln!(output, "  {}", dir.display());
+        }
+        CommandOutput::Message(output.trim_end().to_string())
+    }
+}
+
+// ── /remove-dir ───────────────────────────────────────────────────────────
+
+/// /remove-dir <path> — remove a directory from the session's working directories.
+pub struct RemoveDirCommand;
+
+impl SlashCommand for RemoveDirCommand {
+    fn name(&self) -> &str {
+        "remove-dir"
+    }
+    fn description(&self) -> &str {
+        "Remove a working directory"
+    }
+
+    fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
+        let path_str = args.trim();
+        if path_str.is_empty() {
+            return CommandOutput::Error("Usage: /remove-dir <path>".into());
+        }
+
+        // Canonicalize the input for comparison (best-effort; if it fails, compare as-is).
+        let canonical = std::path::Path::new(path_str)
             .canonicalize()
-            .map_or_else(|_| path_str.to_string(), |p| p.display().to_string());
+            .unwrap_or_else(|_| std::path::PathBuf::from(path_str));
 
-        // TODO(gap-phase-6): persist in StateStore.working_dirs and pass to context builder.
-        // Currently logged for tracing; full integration requires TUI + context builder changes.
-        tracing::info!("Added working directory: {canonical}");
+        let mut found = false;
+        ctx.state_store.update(|s| {
+            let before = s.working_dirs.len();
+            s.working_dirs.retain(|p| p != &canonical);
+            found = s.working_dirs.len() < before;
+        });
 
-        CommandOutput::Message(format!("Added working directory: {canonical}\nNote: takes effect next session when context builder supports multiple directories."))
+        if found {
+            tracing::info!("Removed working directory: {}", canonical.display());
+            CommandOutput::Message(format!(
+                "Removed working directory: {}",
+                canonical.display()
+            ))
+        } else {
+            CommandOutput::Error(format!(
+                "Directory not in working set: {}",
+                canonical.display()
+            ))
+        }
     }
 }
 
@@ -221,6 +316,7 @@ mod tests {
             model: "claude-3-5-sonnet".to_string(),
             provider_name: "anthropic".to_string(),
             session_id: "test-session".to_string(),
+            command_registry: Arc::new(crate::commands::default_registry()),
         }
     }
 
@@ -306,6 +402,82 @@ mod tests {
             CommandOutput::Message(msg) => assert!(msg.contains("Added working directory")),
             _ => panic!("Expected message"),
         }
+    }
+
+    #[test]
+    fn test_add_dir_persists_to_state() {
+        let ctx = make_ctx();
+        AddDirCommand.execute("/tmp", &ctx);
+        let dirs = ctx.state_store.current().working_dirs;
+        assert_eq!(dirs.len(), 1);
+        // /tmp may canonicalize to /private/tmp on macOS.
+        assert!(dirs[0].to_string_lossy().contains("tmp"));
+    }
+
+    #[test]
+    fn test_add_dir_duplicate_noop() {
+        let ctx = make_ctx();
+        AddDirCommand.execute("/tmp", &ctx);
+        let output = AddDirCommand.execute("/tmp", &ctx);
+        match output {
+            CommandOutput::Message(msg) => assert!(msg.contains("already in working set")),
+            _ => panic!("Expected 'already in working set' message"),
+        }
+        assert_eq!(ctx.state_store.current().working_dirs.len(), 1);
+    }
+
+    #[test]
+    fn test_list_dirs_empty() {
+        let ctx = make_ctx();
+        let output = ListDirsCommand.execute("", &ctx);
+        match output {
+            CommandOutput::Message(msg) => assert!(msg.contains("No extra working directories")),
+            _ => panic!("Expected message"),
+        }
+    }
+
+    #[test]
+    fn test_list_dirs_shows_added() {
+        let ctx = make_ctx();
+        AddDirCommand.execute("/tmp", &ctx);
+        let output = ListDirsCommand.execute("", &ctx);
+        match output {
+            CommandOutput::Message(msg) => assert!(msg.contains("tmp")),
+            _ => panic!("Expected message"),
+        }
+    }
+
+    #[test]
+    fn test_remove_dir_missing_args() {
+        let ctx = make_ctx();
+        let output = RemoveDirCommand.execute("", &ctx);
+        match output {
+            CommandOutput::Error(msg) => assert!(msg.contains("Usage")),
+            _ => panic!("Expected error"),
+        }
+    }
+
+    #[test]
+    fn test_remove_dir_not_in_set() {
+        let ctx = make_ctx();
+        let output = RemoveDirCommand.execute("/tmp", &ctx);
+        match output {
+            CommandOutput::Error(msg) => assert!(msg.contains("not in working set")),
+            _ => panic!("Expected error"),
+        }
+    }
+
+    #[test]
+    fn test_remove_dir_success() {
+        let ctx = make_ctx();
+        AddDirCommand.execute("/tmp", &ctx);
+        assert_eq!(ctx.state_store.current().working_dirs.len(), 1);
+        let output = RemoveDirCommand.execute("/tmp", &ctx);
+        match output {
+            CommandOutput::Message(msg) => assert!(msg.contains("Removed working directory")),
+            _ => panic!("Expected message"),
+        }
+        assert!(ctx.state_store.current().working_dirs.is_empty());
     }
 
     #[test]

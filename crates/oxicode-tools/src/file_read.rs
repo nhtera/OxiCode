@@ -58,13 +58,54 @@ impl Tool for FileReadTool {
                     message: "file_path is required".into(),
                 })?;
 
-        let path = resolve_path(file_path, &ctx.working_dir);
+        // Resolve against primary working_dir first.
+        let primary_path = resolve_path(file_path, &ctx.working_dir);
+
+        // Determine the effective path: primary if it passes all checks and exists,
+        // otherwise try each extra_working_dir for relative paths.
+        let path = if primary_path.exists()
+            && check_path_safety(&primary_path).is_none()
+            && check_workspace_boundary(&primary_path, &ctx.working_dir).is_none()
+        {
+            primary_path
+        } else if !std::path::Path::new(file_path).is_absolute() && !ctx.extra_working_dirs.is_empty() {
+            // Relative path that doesn't exist/resolve under the primary working_dir —
+            // try each extra working directory in insertion order.
+            let mut found: Option<std::path::PathBuf> = None;
+            for extra in &ctx.extra_working_dirs {
+                let candidate = resolve_path(file_path, extra);
+                if candidate.exists()
+                    && check_path_safety(&candidate).is_none()
+                    && check_workspace_boundary(&candidate, extra).is_none()
+                {
+                    tracing::info!(
+                        "file_read: resolved '{}' via extra working dir {}",
+                        file_path,
+                        extra.display()
+                    );
+                    found = Some(candidate);
+                    break;
+                }
+            }
+            found.unwrap_or(primary_path)
+        } else {
+            primary_path
+        };
 
         if let Some(err) = check_path_safety(&path) {
             return Ok(err);
         }
-        if let Some(err) = check_workspace_boundary(&path, &ctx.working_dir) {
-            return Ok(err);
+        // Accept the path if it falls under the primary working_dir OR any extra.
+        let in_primary = check_workspace_boundary(&path, &ctx.working_dir).is_none();
+        let in_extras = ctx
+            .extra_working_dirs
+            .iter()
+            .any(|extra| check_workspace_boundary(&path, extra).is_none());
+        if !in_primary && !in_extras {
+            return Ok(ToolResult::error(format!(
+                "Access denied: path {} is outside the working directory",
+                path.display()
+            )));
         }
 
         if !path.exists() {

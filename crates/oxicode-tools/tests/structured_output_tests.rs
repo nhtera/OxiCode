@@ -15,6 +15,7 @@ use oxicode_tools::{PermissionLevel, Tool};
 fn make_tool_context(dir: &Path) -> ToolContext {
     ToolContext {
         working_dir: dir.to_path_buf(),
+        extra_working_dirs: Vec::new(),
         file_state: Arc::new(FileStateTracker::default()),
         task_manager: Arc::new(Mutex::new(oxicode_tasks::TaskManager::default())),
         task_abort_handles: Arc::new(Mutex::new(std::collections::HashMap::new())),

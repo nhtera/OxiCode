@@ -57,6 +57,10 @@ impl ToolResult {
 pub struct ToolContext {
     /// Working directory for file operations and command execution.
     pub working_dir: PathBuf,
+    /// Additional working directories added via `/add-dir`. Populated from
+    /// `AppState.working_dirs` at engine build time. CWD (`working_dir`) is
+    /// always the primary and is never duplicated here.
+    pub extra_working_dirs: Vec<PathBuf>,
     /// Tracks file modification times to detect stale edits.
     pub file_state: Arc<FileStateTracker>,
     /// Background task manager.
@@ -89,6 +93,7 @@ impl Default for ToolContext {
     fn default() -> Self {
         Self {
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+            extra_working_dirs: Vec::new(),
             file_state: Arc::new(FileStateTracker::default()),
             task_manager: Arc::new(Mutex::new(TaskManager::default())),
             task_abort_handles: Arc::new(Mutex::new(HashMap::new())),

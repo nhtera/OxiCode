@@ -13,6 +13,7 @@ pub mod team_memory_sync;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use oxicode_common::constants::{CONFIG_DIR_NAME, SESSIONS_DIR_NAME};
@@ -49,6 +50,10 @@ pub struct Session {
     /// `None` for root branches and legacy sessions.
     #[serde(default)]
     pub parent_turn: Option<u32>,
+    /// Extra working directories added via `/add-dir` during this session.
+    /// Persisted so `--session <id>` restores the set.
+    #[serde(default)]
+    pub working_dirs: Vec<PathBuf>,
 }
 
 impl Session {
@@ -64,11 +69,42 @@ impl Session {
             branch_id: None,
             parent_branch: None,
             parent_turn: None,
+            working_dirs: Vec::new(),
         }
     }
 
     pub fn push_message(&mut self, message: Message) {
         self.messages.push(message);
+        self.updated_at = Utc::now();
+    }
+
+    /// Add a working directory (set semantics — duplicate is a no-op).
+    pub fn add_working_dir(&mut self, path: PathBuf) {
+        if !self.working_dirs.contains(&path) {
+            self.working_dirs.push(path);
+            self.updated_at = Utc::now();
+        }
+    }
+
+    /// Remove a working directory by canonical path. Returns `true` if it was present.
+    pub fn remove_working_dir(&mut self, path: &PathBuf) -> bool {
+        let before = self.working_dirs.len();
+        self.working_dirs.retain(|p| p != path);
+        let removed = self.working_dirs.len() < before;
+        if removed {
+            self.updated_at = Utc::now();
+        }
+        removed
+    }
+
+    /// Replace working_dirs wholesale (used when syncing from `AppState`).
+    pub fn set_working_dirs(&mut self, dirs: Vec<PathBuf>) {
+        // Deduplicate while preserving insertion order.
+        let mut seen: HashSet<PathBuf> = HashSet::new();
+        self.working_dirs = dirs
+            .into_iter()
+            .filter(|p| seen.insert(p.clone()))
+            .collect();
         self.updated_at = Utc::now();
     }
 }
@@ -395,5 +431,88 @@ mod tests {
             title: None,
         };
         assert_eq!(summary.display_label(), "first message");
+    }
+
+    // ── working_dirs ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_session_working_dirs_default_empty() {
+        let session = Session::new("model");
+        assert!(session.working_dirs.is_empty());
+    }
+
+    #[test]
+    fn test_session_add_working_dir_set_semantics() {
+        let mut session = Session::new("model");
+        let dir = PathBuf::from("/tmp/alpha");
+        session.add_working_dir(dir.clone());
+        session.add_working_dir(dir.clone()); // duplicate — should be no-op
+        assert_eq!(session.working_dirs.len(), 1);
+    }
+
+    #[test]
+    fn test_session_remove_working_dir() {
+        let mut session = Session::new("model");
+        let dir = PathBuf::from("/tmp/beta");
+        session.add_working_dir(dir.clone());
+        assert_eq!(session.working_dirs.len(), 1);
+
+        let removed = session.remove_working_dir(&dir);
+        assert!(removed);
+        assert!(session.working_dirs.is_empty());
+
+        // Second removal returns false.
+        let removed2 = session.remove_working_dir(&dir);
+        assert!(!removed2);
+    }
+
+    #[test]
+    fn test_session_working_dirs_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut session = Session::new("model");
+        session.push_message(Message::user("hi"));
+        session.add_working_dir(PathBuf::from("/tmp/dir_a"));
+        session.add_working_dir(PathBuf::from("/tmp/dir_b"));
+
+        save_session(&session, Some(tmp.path())).unwrap();
+        let loaded = load_session(&session.id, Some(tmp.path())).unwrap();
+
+        assert_eq!(loaded.working_dirs.len(), 2);
+        assert_eq!(loaded.working_dirs[0], PathBuf::from("/tmp/dir_a"));
+        assert_eq!(loaded.working_dirs[1], PathBuf::from("/tmp/dir_b"));
+    }
+
+    #[test]
+    fn test_session_working_dirs_backward_compat() {
+        // A JSON session without `working_dirs` should load with empty vec.
+        let tmp = tempfile::tempdir().unwrap();
+        let session = Session::new("model");
+        // Serialize manually without working_dirs field (simulate legacy).
+        let legacy_json = serde_json::json!({
+            "id": session.id,
+            "messages": [],
+            "model": session.model,
+            "created_at": session.created_at,
+            "updated_at": session.updated_at
+        });
+        let sessions_dir = crate::sessions_dir(Some(tmp.path()));
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        let path = sessions_dir.join(format!("{}.json", session.id));
+        std::fs::write(path, serde_json::to_string_pretty(&legacy_json).unwrap()).unwrap();
+
+        let loaded = load_session(&session.id, Some(tmp.path())).unwrap();
+        assert!(loaded.working_dirs.is_empty());
+    }
+
+    #[test]
+    fn test_session_set_working_dirs_deduplicates() {
+        let mut session = Session::new("model");
+        let dirs = vec![
+            PathBuf::from("/a"),
+            PathBuf::from("/b"),
+            PathBuf::from("/a"), // duplicate
+        ];
+        session.set_working_dirs(dirs);
+        assert_eq!(session.working_dirs.len(), 2);
     }
 }

@@ -52,25 +52,42 @@ impl Tool for GlobTool {
                 message: "pattern is required".into(),
             })?;
 
-        let base_dir = input["path"].as_str().map_or_else(
-            || ctx.working_dir.clone(),
-            |p| resolve_path(p, &ctx.working_dir),
-        );
+        // When an explicit path is given, search only that path (original behaviour).
+        // When no path is given, search working_dir AND all extra_working_dirs.
+        let explicit_path = input["path"].as_str();
 
-        let full_pattern = base_dir.join(pattern).to_string_lossy().to_string();
-
-        let entries = glob::glob(&full_pattern).map_err(|e| oxicode_common::OxiError::Tool {
-            name: self.name().into(),
-            message: format!("Invalid glob pattern: {e}"),
-        })?;
+        let search_roots: Vec<std::path::PathBuf> = if let Some(p) = explicit_path {
+            vec![resolve_path(p, &ctx.working_dir)]
+        } else {
+            let mut roots = vec![ctx.working_dir.clone()];
+            for extra in &ctx.extra_working_dirs {
+                if !roots.contains(extra) {
+                    roots.push(extra.clone());
+                    tracing::info!("glob: searching extra working dir {}", extra.display());
+                }
+            }
+            roots
+        };
 
         let mut files: Vec<(String, SystemTime)> = Vec::new();
-        for entry in entries.flatten() {
-            let mtime = entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-            files.push((entry.to_string_lossy().to_string(), mtime));
+        for base_dir in &search_roots {
+            let full_pattern = base_dir.join(pattern).to_string_lossy().to_string();
+            let entries =
+                glob::glob(&full_pattern).map_err(|e| oxicode_common::OxiError::Tool {
+                    name: self.name().into(),
+                    message: format!("Invalid glob pattern: {e}"),
+                })?;
+            for entry in entries.flatten() {
+                let mtime = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+                let path_str = entry.to_string_lossy().to_string();
+                // Deduplicate (same file reachable via two roots is unlikely but possible).
+                if !files.iter().any(|(p, _)| p == &path_str) {
+                    files.push((path_str, mtime));
+                }
+            }
         }
 
         // Sort by modification time, most recent first.
@@ -141,5 +158,64 @@ mod tests {
 
         assert!(!result.is_error);
         assert!(result.content.contains("No files matched"));
+    }
+
+    #[tokio::test]
+    async fn test_glob_across_extra_working_dirs() {
+        // Two separate temp dirs, each with a unique .rs file.
+        let dir1 = TempDir::new().unwrap();
+        let dir2 = TempDir::new().unwrap();
+        std::fs::write(dir1.path().join("root1_file.rs"), "fn a() {}").unwrap();
+        std::fs::write(dir2.path().join("root2_file.rs"), "fn b() {}").unwrap();
+
+        let ctx = ToolContext {
+            working_dir: dir1.path().to_path_buf(),
+            extra_working_dirs: vec![dir2.path().to_path_buf()],
+            ..Default::default()
+        };
+
+        let result = GlobTool
+            .execute(serde_json::json!({"pattern": "*.rs"}), &ctx)
+            .await
+            .unwrap();
+
+        assert!(!result.is_error, "unexpected error: {}", result.content);
+        assert!(
+            result.content.contains("root1_file.rs"),
+            "should find root1_file.rs; got: {}",
+            result.content
+        );
+        assert!(
+            result.content.contains("root2_file.rs"),
+            "should find root2_file.rs; got: {}",
+            result.content
+        );
+    }
+
+    #[tokio::test]
+    async fn test_glob_explicit_path_ignores_extras() {
+        // When an explicit `path` param is given, extra_working_dirs must NOT be consulted.
+        let primary = TempDir::new().unwrap();
+        let extra = TempDir::new().unwrap();
+        std::fs::write(primary.path().join("primary.rs"), "").unwrap();
+        std::fs::write(extra.path().join("extra.rs"), "").unwrap();
+
+        let ctx = ToolContext {
+            working_dir: primary.path().to_path_buf(),
+            extra_working_dirs: vec![extra.path().to_path_buf()],
+            ..Default::default()
+        };
+
+        let result = GlobTool
+            .execute(
+                serde_json::json!({"pattern": "*.rs", "path": primary.path().to_str().unwrap()}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert!(result.content.contains("primary.rs"));
+        assert!(!result.content.contains("extra.rs"));
     }
 }
