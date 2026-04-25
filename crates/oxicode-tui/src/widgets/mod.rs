@@ -1,8 +1,6 @@
 pub mod agent_panel;
 pub mod agents_overlay;
 pub mod branches_overlay;
-pub mod settings;
-pub mod settings_screen;
 pub mod code_block;
 pub mod command_autocomplete;
 pub mod diff_view;
@@ -14,6 +12,8 @@ pub mod history_search;
 pub mod input_box;
 pub mod markdown_view;
 pub mod message_view;
+#[cfg(feature = "virtual-scroll")]
+pub mod message_view_virtual;
 pub mod modal_helpers;
 pub mod model_picker;
 pub mod notification;
@@ -23,6 +23,8 @@ pub mod permission_dialog;
 pub mod rewind_overlay;
 pub mod search_overlay;
 pub mod session_browser;
+pub mod settings;
+pub mod settings_screen;
 pub mod shortcuts_overlay;
 pub mod split_pane;
 pub mod stats_dashboard;
@@ -32,13 +34,13 @@ pub mod task_panel;
 pub mod tool_call;
 pub mod tool_display;
 pub mod virtual_list;
-#[cfg(feature = "virtual-scroll")]
-pub mod message_view_virtual;
 
 pub use agent_panel::{AgentInfo, AgentPanel};
-pub use branches_overlay::{BranchEntry, BranchesOverlay, BranchesOverlayMode, BranchesOverlayState};
 pub use agents_overlay::{
     AgentsAgentRow, AgentsOrigin, AgentsOverlay, AgentsOverlayState, AgentsRow, AgentsTab,
+};
+pub use branches_overlay::{
+    BranchEntry, BranchesOverlay, BranchesOverlayMode, BranchesOverlayState,
 };
 pub use code_block::CodeBlockWidget;
 pub use command_autocomplete::{AutocompleteState, CommandAutocomplete, SlashCommandMeta};
@@ -58,6 +60,7 @@ pub use permission_dialog::{PermissionDialog, PermissionDialogKind};
 pub use rewind_overlay::{RewindOverlay, RewindOverlayState};
 pub use search_overlay::{find_matches_in_cache, SearchBar, SearchOverlay};
 pub use session_browser::{SessionBrowser, SessionBrowserState, SessionEntry};
+pub use settings_screen::{SettingsScreen, SettingsScreenWidget, SettingsTab};
 pub use shortcuts_overlay::{
     default_shortcut_entries, HelpOverlay, HelpOverlayState, ShortcutsPanel, ShortcutsState,
 };
@@ -67,4 +70,3 @@ pub use status_bar::StatusBar;
 pub use suggestion_chips::SuggestionChips;
 pub use task_panel::{TaskInfo, TaskPanel};
 pub use tool_call::{ToolCallStatus, ToolCallWidget};
-pub use settings_screen::{SettingsScreen, SettingsScreenWidget, SettingsTab};

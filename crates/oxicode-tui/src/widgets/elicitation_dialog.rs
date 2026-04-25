@@ -192,7 +192,10 @@ impl ElicitationDialog {
 impl Widget for &ElicitationDialog {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Responsive: prefer 60 wide, minimum 40; height depends on content.
-        let width = 60u16.min(area.width.saturating_sub(2)).max(40).min(area.width);
+        let width = 60u16
+            .min(area.width.saturating_sub(2))
+            .max(40)
+            .min(area.width);
         let choice_rows = match self.request.input_type {
             ElicitationInputType::Select => self.request.choices.len() as u16,
             _ => 0,
@@ -275,10 +278,7 @@ impl ElicitationDialog {
             self.input.clone()
         };
         let line = Line::from(vec![
-            Span::styled(
-                "› ",
-                Style::default().fg(DIALOG_ACCENT).bg(PANEL_BG),
-            ),
+            Span::styled("› ", Style::default().fg(DIALOG_ACCENT).bg(PANEL_BG)),
             Span::styled(display, Style::default().fg(DIALOG_TEXT).bg(PANEL_BG)),
             // Cursor block.
             Span::styled(

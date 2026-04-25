@@ -95,10 +95,13 @@ impl VirtualItem for MessageItem {
                 if y < area.bottom() {
                     let sep_line = Line::from(ratatui::text::Span::styled(
                         "─".repeat(60),
-                        ratatui::style::Style::default()
-                            .fg(ratatui::style::Color::DarkGray),
+                        ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
                     ));
-                    let sep_area = Rect { y, height: 1, ..area };
+                    let sep_area = Rect {
+                        y,
+                        height: 1,
+                        ..area
+                    };
                     Paragraph::new(sep_line).render(sep_area, buf);
                     y += 1;
                 }
@@ -253,10 +256,7 @@ mod tests {
     #[test]
     fn build_message_items_first_has_no_separator() {
         use oxicode_common::Role;
-        let lines = vec![
-            vec![Line::from("msg0")],
-            vec![Line::from("msg1")],
-        ];
+        let lines = vec![vec![Line::from("msg0")], vec![Line::from("msg1")]];
         let roles = vec![Role::User, Role::Assistant];
         let tool_only = HashSet::new();
         let items = build_message_items(&lines, &roles, &tool_only, 0);

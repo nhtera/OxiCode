@@ -21,10 +21,7 @@ use crate::widgets::{
 };
 
 #[cfg(feature = "virtual-scroll")]
-use crate::widgets::{
-    message_view_virtual::MessageItem,
-    virtual_list::VirtualList,
-};
+use crate::widgets::{message_view_virtual::MessageItem, virtual_list::VirtualList};
 use oxicode_mcp::{ElicitationEnvelope, ElicitationResponse};
 
 // ── Submodules ────────────────────────────────────────────────────────────────

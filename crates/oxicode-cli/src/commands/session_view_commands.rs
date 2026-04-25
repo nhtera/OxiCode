@@ -314,11 +314,7 @@ impl SlashCommand for ForkCommand {
     fn execute(&self, args: &str, ctx: &CommandContext) -> CommandOutput {
         // Build a title: use args if provided, else "branch-{short_id}".
         let title = if args.trim().is_empty() {
-            let short_id: String = uuid::Uuid::new_v4()
-                .to_string()
-                .chars()
-                .take(8)
-                .collect();
+            let short_id: String = uuid::Uuid::new_v4().to_string().chars().take(8).collect();
             format!("branch-{short_id}")
         } else {
             args.trim().to_string()
@@ -328,8 +324,7 @@ impl SlashCommand for ForkCommand {
         let session_id = &ctx.session_id;
 
         // Try to load existing tree from disk.
-        let tree_result =
-            oxicode_session::branch::SessionTree::load_or_migrate(session_id, None);
+        let tree_result = oxicode_session::branch::SessionTree::load_or_migrate(session_id, None);
 
         match tree_result {
             Ok(mut tree) => {
@@ -359,7 +354,11 @@ impl SlashCommand for ForkCommand {
                                 "Fork created in memory but save failed: {e}"
                             ));
                         }
-                        let short = new_branch_id.to_string().chars().take(8).collect::<String>();
+                        let short = new_branch_id
+                            .to_string()
+                            .chars()
+                            .take(8)
+                            .collect::<String>();
                         CommandOutput::Message(format!(
                             "Forked at turn {at_turn} → branch \"{title}\" ({short})\n\
                              Use /branches to switch between branches."
@@ -411,7 +410,11 @@ impl SlashCommand for BranchesCommand {
                 });
 
                 for branch in sorted {
-                    let active = if branch.id == tree.current { " *" } else { "  " };
+                    let active = if branch.id == tree.current {
+                        " *"
+                    } else {
+                        "  "
+                    };
                     let short = branch.id.to_string().chars().take(8).collect::<String>();
                     let fork_info = branch
                         .parent_turn
@@ -425,12 +428,14 @@ impl SlashCommand for BranchesCommand {
                     ));
                 }
                 lines.push(String::new());
-                lines.push("Use /fork to create a branch. Open TUI branches overlay with Ctrl+B.".into());
+                lines.push(
+                    "Use /fork to create a branch. Open TUI branches overlay with Ctrl+B.".into(),
+                );
                 CommandOutput::Message(lines.join("\n"))
             }
-            Err(_) => CommandOutput::Message(
-                "No session branches found. Use /fork to create one.".into(),
-            ),
+            Err(_) => {
+                CommandOutput::Message("No session branches found. Use /fork to create one.".into())
+            }
         }
     }
 }

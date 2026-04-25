@@ -77,7 +77,13 @@ pub struct GeneralTab {
 }
 
 impl GeneralTab {
-    pub fn new(model: String, output_format: String, theme: String, vim_mode: bool, ghost_completion: bool) -> Self {
+    pub fn new(
+        model: String,
+        output_format: String,
+        theme: String,
+        vim_mode: bool,
+        ghost_completion: bool,
+    ) -> Self {
         Self {
             selected: 0,
             editing: false,
@@ -185,8 +191,20 @@ impl GeneralTab {
             GeneralField::Model => &self.model,
             GeneralField::OutputFormat => &self.output_format,
             GeneralField::Theme => &self.theme,
-            GeneralField::VimMode => if self.vim_mode { "on" } else { "off" },
-            GeneralField::GhostCompletion => if self.ghost_completion { "on" } else { "off" },
+            GeneralField::VimMode => {
+                if self.vim_mode {
+                    "on"
+                } else {
+                    "off"
+                }
+            }
+            GeneralField::GhostCompletion => {
+                if self.ghost_completion {
+                    "on"
+                } else {
+                    "off"
+                }
+            }
         }
     }
 
@@ -220,22 +238,34 @@ impl GeneralTab {
             } else {
                 match field {
                     GeneralField::VimMode => {
-                        if self.vim_mode { "[ON]  ".to_string() } else { "[OFF] ".to_string() }
+                        if self.vim_mode {
+                            "[ON]  ".to_string()
+                        } else {
+                            "[OFF] ".to_string()
+                        }
                     }
                     GeneralField::GhostCompletion => {
-                        if self.ghost_completion { "[ON]  ".to_string() } else { "[OFF] ".to_string() }
+                        if self.ghost_completion {
+                            "[ON]  ".to_string()
+                        } else {
+                            "[OFF] ".to_string()
+                        }
                     }
                     _ => self.field_value(field).to_string(),
                 }
             };
 
             let label_style = if is_selected {
-                Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_MUTED)
             };
             let value_style = if is_selected {
-                Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_TEXT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_TEXT)
             };

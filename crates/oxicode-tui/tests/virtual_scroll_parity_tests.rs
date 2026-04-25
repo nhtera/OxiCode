@@ -115,9 +115,7 @@ fn render_legacy(messages: &[Message], width: u16, height: u16) -> Buffer {
 #[cfg(feature = "virtual-scroll")]
 fn render_virtual(messages: &[Message], width: u16, height: u16) -> Buffer {
     use oxicode_common::Role as ORole;
-    use oxicode_tui::widgets::message_view_virtual::{
-        build_message_items, MessageRenderCtx,
-    };
+    use oxicode_tui::widgets::message_view_virtual::{build_message_items, MessageRenderCtx};
     use oxicode_tui::widgets::virtual_list::VirtualList;
     use ratatui::widgets::{Block, Borders, Widget};
 
@@ -144,7 +142,9 @@ fn render_virtual(messages: &[Message], width: u16, height: u16) -> Buffer {
     }
     list.scroll_to_bottom();
 
-    let ctx = MessageRenderCtx { tool_only_indices: tool_only };
+    let ctx = MessageRenderCtx {
+        tool_only_indices: tool_only,
+    };
 
     let mut buf = Buffer::empty(outer_area);
     Block::default()
@@ -184,11 +184,13 @@ fn compare_inner_content(
     let new_rows = extract_inner_rows(new, width, height);
 
     // Non-empty rows only — blank rows are padding or the legacy 2-row overshoot.
-    let lc: Vec<&str> = legacy_rows.iter()
+    let lc: Vec<&str> = legacy_rows
+        .iter()
         .map(String::as_str)
         .filter(|s| !s.is_empty())
         .collect();
-    let nc: Vec<&str> = new_rows.iter()
+    let nc: Vec<&str> = new_rows
+        .iter()
         .map(String::as_str)
         .filter(|s| !s.is_empty())
         .collect();

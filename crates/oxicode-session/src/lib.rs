@@ -220,7 +220,10 @@ pub fn list_sessions(config_dir_override: Option<&Path>) -> OxiResult<Vec<Sessio
             if manifest_path.exists() {
                 if let Ok(manifest_content) = fs::read_to_string(&manifest_path) {
                     #[derive(serde::Deserialize)]
-                    struct Manifest { current: uuid::Uuid, session_id: uuid::Uuid }
+                    struct Manifest {
+                        current: uuid::Uuid,
+                        session_id: uuid::Uuid,
+                    }
                     if let Ok(manifest) = serde_json::from_str::<Manifest>(&manifest_content) {
                         let branch_path = path.join(format!("{}.json", manifest.current));
                         if let Ok(content) = fs::read_to_string(&branch_path) {

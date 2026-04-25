@@ -386,17 +386,11 @@ async fn main() -> Result<()> {
                 .and_then(|s| serde_json::from_str::<Session>(&s).ok())
             {
                 Some(s) => {
-                    tracing::info!(
-                        "Resumed session {} branch {}",
-                        session_id,
-                        branch_id
-                    );
+                    tracing::info!("Resumed session {} branch {}", session_id, branch_id);
                     s
                 }
                 None => {
-                    eprintln!(
-                        "Branch '{branch_id}' not found in session '{session_id}'."
-                    );
+                    eprintln!("Branch '{branch_id}' not found in session '{session_id}'.");
                     std::process::exit(1);
                 }
             }
@@ -1308,8 +1302,7 @@ async fn run_tui(
                                                 let new_messages = branch.messages.clone();
                                                 let title = branch.title.clone();
                                                 // Hot-swap conversation + state.
-                                                conversation
-                                                    .replace_messages(new_messages.clone());
+                                                conversation.replace_messages(new_messages.clone());
                                                 state_store_clone.update(|s| {
                                                     s.messages = new_messages;
                                                 });
@@ -1447,45 +1440,43 @@ async fn run_tui(
                                             )))
                                             .await;
                                     }
-                                    Ok(mut tree) => {
-                                        match tree.delete_branch(branch_id, None) {
-                                            Err(e) => {
+                                    Ok(mut tree) => match tree.delete_branch(branch_id, None) {
+                                        Err(e) => {
+                                            let _ = core_tx_clone
+                                                .send(CoreEvent::Error(format!(
+                                                    "Cannot delete branch: {e}"
+                                                )))
+                                                .await;
+                                        }
+                                        Ok(()) => match tree.save(None) {
+                                            Ok(()) => {
+                                                let sys_msg = Message {
+                                                    id: uuid::Uuid::new_v4().to_string(),
+                                                    role: Role::Assistant,
+                                                    content: vec![ContentBlock::Text {
+                                                        text: format!(
+                                                            "Branch {branch_id} deleted."
+                                                        ),
+                                                    }],
+                                                    model: None,
+                                                    stop_reason: None,
+                                                    created_at: chrono::Utc::now(),
+                                                    usage: None,
+                                                };
+                                                state_store_clone.push_message(sys_msg);
                                                 let _ = core_tx_clone
-                                                    .send(CoreEvent::Error(format!(
-                                                        "Cannot delete branch: {e}"
-                                                    )))
+                                                    .send(CoreEvent::MessageComplete)
                                                     .await;
                                             }
-                                            Ok(()) => match tree.save(None) {
-                                                Ok(()) => {
-                                                    let sys_msg = Message {
-                                                        id: uuid::Uuid::new_v4().to_string(),
-                                                        role: Role::Assistant,
-                                                        content: vec![ContentBlock::Text {
-                                                            text: format!(
-                                                                "Branch {branch_id} deleted."
-                                                            ),
-                                                        }],
-                                                        model: None,
-                                                        stop_reason: None,
-                                                        created_at: chrono::Utc::now(),
-                                                        usage: None,
-                                                    };
-                                                    state_store_clone.push_message(sys_msg);
-                                                    let _ = core_tx_clone
-                                                        .send(CoreEvent::MessageComplete)
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = core_tx_clone
+                                            Err(e) => {
+                                                let _ = core_tx_clone
                                                         .send(CoreEvent::Error(format!(
                                                             "Delete succeeded in memory but failed to persist: {e}"
                                                         )))
                                                         .await;
-                                                }
-                                            },
-                                        }
-                                    }
+                                            }
+                                        },
+                                    },
                                 }
                             }
                         }
@@ -1556,7 +1547,10 @@ async fn run_tui(
                         }
                     }
                 }
-                UiEvent::SettingsSaved { model, permission_mode } => {
+                UiEvent::SettingsSaved {
+                    model,
+                    permission_mode,
+                } => {
                     // Propagate saved settings into the live StateStore so the
                     // status bar and other reactive components update immediately.
                     state_store_clone.update(|s| {
@@ -1771,10 +1765,7 @@ fn do_switch_branch(
         .map_err(|e| format!("Cannot switch branch: {e}"))?;
     tree.save(config_dir_override)
         .map_err(|e| format!("Branch switch failed to persist: {e}"))?;
-    let branch = tree
-        .branches
-        .get(&branch_id)
-        .expect("just switched to it");
+    let branch = tree.branches.get(&branch_id).expect("just switched to it");
     Ok((branch.messages.clone(), branch.title.clone()))
 }
 
@@ -1905,8 +1896,7 @@ mod switch_branch_tests {
         let session_id = tree.session_id.to_string();
 
         // Switch to root (child was current after fork).
-        let (msgs, title) =
-            do_switch_branch(&session_id, root_id, config).expect("should succeed");
+        let (msgs, title) = do_switch_branch(&session_id, root_id, config).expect("should succeed");
         assert_eq!(title, "main");
         assert_eq!(msgs.len(), 2);
 

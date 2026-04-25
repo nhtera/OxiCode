@@ -37,7 +37,12 @@ pub enum SettingsTab {
 }
 
 impl SettingsTab {
-    const ALL: [Self; 4] = [Self::General, Self::Providers, Self::Permissions, Self::Hooks];
+    const ALL: [Self; 4] = [
+        Self::General,
+        Self::Providers,
+        Self::Permissions,
+        Self::Hooks,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -297,7 +302,8 @@ impl SettingsScreen {
         let mut doc: toml::Value = if existing.trim().is_empty() {
             toml::Value::Table(toml::map::Map::new())
         } else {
-            toml::from_str(existing).map_err(|e| format!("Existing settings.toml is invalid TOML: {e}"))?
+            toml::from_str(existing)
+                .map_err(|e| format!("Existing settings.toml is invalid TOML: {e}"))?
         };
 
         let table = doc
@@ -305,12 +311,25 @@ impl SettingsScreen {
             .ok_or_else(|| "settings.toml root is not a TOML table".to_string())?;
 
         // Patch known fields from in-memory state.
-        table.insert("model".to_string(), toml::Value::String(self.general.model.clone()));
-        table.insert("output_style".to_string(), toml::Value::String(self.general.output_format.clone()));
-        table.insert("theme".to_string(), toml::Value::String(self.general.theme.clone()));
+        table.insert(
+            "model".to_string(),
+            toml::Value::String(self.general.model.clone()),
+        );
+        table.insert(
+            "output_style".to_string(),
+            toml::Value::String(self.general.output_format.clone()),
+        );
+        table.insert(
+            "theme".to_string(),
+            toml::Value::String(self.general.theme.clone()),
+        );
         table.insert(
             "editor_mode".to_string(),
-            toml::Value::String(if self.general.vim_mode { "vim".to_string() } else { "normal".to_string() }),
+            toml::Value::String(if self.general.vim_mode {
+                "vim".to_string()
+            } else {
+                "normal".to_string()
+            }),
         );
         table.insert(
             "permission_mode".to_string(),
@@ -319,7 +338,11 @@ impl SettingsScreen {
 
         // api_key: write plaintext in v1 (keyring integration deferred).
         // Only write if the user has actually set one (don't overwrite with empty).
-        let api_key_from_providers = self.providers.providers.first().map(|p| p.auth_token.clone());
+        let api_key_from_providers = self
+            .providers
+            .providers
+            .first()
+            .map(|p| p.auth_token.clone());
         if let Some(key) = api_key_from_providers {
             if !key.is_empty() {
                 table.insert("api_key".to_string(), toml::Value::String(key));
@@ -375,13 +398,23 @@ fn load_hook_groups_from_disk() -> Vec<HookGroup> {
     if let Some(home) = dirs::home_dir() {
         let path = home.join(".oxicode").join("settings.toml");
         if let Ok(text) = std::fs::read_to_string(&path) {
-            scan_toml_hooks(&text, HookSource::UserOxicode, path.to_string_lossy().as_ref(), &mut groups);
+            scan_toml_hooks(
+                &text,
+                HookSource::UserOxicode,
+                path.to_string_lossy().as_ref(),
+                &mut groups,
+            );
         }
 
         // Try ~/.claude/settings.json (read-only inspection, never written).
         let claude_path = home.join(".claude").join("settings.json");
         if let Ok(text) = std::fs::read_to_string(&claude_path) {
-            scan_json_hooks(&text, HookSource::UserClaude, claude_path.to_string_lossy().as_ref(), &mut groups);
+            scan_json_hooks(
+                &text,
+                HookSource::UserClaude,
+                claude_path.to_string_lossy().as_ref(),
+                &mut groups,
+            );
         }
     }
 
@@ -389,7 +422,12 @@ fn load_hook_groups_from_disk() -> Vec<HookGroup> {
     if let Ok(cwd) = std::env::current_dir() {
         let proj_path = cwd.join(".oxicode").join("settings.toml");
         if let Ok(text) = std::fs::read_to_string(&proj_path) {
-            scan_toml_hooks(&text, HookSource::Project, proj_path.to_string_lossy().as_ref(), &mut groups);
+            scan_toml_hooks(
+                &text,
+                HookSource::Project,
+                proj_path.to_string_lossy().as_ref(),
+                &mut groups,
+            );
         }
     }
 
@@ -412,9 +450,15 @@ fn scan_toml_hooks(
     path: &str,
     groups: &mut std::collections::HashMap<String, Vec<HookEntry>>,
 ) {
-    let Ok(doc) = toml::from_str::<toml::Value>(text) else { return };
-    let Some(hooks_val) = doc.get("hooks") else { return };
-    let Some(hooks_table) = hooks_val.as_table() else { return };
+    let Ok(doc) = toml::from_str::<toml::Value>(text) else {
+        return;
+    };
+    let Some(hooks_val) = doc.get("hooks") else {
+        return;
+    };
+    let Some(hooks_table) = hooks_val.as_table() else {
+        return;
+    };
 
     for (event, val) in hooks_table {
         let entries = groups.entry(event.clone()).or_default();
@@ -431,7 +475,10 @@ fn scan_toml_hooks(
             }
             toml::Value::Table(t) => {
                 let cmd = t.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                let timeout = t.get("timeout_secs").and_then(|v| v.as_integer()).unwrap_or(10);
+                let timeout = t
+                    .get("timeout_secs")
+                    .and_then(|v| v.as_integer())
+                    .unwrap_or(10);
                 entries.push(HookEntry {
                     source: clone_source(&source),
                     matcher: String::new(),
@@ -450,17 +497,23 @@ fn scan_toml_hooks(
                             .to_string();
                         // Try to find a command in the nested `hooks` array.
                         let summary = if let Some(toml::Value::Array(inner)) = t.get("hooks") {
-                            inner.first().and_then(|h| {
-                                let ht = h.as_table()?;
-                                let cmd = ht.get("command").and_then(|v| v.as_str());
-                                let agent = ht.get("instructions").and_then(|v| v.as_str());
-                                cmd.map(|c| format!("command: {c}"))
-                                    .or_else(|| agent.map(|_| "agent hook".to_string()))
-                            }).unwrap_or_default()
+                            inner
+                                .first()
+                                .and_then(|h| {
+                                    let ht = h.as_table()?;
+                                    let cmd = ht.get("command").and_then(|v| v.as_str());
+                                    let agent = ht.get("instructions").and_then(|v| v.as_str());
+                                    cmd.map(|c| format!("command: {c}"))
+                                        .or_else(|| agent.map(|_| "agent hook".to_string()))
+                                })
+                                .unwrap_or_default()
                         } else {
                             String::new()
                         };
-                        let timeout = t.get("timeout_secs").and_then(|v| v.as_integer()).unwrap_or(10);
+                        let timeout = t
+                            .get("timeout_secs")
+                            .and_then(|v| v.as_integer())
+                            .unwrap_or(10);
                         entries.push(HookEntry {
                             source: clone_source(&source),
                             matcher,
@@ -483,8 +536,12 @@ fn scan_json_hooks(
     path: &str,
     groups: &mut std::collections::HashMap<String, Vec<HookEntry>>,
 ) {
-    let Ok(doc) = serde_json::from_str::<serde_json::Value>(text) else { return };
-    let Some(hooks_obj) = doc.get("hooks").and_then(|v| v.as_object()) else { return };
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(text) else {
+        return;
+    };
+    let Some(hooks_obj) = doc.get("hooks").and_then(|v| v.as_object()) else {
+        return;
+    };
 
     for (event, val) in hooks_obj {
         let entries = groups.entry(event.clone()).or_default();
@@ -495,10 +552,16 @@ fn scan_json_hooks(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let summary = if let Some(inner_arr) = item.get("hooks").and_then(|v| v.as_array()) {
-                    inner_arr.first().and_then(|h| {
-                        h.get("command").and_then(|v| v.as_str()).map(|c| format!("command: {c}"))
-                    }).unwrap_or_default()
+                let summary = if let Some(inner_arr) = item.get("hooks").and_then(|v| v.as_array())
+                {
+                    inner_arr
+                        .first()
+                        .and_then(|h| {
+                            h.get("command")
+                                .and_then(|v| v.as_str())
+                                .map(|c| format!("command: {c}"))
+                        })
+                        .unwrap_or_default()
                 } else {
                     String::new()
                 };
@@ -553,7 +616,13 @@ impl Widget for SettingsScreenWidget<'_> {
         // Tab bar on header row 2.
         if layout.header_area.height >= 2 {
             let tab_y = layout.header_area.y + 1;
-            render_tab_bar(buf, layout.header_area.x, tab_y, layout.header_area.width, self.screen.active_tab);
+            render_tab_bar(
+                buf,
+                layout.header_area.x,
+                tab_y,
+                layout.header_area.width,
+                self.screen.active_tab,
+            );
         }
 
         // Separator between header and body.
@@ -595,7 +664,11 @@ fn render_tab_bar(buf: &mut Buffer, x: u16, y: u16, width: u16, active: Settings
         }
         spans.push(Span::styled(
             tab.label(),
-            if tab == active { active_style } else { inactive_style },
+            if tab == active {
+                active_style
+            } else {
+                inactive_style
+            },
         ));
     }
 
@@ -612,7 +685,9 @@ fn render_footer(buf: &mut Buffer, area: Rect, screen: &SettingsScreen) {
     if let Some(ref msg) = screen.save_message {
         let msg_line = Line::from(Span::styled(
             format!(" {msg}"),
-            Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(DIALOG_ACCENT)
+                .add_modifier(Modifier::BOLD),
         ));
         buf.set_line(area.x, area.y, &msg_line, area.width);
     }
@@ -646,7 +721,8 @@ mod tests {
     fn render_to_buf(screen: &SettingsScreen, width: u16, height: u16) -> ratatui::buffer::Buffer {
         let _backend = TestBackend::new(width, height);
         let _terminal = Terminal::new(_backend).unwrap();
-        let mut buf = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, width, height));
+        let mut buf =
+            ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, width, height));
         let widget = SettingsScreenWidget::new(screen);
         widget.render(ratatui::layout::Rect::new(0, 0, width, height), &mut buf);
         buf
@@ -657,18 +733,32 @@ mod tests {
         let screen = make_screen();
         let buf = render_to_buf(&screen, 100, 35);
         // Should contain the "Settings" title word.
-        let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
-        assert!(content.contains("Settings"), "title not found in rendered buffer");
+        let content: String = buf
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+        assert!(
+            content.contains("Settings"),
+            "title not found in rendered buffer"
+        );
     }
 
     #[test]
     fn tab_bar_shows_all_tabs() {
         let screen = make_screen();
         let buf = render_to_buf(&screen, 100, 35);
-        let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+        let content: String = buf
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
         assert!(content.contains("General"), "General tab label missing");
         assert!(content.contains("Providers"), "Providers tab label missing");
-        assert!(content.contains("Permissions"), "Permissions tab label missing");
+        assert!(
+            content.contains("Permissions"),
+            "Permissions tab label missing"
+        );
         assert!(content.contains("Hooks"), "Hooks tab label missing");
     }
 
@@ -677,7 +767,11 @@ mod tests {
         let mut screen = make_screen();
         screen.active_tab = SettingsTab::Providers;
         let buf = render_to_buf(&screen, 100, 35);
-        let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+        let content: String = buf
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
         assert!(content.contains("Providers"), "Providers label missing");
     }
 
@@ -686,7 +780,11 @@ mod tests {
         let mut screen = make_screen();
         screen.active_tab = SettingsTab::Permissions;
         let buf = render_to_buf(&screen, 100, 35);
-        let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+        let content: String = buf
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
         assert!(content.contains("bypass"), "bypass mode label missing");
         assert!(content.contains("default"), "default mode label missing");
     }
@@ -696,7 +794,11 @@ mod tests {
         let mut screen = make_screen();
         screen.active_tab = SettingsTab::Hooks;
         let buf = render_to_buf(&screen, 100, 35);
-        let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+        let content: String = buf
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
         // The readonly notice should always appear.
         assert!(content.contains("Readonly"), "readonly notice missing");
     }
@@ -705,7 +807,11 @@ mod tests {
     fn footer_shows_keybindings() {
         let screen = make_screen();
         let buf = render_to_buf(&screen, 100, 35);
-        let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+        let content: String = buf
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
         assert!(content.contains("Ctrl+S"), "Ctrl+S save hint missing");
         assert!(content.contains("Esc"), "Esc close hint missing");
     }
@@ -716,7 +822,7 @@ mod tests {
         assert!(!screen.dirty);
         // Toggle vim mode — should set dirty.
         screen.activate(); // General tab, Model field selected — opens edit mode; not dirty yet
-        // Navigate to vim mode field (index 3).
+                           // Navigate to vim mode field (index 3).
         screen.general.selected = 3;
         screen.activate(); // Toggle vim mode.
         assert!(screen.dirty, "dirty should be set after field toggle");
@@ -732,9 +838,16 @@ mod tests {
         }
         screen.active_tab = SettingsTab::Providers;
         let buf = render_to_buf(&screen, 100, 35);
-        let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+        let content: String = buf
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
         // Raw token must NOT appear in rendered output.
-        assert!(!content.contains("sk-ant-secret-123"), "token leaked into render buffer");
+        assert!(
+            !content.contains("sk-ant-secret-123"),
+            "token leaked into render buffer"
+        );
         // Mask character must appear instead.
         assert!(content.contains('●'), "mask character not found");
     }
@@ -750,7 +863,9 @@ mod tests {
         screen.dirty = true;
 
         // Use save_to — no env mutation, safe under parallel test execution.
-        screen.save_to(&config_path).expect("save_to should succeed");
+        screen
+            .save_to(&config_path)
+            .expect("save_to should succeed");
 
         // Reload and verify.
         let reloaded = oxicode_config::load_settings(Some(tmp.path().to_str().unwrap()));
@@ -768,7 +883,9 @@ mod tests {
         screen.permissions.deny_list = "file_write".to_string();
         screen.dirty = true;
 
-        screen.save_to(&config_path).expect("save_to should succeed");
+        screen
+            .save_to(&config_path)
+            .expect("save_to should succeed");
 
         let reloaded = oxicode_config::load_settings(Some(tmp.path().to_str().unwrap()));
         assert_eq!(

@@ -129,8 +129,12 @@ impl PermissionsTab {
 
     pub fn pop_char(&mut self) {
         match self.focus {
-            PermFocus::AllowList => { self.allow_list.pop(); }
-            PermFocus::DenyList => { self.deny_list.pop(); }
+            PermFocus::AllowList => {
+                self.allow_list.pop();
+            }
+            PermFocus::DenyList => {
+                self.deny_list.pop();
+            }
             PermFocus::Radio(_) => {}
         }
     }
@@ -147,7 +151,9 @@ impl PermissionsTab {
         if y < area.y + area.height {
             let hdr = Line::from(Span::styled(
                 " Permission Mode",
-                Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(DIALOG_ACCENT)
+                    .add_modifier(Modifier::BOLD),
             ));
             buf.set_line(area.x, y, &hdr, area.width);
             y += 1;
@@ -163,12 +169,16 @@ impl PermissionsTab {
             let radio = if is_selected { "◉ " } else { "○ " };
             let cursor = if is_focused { "▶" } else { " " };
             let style = if is_focused {
-                Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_TEXT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_TEXT)
             };
             let radio_style = if is_selected {
-                Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_MUTED)
             };
@@ -196,7 +206,9 @@ impl PermissionsTab {
         if y < area.y + area.height {
             let allow_focused = self.focus == PermFocus::AllowList;
             let hdr_style = if allow_focused {
-                Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_ACCENT)
             };
@@ -217,7 +229,9 @@ impl PermissionsTab {
                 format!("  {}", self.allow_list)
             };
             let val_style = if allow_focused {
-                Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_TEXT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_TEXT)
             };
@@ -230,7 +244,9 @@ impl PermissionsTab {
         if y < area.y + area.height {
             let deny_focused = self.focus == PermFocus::DenyList;
             let hdr_style = if deny_focused {
-                Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_ACCENT)
             };
@@ -251,7 +267,9 @@ impl PermissionsTab {
                 format!("  {}", self.deny_list)
             };
             let val_style = if deny_focused {
-                Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_TEXT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_TEXT)
             };

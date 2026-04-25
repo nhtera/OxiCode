@@ -110,19 +110,13 @@ impl SessionTree {
     /// The session's original UUID becomes both `session_id` and the root
     /// `branch_id` so that `--session <id>` still works without a `--branch`.
     pub fn from_legacy(session: &crate::Session) -> Self {
-        let session_id: Uuid = session
-            .id
-            .parse()
-            .unwrap_or_else(|_| Uuid::new_v4());
+        let session_id: Uuid = session.id.parse().unwrap_or_else(|_| Uuid::new_v4());
         let root = SessionBranch {
             id: session_id,
             model: session.model.clone(),
             parent: None,
             parent_turn: None,
-            title: session
-                .title
-                .clone()
-                .unwrap_or_else(|| "main".to_string()),
+            title: session.title.clone().unwrap_or_else(|| "main".to_string()),
             messages: session.messages.clone(),
             created_at: session.created_at,
             updated_at: session.updated_at,
@@ -159,16 +153,12 @@ impl SessionTree {
     /// # Errors
     /// Returns `OxiError::Session` when `parent_branch` does not exist or
     /// `at_turn` is out of range.
-    pub fn fork(
-        &mut self,
-        parent_branch: Uuid,
-        at_turn: u32,
-        title: String,
-    ) -> OxiResult<Uuid> {
+    pub fn fork(&mut self, parent_branch: Uuid, at_turn: u32, title: String) -> OxiResult<Uuid> {
         let messages_slice = {
-            let parent = self.branches.get(&parent_branch).ok_or_else(|| {
-                OxiError::Session(format!("Branch not found: {parent_branch}"))
-            })?;
+            let parent = self
+                .branches
+                .get(&parent_branch)
+                .ok_or_else(|| OxiError::Session(format!("Branch not found: {parent_branch}")))?;
             let end = at_turn as usize + 1;
             if end > parent.messages.len() {
                 return Err(OxiError::Session(format!(
@@ -208,9 +198,7 @@ impl SessionTree {
     /// Returns `OxiError::Session` when `branch_id` is not in the tree.
     pub fn switch(&mut self, branch_id: Uuid) -> OxiResult<()> {
         if !self.branches.contains_key(&branch_id) {
-            return Err(OxiError::Session(format!(
-                "Branch not found: {branch_id}"
-            )));
+            return Err(OxiError::Session(format!("Branch not found: {branch_id}")));
         }
         self.current = branch_id;
         Ok(())
@@ -237,20 +225,17 @@ impl SessionTree {
             ));
         }
         if !self.branches.contains_key(&branch_id) {
-            return Err(OxiError::Session(format!(
-                "Branch not found: {branch_id}"
-            )));
+            return Err(OxiError::Session(format!("Branch not found: {branch_id}")));
         }
 
         self.branches.remove(&branch_id);
 
         // Remove from disk if it exists.
-        let branch_path = tree_dir(self.session_id, config_dir_override)
-            .join(format!("{branch_id}.json"));
+        let branch_path =
+            tree_dir(self.session_id, config_dir_override).join(format!("{branch_id}.json"));
         if branch_path.exists() {
-            fs::remove_file(&branch_path).map_err(|e| {
-                OxiError::Session(format!("Failed to remove branch file: {e}"))
-            })?;
+            fs::remove_file(&branch_path)
+                .map_err(|e| OxiError::Session(format!("Failed to remove branch file: {e}")))?;
         }
 
         Ok(())
@@ -273,10 +258,7 @@ impl SessionTree {
             session_id: self.session_id,
             current: self.current,
         };
-        write_json_file(
-            &dir.join("tree.json"),
-            &manifest,
-        )?;
+        write_json_file(&dir.join("tree.json"), &manifest)?;
 
         Ok(())
     }
@@ -349,10 +331,7 @@ impl SessionTree {
                         branches.insert(branch.id, branch);
                     }
                     Err(e) => {
-                        tracing::warn!(
-                            "Skipping malformed branch file {}: {e}",
-                            path.display()
-                        );
+                        tracing::warn!("Skipping malformed branch file {}: {e}", path.display());
                     }
                 },
                 Err(e) => {
@@ -467,9 +446,7 @@ pub fn migrate_legacy_if_needed(
     let legacy_path = sessions.join(format!("{id}.json"));
 
     if !legacy_path.exists() {
-        return Err(OxiError::Session(format!(
-            "Legacy session not found: {id}"
-        )));
+        return Err(OxiError::Session(format!("Legacy session not found: {id}")));
     }
 
     let content = fs::read_to_string(&legacy_path)?;

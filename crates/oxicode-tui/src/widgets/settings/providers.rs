@@ -183,8 +183,12 @@ impl ProvidersTab {
     pub fn pop_char(&mut self) {
         if self.editing_idx.is_some() {
             match self.edit_field {
-                EditField::BaseUrl => { self.url_buf.pop(); }
-                EditField::AuthToken => { self.token_buf.pop(); }
+                EditField::BaseUrl => {
+                    self.url_buf.pop();
+                }
+                EditField::AuthToken => {
+                    self.token_buf.pop();
+                }
             }
         }
     }
@@ -202,12 +206,15 @@ impl ProvidersTab {
 
         // Header row.
         if area.height >= 1 {
-            let header = Line::from(vec![
-                Span::styled(
-                    format!("  {:<name_w$} {:<url_w$} {:<auth_w$} Status", "Name", "Base URL", "Auth"),
-                    Style::default().fg(DIALOG_MUTED).add_modifier(Modifier::BOLD),
+            let header = Line::from(vec![Span::styled(
+                format!(
+                    "  {:<name_w$} {:<url_w$} {:<auth_w$} Status",
+                    "Name", "Base URL", "Auth"
                 ),
-            ]);
+                Style::default()
+                    .fg(DIALOG_MUTED)
+                    .add_modifier(Modifier::BOLD),
+            )]);
             buf.set_line(area.x, area.y, &header, area.width);
         }
 
@@ -228,7 +235,9 @@ impl ProvidersTab {
             let is_selected = self.selected == i && self.editing_idx.is_none();
             let cursor = if is_selected { "▶ " } else { "  " };
             let row_style = if is_selected {
-                Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_TEXT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_TEXT)
             };
@@ -258,7 +267,9 @@ impl ProvidersTab {
             let is_sel = self.selected == self.providers.len();
             let cursor = if is_sel { "▶ " } else { "  " };
             let style = if is_sel {
-                Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(DIALOG_ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(DIALOG_MUTED)
             };
@@ -293,9 +304,18 @@ impl ProvidersTab {
         }
 
         // Border top.
-        let name = self.providers.get(idx).map(|p| p.name.as_str()).unwrap_or("Provider");
+        let name = self
+            .providers
+            .get(idx)
+            .map(|p| p.name.as_str())
+            .unwrap_or("Provider");
         let title = format!(" Edit: {name} ");
-        let top_line = Line::from(Span::styled(title, Style::default().fg(DIALOG_ACCENT).add_modifier(Modifier::BOLD)));
+        let top_line = Line::from(Span::styled(
+            title,
+            Style::default()
+                .fg(DIALOG_ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ));
         buf.set_line(dx, dy, &top_line, dialog_w);
 
         // URL field.
@@ -307,7 +327,9 @@ impl ProvidersTab {
             Span::styled(
                 url_value,
                 if url_is_active {
-                    Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(DIALOG_TEXT)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(DIALOG_TEXT)
                 },
@@ -330,7 +352,9 @@ impl ProvidersTab {
             Span::styled(
                 tok_raw,
                 if tok_is_active {
-                    Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(DIALOG_TEXT)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(DIALOG_TEXT)
                 },

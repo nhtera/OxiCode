@@ -79,11 +79,7 @@ impl BranchesOverlayState {
     pub fn open(&mut self, entries: Vec<BranchEntry>) {
         self.entries = entries;
         // Default selection to the current (active) branch.
-        self.selected_idx = self
-            .entries
-            .iter()
-            .position(|e| e.is_current)
-            .unwrap_or(0);
+        self.selected_idx = self.entries.iter().position(|e| e.is_current).unwrap_or(0);
         self.mode = BranchesOverlayMode::Browse;
         self.rename_input.clear();
         self.visible = true;
@@ -319,12 +315,11 @@ impl Widget for BranchesOverlay<'_> {
                 render_rename_input(buf, rename_area, &self.state.rename_input);
             }
 
-            let hint_y =
-                if self.state.mode == BranchesOverlayMode::Rename && footer.height >= 2 {
-                    footer.y + 1
-                } else {
-                    footer.y
-                };
+            let hint_y = if self.state.mode == BranchesOverlayMode::Rename && footer.height >= 2 {
+                footer.y + 1
+            } else {
+                footer.y
+            };
             let footer_line = build_footer_line(&self.state.mode);
             buf.set_line(footer.x, hint_y, &footer_line, footer.width);
         }
@@ -348,8 +343,8 @@ fn build_branch_lines(state: &BranchesOverlayState, width: u16) -> Vec<Line<'sta
     let inner_w = width as usize;
     // Reserve space for tree prefix + short-id + msg count.
     let prefix_w = 4; // "  > " or "    "
-    let id_w = 10;    // "[a1b2c3d4]"
-    let msgs_w = 8;   // " 42 msgs"
+    let id_w = 10; // "[a1b2c3d4]"
+    let msgs_w = 8; // " 42 msgs"
     let title_w = inner_w.saturating_sub(prefix_w + id_w + msgs_w + 2).max(8);
 
     for (i, entry) in state.entries.iter().enumerate() {
@@ -373,10 +368,7 @@ fn build_branch_lines(state: &BranchesOverlayState, width: u16) -> Vec<Line<'sta
             .parent_turn
             .map(|t| format!(" t{t}"))
             .unwrap_or_default();
-        let title_cell = truncate(
-            &format!("{}{}", entry.title, fork_suffix),
-            title_w,
-        );
+        let title_cell = truncate(&format!("{}{}", entry.title, fork_suffix), title_w);
 
         let msgs_cell = format!("{:>5} msgs", entry.message_count);
 

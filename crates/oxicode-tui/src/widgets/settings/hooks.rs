@@ -62,15 +62,19 @@ pub struct HookGroup {
 
 impl HookGroup {
     pub fn new(event: String, entries: Vec<HookEntry>) -> Self {
-        Self { event, entries, expanded: true }
+        Self {
+            event,
+            entries,
+            expanded: true,
+        }
     }
 }
 
 /// Represents one visible line in the rendered tree (for cursor tracking).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TreeLine {
-    Group(usize),           // group index
-    Entry(usize, usize),    // (group index, entry index)
+    Group(usize),        // group index
+    Entry(usize, usize), // (group index, entry index)
 }
 
 /// Hooks tab state — readonly tree view.
@@ -85,7 +89,11 @@ pub struct HooksTab {
 
 impl HooksTab {
     pub fn new(groups: Vec<HookGroup>) -> Self {
-        Self { groups, cursor: 0, hint_path: None }
+        Self {
+            groups,
+            cursor: 0,
+            hint_path: None,
+        }
     }
 
     /// Build the flat list of currently visible tree lines (respects collapsed state).
@@ -118,7 +126,9 @@ impl HooksTab {
     /// Toggle expand/collapse on group lines; show source path for entry lines.
     pub fn activate(&mut self) {
         let lines = self.visible_lines();
-        let Some(&line) = lines.get(self.cursor) else { return };
+        let Some(&line) = lines.get(self.cursor) else {
+            return;
+        };
         match line {
             TreeLine::Group(gi) => {
                 if let Some(g) = self.groups.get_mut(gi) {
@@ -157,15 +167,16 @@ impl HooksTab {
                 TreeLine::Group(gi) => {
                     let group = &self.groups[gi];
                     let chevron = if group.expanded { "▼ " } else { "▶ " };
-                    let count_hint = format!("  ({} hook{})", group.entries.len(), if group.entries.len() == 1 { "" } else { "s" });
+                    let count_hint = format!(
+                        "  ({} hook{})",
+                        group.entries.len(),
+                        if group.entries.len() == 1 { "" } else { "s" }
+                    );
                     let cursor_ch = if is_cursor { "▶" } else { " " };
                     let line = Line::from(vec![
                         Span::styled(cursor_ch, Style::default().fg(DIALOG_ACCENT)),
                         Span::styled(" ", Style::default()),
-                        Span::styled(
-                            chevron,
-                            Style::default().fg(DIALOG_ACCENT),
-                        ),
+                        Span::styled(chevron, Style::default().fg(DIALOG_ACCENT)),
                         Span::styled(
                             group.event.clone(),
                             Style::default()
@@ -206,7 +217,9 @@ impl HooksTab {
                         Span::styled(
                             format!("{} ", entry.command_summary),
                             if is_cursor {
-                                Style::default().fg(DIALOG_TEXT).add_modifier(Modifier::BOLD)
+                                Style::default()
+                                    .fg(DIALOG_TEXT)
+                                    .add_modifier(Modifier::BOLD)
                             } else {
                                 Style::default().fg(DIALOG_TEXT)
                             },

@@ -903,12 +903,10 @@ impl super::App {
 
                 // Collect and sort: root(s) first, then by created_at.
                 let mut sorted: Vec<_> = tree.branches.values().collect();
-                sorted.sort_by(|a, b| {
-                    match (a.parent, b.parent) {
-                        (None, Some(_)) => std::cmp::Ordering::Less,
-                        (Some(_), None) => std::cmp::Ordering::Greater,
-                        _ => a.created_at.cmp(&b.created_at),
-                    }
+                sorted.sort_by(|a, b| match (a.parent, b.parent) {
+                    (None, Some(_)) => std::cmp::Ordering::Less,
+                    (Some(_), None) => std::cmp::Ordering::Greater,
+                    _ => a.created_at.cmp(&b.created_at),
                 });
 
                 // First pass: assign depths (process in sorted order so parents come first).
@@ -1009,10 +1007,7 @@ impl super::App {
                 (_, KeyCode::Char('y') | KeyCode::Char('Y')) => {
                     if let Some(branch_id) = self.branches_overlay.confirm_delete() {
                         self.notifications.push(Notification::new(
-                            format!(
-                                "Deleted branch {}",
-                                &branch_id.to_string()[..8]
-                            ),
+                            format!("Deleted branch {}", &branch_id.to_string()[..8]),
                             crate::widgets::notification::NotificationLevel::Info,
                         ));
                         let _ = self
@@ -1240,8 +1235,7 @@ impl super::App {
                         // Propagate changed model + permission_mode into the live
                         // StateStore via the engine event loop (spec task 6).
                         let model = screen.general.model.clone();
-                        let permission_mode =
-                            screen.permissions.mode.as_str().to_string();
+                        let permission_mode = screen.permissions.mode.as_str().to_string();
                         let _ = self.ui_tx.try_send(crate::events::UiEvent::SettingsSaved {
                             model,
                             permission_mode,

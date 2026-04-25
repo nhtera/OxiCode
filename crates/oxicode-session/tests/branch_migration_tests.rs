@@ -42,7 +42,10 @@ fn migration_preserves_model_name() {
     save_session(&session, Some(&config_dir)).unwrap();
 
     let tree = migrate_legacy_if_needed(&session.id, Some(&config_dir)).unwrap();
-    assert_eq!(tree.current_branch().unwrap().model, "claude-opus-4-20250514");
+    assert_eq!(
+        tree.current_branch().unwrap().model,
+        "claude-opus-4-20250514"
+    );
 
     drop(tmp);
 }

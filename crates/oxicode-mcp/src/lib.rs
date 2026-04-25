@@ -33,9 +33,9 @@ pub mod bridge_ui_elicitation;
 pub mod bridge_ui_notification;
 pub mod bridge_ui_permission_dialog;
 
+pub use bridge_ui_elicitation::{ChannelElicitationHandler, ElicitationEnvelope};
 pub use config::{McpAuthConfig, McpConfig, McpServerConfig};
 pub use doctor::{diagnose_all, diagnose_server, DiagResult, DiagStatus};
-pub use bridge_ui_elicitation::{ChannelElicitationHandler, ElicitationEnvelope};
 pub use elicitation::{
     ElicitationHandler, ElicitationInputType, ElicitationRequest, ElicitationResponse,
 };

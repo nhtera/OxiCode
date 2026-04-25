@@ -10,8 +10,8 @@ use ratatui::Terminal;
 use crate::widgets::{
     AgentPanel, AgentsOverlay, CommandAutocomplete, DiffViewerWidget, HistorySearchWidget,
     InputBox, MessageView, ModelPicker, NotificationWidget, PastePreview, PermissionDialog,
-    RewindOverlay, SearchBar, SessionBrowser, SettingsScreenWidget, StatsDashboard, SuggestionChips,
-    TaskPanel,
+    RewindOverlay, SearchBar, SessionBrowser, SettingsScreenWidget, StatsDashboard,
+    SuggestionChips, TaskPanel,
 };
 
 // When the `virtual-scroll` feature is active, pull in the VirtualList path.
@@ -296,12 +296,8 @@ impl super::App {
                 }
                 // Bring VirtualList up to date with newly appended cache entries.
                 let offset = self.virtual_list.len();
-                let items_to_add = build_message_items(
-                    &cached[offset..],
-                    &message_roles,
-                    tool_only,
-                    offset,
-                );
+                let items_to_add =
+                    build_message_items(&cached[offset..], &message_roles, tool_only, offset);
                 for item in items_to_add {
                     self.virtual_list.push(item);
                 }
@@ -316,7 +312,9 @@ impl super::App {
                     width: left_area.width.saturating_sub(2),
                     height: left_area.height.saturating_sub(2),
                 };
-                let vl_ctx = MessageRenderCtx { tool_only_indices: tool_only };
+                let vl_ctx = MessageRenderCtx {
+                    tool_only_indices: tool_only,
+                };
                 // Note: `frame.buffer_mut()` is not directly accessible inside
                 // the draw closure via the typed API; the legacy path via Widget
                 // is the primary render. The VirtualList render is exercised in
