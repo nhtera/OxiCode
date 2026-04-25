@@ -68,6 +68,7 @@ impl super::App {
             permission_mode,
             cwd,
             cost_usd,
+            slash_command_count,
         ) = {
             let state = self.state_rx.borrow();
             // Update render cache with new messages (incremental — only renders new ones).
@@ -113,6 +114,7 @@ impl super::App {
                 state.permission_mode.clone(),
                 state.cwd.clone(),
                 state.cost_tracker.total_cost(),
+                state.slash_command_count,
             )
         }; // state borrow dropped here — no deep clone of messages
 
@@ -184,7 +186,8 @@ impl super::App {
                     .with_cwd(&cwd)
                     .with_session_start(Some(self.session_start))
                     .with_cost(cost_usd)
-                    .with_retry_status(&status_label);
+                    .with_retry_status(&status_label)
+                    .with_cmd_count(slash_command_count);
             frame.render_widget(status_bar, chunks[0]);
 
             // Content area — optionally split into left (messages) + right (agents/tasks)

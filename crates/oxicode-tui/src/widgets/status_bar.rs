@@ -36,6 +36,8 @@ pub struct StatusBar<'a> {
     /// Retry/rate-limit state label shown in status bar (e.g. "⟳ Retrying 2/5").
     /// Empty string when not retrying.
     retry_status: &'a str,
+    /// Number of registered slash commands (0 = hide chip).
+    slash_command_count: usize,
 }
 
 impl<'a> StatusBar<'a> {
@@ -56,6 +58,7 @@ impl<'a> StatusBar<'a> {
             session_start: None,
             cost_usd: 0.0,
             retry_status: "",
+            slash_command_count: 0,
         }
     }
 
@@ -131,6 +134,12 @@ impl<'a> StatusBar<'a> {
     /// flight; pass `""` to hide the indicator.
     pub fn with_retry_status(mut self, status: &'a str) -> Self {
         self.retry_status = status;
+        self
+    }
+
+    /// Set slash command count for display (0 hides the chip).
+    pub fn with_cmd_count(mut self, count: usize) -> Self {
+        self.slash_command_count = count;
         self
     }
 }
@@ -260,6 +269,18 @@ impl Widget for StatusBar<'_> {
                 format!(" MCP:{} ", self.mcp_server_count),
                 Style::default()
                     .fg(Color::Rgb(180, 120, 80))
+                    .bg(render::STATUS_BAR_BG),
+            )
+        } else {
+            Span::raw("")
+        };
+
+        // Slash command count chip (hidden when 0).
+        let slash_cmd_count_span = if self.slash_command_count > 0 {
+            Span::styled(
+                format!(" {} cmds ", self.slash_command_count),
+                Style::default()
+                    .fg(render::CHROME_MUTED)
                     .bg(render::STATUS_BAR_BG),
             )
         } else {
@@ -415,6 +436,7 @@ impl Widget for StatusBar<'_> {
             ctx_span,
             perm_span,
             mcp_span,
+            slash_cmd_count_span,
             auth_span,
             voice_span,
             vim_span,
@@ -479,5 +501,22 @@ mod tests {
     fn format_tokens_millions() {
         assert_eq!(format_tokens(1_500_000), "1.5M");
         assert_eq!(format_tokens(2_000_000), "2.0M");
+    }
+
+    // ── slash command count chip ──────────────────────────────────────────
+
+    #[test]
+    fn status_bar_cmd_count_chip_hidden_when_zero() {
+        // with_cmd_count(0) → slash_command_count field defaults to 0 → chip hidden.
+        let usage = Usage::default();
+        let bar = StatusBar::new("model", &usage, false);
+        assert_eq!(bar.slash_command_count, 0);
+    }
+
+    #[test]
+    fn status_bar_cmd_count_chip_set() {
+        let usage = Usage::default();
+        let bar = StatusBar::new("model", &usage, false).with_cmd_count(140);
+        assert_eq!(bar.slash_command_count, 140);
     }
 }

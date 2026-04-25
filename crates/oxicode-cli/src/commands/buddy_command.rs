@@ -139,6 +139,7 @@ mod tests {
             model: "test".to_string(),
             provider_name: "test".to_string(),
             session_id: "test".to_string(),
+            command_registry: Arc::new(crate::commands::default_registry()),
         }
     }
 
