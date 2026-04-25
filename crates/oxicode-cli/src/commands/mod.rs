@@ -50,7 +50,6 @@ pub enum CommandOutput {
     /// Display text to the user.
     Message(String),
     /// Command executed silently (no output).
-    #[allow(dead_code)] // TODO(gap-phase-6): wire into TUI silent command execution
     Silent,
     /// Command wants to quit the app.
     Quit,
@@ -66,6 +65,8 @@ pub struct CommandContext {
     pub model: String,
     pub provider_name: String,
     pub session_id: String,
+    /// Reference to the command registry — used by `/status` and future introspection.
+    pub command_registry: Arc<CommandRegistry>,
 }
 
 /// Trait for slash commands.
@@ -175,12 +176,11 @@ impl CommandRegistry {
     }
 
     /// Number of registered commands.
-    #[allow(dead_code)] // TODO(gap-phase-6): expose in /status and TUI status bar
     pub fn len(&self) -> usize {
         self.commands.len()
     }
 
-    #[allow(dead_code)] // TODO(gap-phase-6): expose in /status and TUI status bar
+    #[allow(dead_code)] // Standard companion to len(); not called directly yet.
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }
@@ -341,6 +341,8 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(utility_commands::UpgradeCommand));
     reg.register(Box::new(utility_commands::PrivacySettingsCommand));
     reg.register(Box::new(utility_commands::AddDirCommand));
+    reg.register(Box::new(utility_commands::ListDirsCommand));
+    reg.register(Box::new(utility_commands::RemoveDirCommand));
     reg.register(Box::new(utility_commands::ExtraUsageCommand));
     reg.register(Box::new(mcp_commands::McpDoctorCommand));
 
@@ -404,6 +406,7 @@ mod tests {
             model: "claude-sonnet-4-20250514".to_string(),
             provider_name: "anthropic".to_string(),
             session_id: "test-session-123".to_string(),
+            command_registry: Arc::new(default_registry()),
         }
     }
 
@@ -511,6 +514,27 @@ mod tests {
         assert!(msg.contains("Messages: 2"), "got: {msg}");
     }
 
+    #[test]
+    fn status_shows_slash_command_count() {
+        // /status should include "Slash commands: N registered" from ctx.command_registry.
+        let msg = expect_msg(exec("/status"));
+        assert!(
+            msg.contains("Slash commands:") && msg.contains("registered"),
+            "got: {msg}"
+        );
+        // The default registry has > 50 commands; verify it's a non-zero number.
+        let count_str = msg
+            .lines()
+            .find(|l| l.contains("Slash commands:"))
+            .expect("line not found");
+        let n: usize = count_str
+            .split_whitespace()
+            .nth(2)
+            .and_then(|s| s.parse().ok())
+            .expect("parse count");
+        assert!(n > 50, "expected >50 slash commands, got {n}");
+    }
+
     // ── /clear ─────────────────────────────────────────────────
 
     #[test]
@@ -520,9 +544,28 @@ mod tests {
         ss.push_message(Message::assistant());
         assert_eq!(ss.current().messages.len(), 2);
 
-        let msg = expect_msg(exec_with("/clear", ss.clone()));
-        assert!(msg.to_lowercase().contains("clear"));
+        // /clear returns Silent (no echo line) and clears the transcript.
+        assert!(matches!(
+            exec_with("/clear", ss.clone()),
+            Some(CommandOutput::Silent)
+        ));
         assert_eq!(ss.current().messages.len(), 0);
+    }
+
+    #[test]
+    fn clear_returns_silent() {
+        let ss = store();
+        ss.push_message(Message::user("first message"));
+        assert_eq!(ss.current().messages.len(), 1);
+
+        // Verify Silent variant — no "Conversation cleared" echo line emitted.
+        let output = exec_with("/clear", ss.clone());
+        assert!(
+            matches!(output, Some(CommandOutput::Silent)),
+            "Expected Silent, got: {output:?}"
+        );
+        // State mutation still happened.
+        assert_eq!(ss.current().messages.len(), 0, "messages should be cleared");
     }
 
     // ── /quit ──────────────────────────────────────────────────

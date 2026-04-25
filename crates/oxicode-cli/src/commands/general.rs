@@ -58,7 +58,7 @@ impl SlashCommand for ClearCommand {
 
     fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandOutput {
         ctx.state_store.clear_messages();
-        CommandOutput::Message("Conversation cleared.".to_string())
+        CommandOutput::Silent
     }
 }
 
@@ -77,9 +77,10 @@ impl SlashCommand for StatusCommand {
         let state = ctx.state_store.current();
         let msg_count = state.messages.len();
         let usage = &state.total_usage;
+        let cmd_count = ctx.command_registry.len();
 
         let mut output = format!(
-            "Model: {}\nProvider: {}\nSession: {}\nMessages: {msg_count}\nTokens: {}in / {}out",
+            "Model: {}\nProvider: {}\nSession: {}\nMessages: {msg_count}\nTokens: {}in / {}out\nSlash commands: {cmd_count} registered",
             ctx.model, ctx.provider_name, ctx.session_id, usage.input_tokens, usage.output_tokens,
         );
 
