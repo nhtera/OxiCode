@@ -209,6 +209,8 @@ impl SlashCommand for AuthCommand {
 }
 
 /// /managed — show MDM managed settings.
+/// Unregistered in Phase 6 prune (2026-04-26); kept for re-introduction.
+#[allow(dead_code)]
 pub struct ManagedCommand;
 impl SlashCommand for ManagedCommand {
     fn name(&self) -> &str {

@@ -2,16 +2,9 @@
 //!
 //! Commands are invoked with `/name [args]` in the TUI input.
 
-pub mod buddy_command;
-pub mod good_claude_command;
-pub mod settings_sync_command;
-pub mod ultraplan_command;
-pub mod vcr_command;
-
 pub mod agent_commands;
 pub mod clipboard_commands;
 pub mod debug_commands;
-pub mod diagnostic_commands;
 pub mod discovery_commands;
 pub mod enterprise_commands;
 pub mod extras_commands;
@@ -19,10 +12,8 @@ pub mod general;
 pub mod git_commands;
 pub mod git_helpers;
 pub mod hook_commands;
-pub mod info_commands;
 pub mod mcp_commands;
 pub mod new_commands;
-pub mod onboarding_commands;
 pub mod plan_commands;
 pub mod plugin_commands;
 pub mod project_detect;
@@ -33,7 +24,6 @@ pub mod session_extras;
 pub mod session_view_commands;
 pub mod task_commands;
 pub mod team_commands;
-pub mod teleport_command;
 pub mod ui_commands;
 pub mod utility_commands;
 pub mod view_commands;
@@ -281,7 +271,7 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(workflow_commands::FileCommand));
     reg.register(Box::new(workflow_commands::ChatCommand));
     reg.register(Box::new(workflow_commands::CodeCommand));
-    reg.register(Box::new(workflow_commands::ShareCommand));
+    // /share — TS social feature without backend wiring (Phase 6 prune).
 
     // Phase 5: Session view commands (extracted + enhanced)
     reg.register(Box::new(session_view_commands::LoginCommand));
@@ -318,33 +308,26 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(new_commands::SandboxToggleCommand));
     reg.register(Box::new(new_commands::OutputStyleCommand));
 
-    // Phase 9: Enterprise commands (auth, telemetry, settings, managed)
+    // Phase 9: Enterprise commands (auth, telemetry, settings)
+    // /managed dropped (TS enterprise-only; Phase 6 prune).
     reg.register(Box::new(enterprise_commands::TelemetryCommand));
     reg.register(Box::new(enterprise_commands::SettingsCommand));
     reg.register(Box::new(enterprise_commands::AuthCommand));
-    reg.register(Box::new(enterprise_commands::ManagedCommand));
 
-    // Phase 10: Extra commands (voice, desktop, mobile, bridge)
-    reg.register(Box::new(extras_commands::VoiceCommand));
-    reg.register(Box::new(extras_commands::DesktopCommand));
-    reg.register(Box::new(extras_commands::MobileCommand));
-    reg.register(Box::new(extras_commands::BridgeCommand));
-
-    // Phase 7: GitHub integration + remote commands
-    reg.register(Box::new(extras_commands::InstallGithubAppCommand));
-    reg.register(Box::new(extras_commands::RemoteSetupCommand));
-    reg.register(Box::new(extras_commands::RemoteEnvCommand));
+    // Phase 10: Extras
+    // /voice, /desktop, /mobile, /bridge, /install-github-app, /remote-setup,
+    // /remote-env all pruned in Phase 6 (oxicode bridge-mode + enterprise-only).
 
     // Phase 3: Gap closure — clipboard, reasoning, and utility commands
     reg.register(Box::new(clipboard_commands::CopyCommand));
     reg.register(Box::new(reasoning_commands::EffortCommand));
     reg.register(Box::new(utility_commands::UpgradeCommand));
-    reg.register(Box::new(utility_commands::PrivacySettingsCommand));
+    // /privacy-settings dropped (Anthropic.ai web app proxy; Phase 6 prune).
     reg.register(Box::new(utility_commands::AddDirCommand));
     reg.register(Box::new(utility_commands::ListDirsCommand));
     reg.register(Box::new(utility_commands::RemoveDirCommand));
-    reg.register(Box::new(utility_commands::ExtraUsageCommand));
-    reg.register(Box::new(mcp_commands::McpDoctorCommand));
+    // /extra-usage dropped (Anthropic.ai web app proxy; Phase 6 prune).
+    // /mcp-doctor dropped (use --debug flag; Phase 6 prune).
 
     // Phase 6: UI commands (/color, /keybindings, /statusline, /terminal-setup)
     reg.register(Box::new(ui_commands::ColorCommand));
@@ -352,44 +335,27 @@ pub fn default_registry() -> CommandRegistry {
     reg.register(Box::new(ui_commands::StatuslineCommand));
     reg.register(Box::new(ui_commands::TerminalSetupCommand));
 
-    // Phase 6: Session extras (/tag, /btw, /thinkback, /release-notes)
+    // Phase 6: Session extras (/tag, /btw, /thinkback)
+    // /release-notes dropped (oxicode original; Phase 6 prune).
     reg.register(Box::new(session_extras::TagCommand));
     reg.register(Box::new(session_extras::BtwCommand));
     reg.register(Box::new(session_extras::ThinkbackCommand));
-    reg.register(Box::new(session_extras::ReleaseNotesCommand));
 
-    // Phase 4 (gap-closure): Onboarding command
-    reg.register(Box::new(onboarding_commands::OnboardingCommand));
+    // /onboarding dropped (first-run hook covers it; Phase 6 prune).
 
-    // Phase 4 (gap-closure): Discovery commands (dream, bughunter, ctx_viz, autofix-pr, backfill-sessions)
-    reg.register(Box::new(discovery_commands::DreamCommand));
-    reg.register(Box::new(discovery_commands::BughunterCommand));
+    // Phase 4 (gap-closure): Discovery commands — only ctx-viz survives.
+    // /dream, /bughunter, /autofix-pr, /backfill-sessions pruned in Phase 6.
     reg.register(Box::new(discovery_commands::CtxVizCommand));
-    reg.register(Box::new(discovery_commands::AutofixPrCommand));
-    reg.register(Box::new(discovery_commands::BackfillSessionsCommand));
 
-    // Phase 4 (gap-closure): Diagnostic commands (heapdump, perf-issue, ant-trace)
-    reg.register(Box::new(diagnostic_commands::HeapdumpCommand));
-    reg.register(Box::new(diagnostic_commands::PerfIssueCommand));
-    reg.register(Box::new(diagnostic_commands::AntTraceCommand));
+    // Phase 4 diagnostic commands (/heapdump, /perf-issue, /ant-trace) all
+    // pruned in Phase 6 — TS internal-only / oxicode-original.
 
-    // Phase 6: Info commands (/advisor, /insights, /stickers, /passes, /rate-limit-options, /reload-plugins)
-    reg.register(Box::new(info_commands::AdvisorCommand));
-    reg.register(Box::new(info_commands::InsightsCommand));
-    reg.register(Box::new(info_commands::StickersCommand));
-    reg.register(Box::new(info_commands::PassesCommand));
-    reg.register(Box::new(info_commands::RateLimitOptionsCommand));
-    reg.register(Box::new(info_commands::ReloadPluginsInfoCommand));
+    // Phase 6 info commands (/advisor, /insights, /stickers, /passes,
+    // /rate-limit-options, /reload-plugins-info) all pruned — joke / read-only
+    // info dumps with no real backing.
 
-    // Phase 7 (gap-closure): Teleport command
-    reg.register(Box::new(teleport_command::TeleportCommand));
-
-    // Phase 8-10 (gap-closure): New commands
-    reg.register(Box::new(ultraplan_command::UltraplanCommand));
-    reg.register(Box::new(buddy_command::BuddyCommand));
-    reg.register(Box::new(good_claude_command::GoodClaudeCommand));
-    reg.register(Box::new(settings_sync_command::SettingsSyncCommand));
-    reg.register(Box::new(vcr_command::VcrCommand));
+    // /teleport, /ultraplan, /buddy, /good-claude, /settings-sync, /vcr
+    // all pruned in Phase 6 (oxicode originals / TS enterprise-only).
 
     reg
 }
@@ -611,6 +577,53 @@ mod tests {
         let reg = default_registry();
         let cmds = reg.all_commands();
         assert!(cmds.len() > 50, "got {}", cmds.len());
+    }
+
+    #[test]
+    fn registry_size_under_phase6_target() {
+        // Phase 6 prune: trim default registry toward TS parity (~71 cmds).
+        // Allow some headroom for oxicode originals — 110 is the soft cap;
+        // anything above means a new ghost command sneaked in.
+        let count = default_registry().len();
+        assert!(
+            count <= 110,
+            "default_registry should be ≤110 commands after Phase 6 prune; got {count}"
+        );
+    }
+
+    #[test]
+    fn pruned_commands_no_longer_registered() {
+        let reg = default_registry();
+        let names: std::collections::HashSet<&str> =
+            reg.all_commands().into_iter().map(|(n, _)| n).collect();
+        for ghost in [
+            "ultraplan",
+            "buddy",
+            "good-claude",
+            "vcr",
+            "teleport",
+            "settings-sync",
+            "onboarding",
+            "managed",
+            "voice",
+            "desktop",
+            "mobile",
+            "bridge",
+            "share",
+            "release-notes",
+            "advisor",
+            "insights",
+            "stickers",
+            "passes",
+            "mcp-doctor",
+            "privacy-settings",
+            "extra-usage",
+        ] {
+            assert!(
+                !names.contains(ghost),
+                "/{ghost} should have been removed in Phase 6 prune"
+            );
+        }
     }
 
     #[test]

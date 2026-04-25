@@ -127,6 +127,8 @@ impl SlashCommand for McpServersCommand {
 }
 
 /// /mcp-doctor — run connectivity diagnostics on all configured MCP servers.
+/// Unregistered in Phase 6 prune (2026-04-26); kept for re-introduction.
+#[allow(dead_code)]
 pub struct McpDoctorCommand;
 
 impl SlashCommand for McpDoctorCommand {

@@ -40,6 +40,8 @@ impl SlashCommand for UpgradeCommand {
 // ── /privacy-settings ─────────────────────────────────────────────────────
 
 /// /privacy-settings — toggle telemetry and data sharing preferences.
+/// Unregistered in Phase 6 prune (2026-04-26); kept for re-introduction.
+#[allow(dead_code)]
 pub struct PrivacySettingsCommand;
 
 impl SlashCommand for PrivacySettingsCommand {
@@ -246,6 +248,8 @@ impl SlashCommand for RemoveDirCommand {
 // ── /extra-usage ──────────────────────────────────────────────────────────
 
 /// /extra-usage — show extended token usage and estimated cost.
+/// Unregistered in Phase 6 prune (2026-04-26); kept for re-introduction.
+#[allow(dead_code)]
 pub struct ExtraUsageCommand;
 
 impl SlashCommand for ExtraUsageCommand {

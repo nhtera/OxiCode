@@ -274,6 +274,8 @@ impl SlashCommand for CodeCommand {
     }
 }
 
+/// Unregistered in Phase 6 prune (2026-04-26); kept for re-introduction.
+#[allow(dead_code)]
 pub struct ShareCommand;
 impl SlashCommand for ShareCommand {
     fn name(&self) -> &str {

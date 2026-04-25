@@ -104,6 +104,8 @@ impl SlashCommand for ThinkbackCommand {
 }
 
 /// /release-notes — show version changelog.
+/// Unregistered in Phase 6 prune (2026-04-26); kept for re-introduction.
+#[allow(dead_code)]
 pub struct ReleaseNotesCommand;
 impl SlashCommand for ReleaseNotesCommand {
     fn name(&self) -> &str {

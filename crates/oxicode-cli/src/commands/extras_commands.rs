@@ -1,8 +1,11 @@
 //! Extra commands: /voice, /desktop, /mobile, /bridge, /install-github-app,
 //! /remote-setup, /remote-env.
 //!
-//! These provide feature-gated functionality for voice input, bridge mode,
-//! and GitHub integration.
+//! Phase 6 prune (2026-04-26): all command structs in this module were
+//! unregistered from `default_registry()` to bring oxicode toward TS parity.
+//! Definitions kept so the module can be re-introduced behind feature flags
+//! (`voice`, `bridge`, etc.) without re-implementing.
+#![allow(dead_code)]
 
 use super::{CommandContext, CommandOutput, SlashCommand};
 

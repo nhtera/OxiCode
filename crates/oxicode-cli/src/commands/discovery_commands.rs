@@ -1,5 +1,8 @@
-//! Discovery & repair commands: `/dream`, `/bughunter`, `/ctx_viz`,
-//! `/autofix-pr`, `/backfill-sessions`.
+//! Discovery & repair commands. Only `/ctx_viz` is registered in
+//! `default_registry()` — the rest (`/dream`, `/bughunter`, `/autofix-pr`,
+//! `/backfill-sessions`) were unregistered in the Phase 6 prune (2026-04-26)
+//! but kept here for potential future re-introduction.
+#![allow(dead_code)]
 
 use std::fmt::Write as _;
 use std::path::Path;
