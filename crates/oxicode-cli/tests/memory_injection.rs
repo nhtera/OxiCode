@@ -31,11 +31,12 @@ fn assemble_memory(memory_dir: &std::path::Path) -> Option<String> {
     if !headers.is_empty() {
         let index = memory_scanner::build_memory_index(&headers);
         if !index.is_empty() {
-            if !combined.is_empty() {
-                combined.push_str("\n\n## Additional Memory Files\n\n");
+            let prefix = if combined.is_empty() {
+                "## Additional Memory Files\n\n"
             } else {
-                combined.push_str("## Additional Memory Files\n\n");
-            }
+                "\n\n## Additional Memory Files\n\n"
+            };
+            combined.push_str(prefix);
             combined.push_str(&index);
         }
     }
