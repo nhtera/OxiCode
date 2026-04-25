@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use oxicode_common::constants::{ANTHROPIC_API_URL, ANTHROPIC_API_VERSION};
+use oxicode_common::constants::{ANTHROPIC_API_URL, ANTHROPIC_API_VERSION, ENV_AUTH_HEADER};
 use oxicode_common::{ContentBlock, OxiError, OxiResult, Role};
 use reqwest_eventsource::{Event, EventSource};
 
@@ -27,6 +27,29 @@ impl AnthropicProvider {
             base_url: ANTHROPIC_API_URL.to_string(),
             retry_policy: RetryPolicy::default(),
             use_bearer_auth: false,
+        }
+    }
+
+    /// Create a provider with automatic auth header detection.
+    ///
+    /// Detection order:
+    /// 1. `OXICODE_AUTH_HEADER=bearer` → `Authorization: Bearer …`
+    /// 2. `OXICODE_AUTH_HEADER=x-api-key` → `x-api-key: …`
+    /// 3. Token starts with `sk-ant-` → `x-api-key` (genuine Anthropic key)
+    /// 4. Anything else → `Authorization: Bearer` (assume gateway/proxy)
+    pub fn with_token_auto_detect(token: impl Into<String>) -> Self {
+        let token = token.into();
+        let use_bearer = match std::env::var(ENV_AUTH_HEADER).ok().as_deref() {
+            Some("bearer") => true,
+            Some("x-api-key") => false,
+            _ => !token.starts_with("sk-ant-"),
+        };
+        Self {
+            client: build_proxy_client(),
+            api_key: token,
+            base_url: ANTHROPIC_API_URL.to_string(),
+            retry_policy: RetryPolicy::default(),
+            use_bearer_auth: use_bearer,
         }
     }
 
@@ -365,6 +388,10 @@ impl LlmProvider for AnthropicProvider {
 mod tests {
     use super::*;
     use oxicode_common::Message;
+    use std::sync::Mutex;
+
+    /// Guards env-var mutation tests so they never run concurrently.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     fn make_provider() -> AnthropicProvider {
         AnthropicProvider::new("test-key")
@@ -475,5 +502,41 @@ mod tests {
         let beta = AnthropicProvider::build_beta_header(&request).unwrap();
         assert!(beta.contains("prompt-caching-2024-07-31"));
         assert!(beta.contains("max-tokens-3-5-sonnet-2024-07-15"));
+    }
+
+    // ── Auto-detect tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_auto_detect_sk_ant_uses_x_api_key() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::remove_var(ENV_AUTH_HEADER);
+        let p = AnthropicProvider::with_token_auto_detect("sk-ant-foo");
+        assert!(!p.use_bearer_auth, "sk-ant-* tokens must use x-api-key");
+    }
+
+    #[test]
+    fn test_auto_detect_other_token_uses_bearer() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::remove_var(ENV_AUTH_HEADER);
+        let p = AnthropicProvider::with_token_auto_detect("sk-otherproxy-abc123");
+        assert!(p.use_bearer_auth, "non-sk-ant- tokens must use Bearer");
+    }
+
+    #[test]
+    fn test_auto_detect_env_override_x_api_key() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var(ENV_AUTH_HEADER, "x-api-key");
+        let p = AnthropicProvider::with_token_auto_detect("sk-otherproxy-abc123");
+        std::env::remove_var(ENV_AUTH_HEADER);
+        assert!(!p.use_bearer_auth, "OXICODE_AUTH_HEADER=x-api-key must override Bearer detection");
+    }
+
+    #[test]
+    fn test_auto_detect_env_override_bearer() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var(ENV_AUTH_HEADER, "bearer");
+        let p = AnthropicProvider::with_token_auto_detect("sk-ant-genuine");
+        std::env::remove_var(ENV_AUTH_HEADER);
+        assert!(p.use_bearer_auth, "OXICODE_AUTH_HEADER=bearer must override x-api-key detection");
     }
 }

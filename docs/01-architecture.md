@@ -160,7 +160,7 @@ main() {
      ├─ Global CLAUDE.md instructions
      ├─ Project CLAUDE.md/OXICODE.md overrides
      ├─ Skills prompt (discovered tools)
-     └─ Project memory placeholder (phase 4)
+     └─ Project memory (reads ~/.oxicode/projects/{key}/memory/MEMORY.md + extra .md files, capped at 100 KB)
 
   8. Initialize state:
      ├─ Create StateStore (centralized AppState with watch channels)
@@ -614,7 +614,7 @@ Three levels (in order of precedence):
 2. **Project:** `CLAUDE.md` or `OXICODE.md` in current directory
 3. **Skills:** Auto-generated from discovered skills
 
-Final system prompt = global + project + skills + placeholder for project memory.
+Final system prompt = global + project + skills + project memory (injected at startup).
 
 (source: crates/oxicode-config/src/lib.rs, crates/oxicode-core/src/system_prompt.rs)
 

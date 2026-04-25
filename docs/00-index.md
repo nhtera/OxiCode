@@ -7,12 +7,17 @@ Navigation hub for all OxiCode design documentation. Start here to understand th
 1. **00-index.md** (this file) — Overview and crate map
 2. **01-architecture.md** — System architecture, startup, request lifecycle, and dependency DAG
 3. **02-query-engine.md** — Multi-turn loop, tool dispatch, budget management, and permissions
-4. **03-llm-providers.md** — LLM provider trait, implementations (Anthropic, OpenAI, Bedrock, Vertex)
-5. **04-tools-and-registry.md** — Tool trait, registry, 49 built-in tools, MCP integration
-6. **05-permissions-pipeline.md** — 6-layer permission system, allow/deny/ask decision model
-7. **06-state-and-persistence.md** — StateStore, session management, watch channels
-8. **07-tui-rendering.md** — Terminal UI, event loops, streaming markdown, themes
+4. **03-tool-system.md** — Tool trait, registry, 49 built-in tools, MCP integration
+5. **04-permission-system.md** — 6-layer permission system, allow/deny/ask decision model
+6. **05-llm-providers.md** — LLM provider trait, implementations (Anthropic, OpenAI, Bedrock, Vertex)
+7. **06-tui.md** — Terminal UI, event loops, streaming markdown, themes
+8. **07-subsystems.md** — Session persistence, StateStore, hooks, agents, skills
 9. **08-code-standards.md** — Toolchain, error handling, testing, performance optimization
+
+**Operations & Deployment:**
+
+- **operations.md** — OTLP telemetry setup (Jaeger, Grafana) and bridge mode quick start
+- **bridge-mode.md** — Bridge mode operator guide: JWT auth, WebSocket protocol, env vars, security
 
 ## Crate Map — 17-Crate Workspace
 
@@ -194,7 +199,7 @@ pub struct AppState {
 | **Content Block** | One unit of message content (`Text`, `Image`, `ToolUse`, `ToolResult`, `Thinking`) |
 | **Thinking Block** | Extended thinking output (Claude's chain-of-thought); not sent to LLM API |
 | **Session** | Persistent conversation (ID, messages, created_at) saved to disk; resumable via `--session <id>` |
-| **Memory** | Project-level conversation context (future phase) loaded from external store |
+| **Memory** | Project-level context loaded from `~/.oxicode/projects/{key}/memory/MEMORY.md` (+ extra .md files); injected into system prompt at startup, capped at 100 KB |
 | **MCP** | Model Context Protocol — standardized way to define tools; OxiCode is an MCP client |
 | **Hook** | Lifecycle event hook (26 total) — fire at key moments (session_start, turn_complete, etc.) for extensibility |
 | **Agent** | Subagent spawned by main OxiCode, receives config via stdin, outputs result to stdout |

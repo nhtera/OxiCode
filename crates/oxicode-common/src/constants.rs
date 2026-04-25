@@ -54,3 +54,7 @@ pub const ENV_MODEL: &str = "OXICODE_MODEL";
 
 /// Environment variable for config directory override.
 pub const ENV_CONFIG_DIR: &str = "OXICODE_CONFIG_DIR";
+
+/// Environment variable to override the auth header used for non-Anthropic proxies.
+/// Accepted values: `bearer` | `x-api-key`. When unset, auto-detected from token prefix.
+pub const ENV_AUTH_HEADER: &str = "OXICODE_AUTH_HEADER";

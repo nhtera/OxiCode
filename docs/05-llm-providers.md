@@ -303,9 +303,24 @@ pub struct AnthropicProvider {
 let provider = AnthropicProvider::new("sk-ant-...");
 // or
 let provider = AnthropicProvider::with_oauth_token("oauth-token");
+// or (used by ProviderRouter — auto-selects auth header)
+let provider = AnthropicProvider::with_token_auto_detect("sk-ant-... or gateway-token");
 ```
 
-(source: `crates/oxicode-api/src/anthropic.rs`)
+#### Auth Header Auto-Detection (`with_token_auto_detect`)
+
+`ProviderRouter` uses `with_token_auto_detect` for both `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`. The auth header is chosen as follows:
+
+| Condition | Header sent |
+|-----------|-------------|
+| `OXICODE_AUTH_HEADER=bearer` | `Authorization: Bearer …` |
+| `OXICODE_AUTH_HEADER=x-api-key` | `x-api-key: …` |
+| Token starts with `sk-ant-` | `x-api-key: …` (genuine Anthropic key) |
+| Any other token prefix | `Authorization: Bearer …` (assume gateway/proxy) |
+
+**Escape hatch:** Set `OXICODE_AUTH_HEADER=bearer` or `OXICODE_AUTH_HEADER=x-api-key` to force a specific scheme regardless of token format. This is useful when a custom token format starts with `sk-ant-` but targets a non-Anthropic gateway.
+
+(source: `crates/oxicode-api/src/anthropic.rs`, `crates/oxicode-common/src/constants.rs`)
 
 ---
 

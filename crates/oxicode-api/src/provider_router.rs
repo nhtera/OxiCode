@@ -53,14 +53,14 @@ impl ProviderRouter {
             }
             providers.push(("anthropic".to_string(), Arc::new(p)));
         } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            let mut p = AnthropicProvider::new(key);
+            let mut p = AnthropicProvider::with_token_auto_detect(key);
             if let Some(ref url) = base_url {
                 p = p.with_base_url(url);
             }
             providers.push(("anthropic".to_string(), Arc::new(p)));
         } else if let Ok(token) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
             if !token.is_empty() {
-                let mut p = AnthropicProvider::new(token);
+                let mut p = AnthropicProvider::with_token_auto_detect(token);
                 if let Some(ref url) = base_url {
                     p = p.with_base_url(url);
                 }
