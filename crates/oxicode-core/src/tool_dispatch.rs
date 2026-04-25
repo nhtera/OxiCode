@@ -3,6 +3,7 @@
 use oxicode_common::{ContentBlock, OxiError, PermissionResponse};
 use oxicode_hooks::{HookEvent, HookResponse};
 use oxicode_permissions::PermissionDecision;
+use oxicode_tools::tool_search::search_tools;
 use oxicode_tools::PermissionLevel;
 
 use crate::query_engine::QueryEngine;
@@ -74,6 +75,23 @@ impl QueryEngine {
         tool_name: &str,
         input: &serde_json::Value,
     ) -> ContentBlock {
+        // Intercept `tool_search` and fulfil it from the live registry so the
+        // tool itself does not need direct access to its sibling tools.
+        if tool_name == "tool_search" {
+            let query = input["query"].as_str().unwrap_or("");
+            let max = input["max_results"]
+                .as_u64()
+                .map_or(5, |n| n as usize);
+            let results = search_tools(&self.tool_registry, query, max);
+            let content = serde_json::to_string_pretty(&results)
+                .unwrap_or_else(|_| "[]".to_string());
+            return ContentBlock::ToolResult {
+                tool_use_id: tool_use_id.to_string(),
+                content,
+                is_error: false,
+            };
+        }
+
         let result = if self.tool_registry.get(tool_name).is_some() {
             self.tool_registry
                 .execute(tool_name, input.clone(), &self.tool_context)
