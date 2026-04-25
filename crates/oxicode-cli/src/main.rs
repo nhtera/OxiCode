@@ -1615,6 +1615,241 @@ async fn run_tui(
                         continue;
                     }
 
+                    // ─── Async slash command dispatch (Phases 2-5) ───
+                    // The sync command registry can't reach async tools because
+                    // SlashCommand::execute is sync. These arms intercept before
+                    // the registry fallthrough and dispatch to real backends.
+
+                    // /cron [list|create <expr> <command>|delete <id>]
+                    if name == "cron" {
+                        let args_trimmed = args.trim();
+                        let (sub, rest) =
+                            args_trimmed.split_once(' ').unwrap_or((args_trimmed, ""));
+                        let dispatch = match sub {
+                            "" | "list" => Some(("cron_list", serde_json::json!({}))),
+                            "create" => {
+                                let rest_trim = rest.trim();
+                                let (expr, command) = rest_trim
+                                    .split_once(' ')
+                                    .map_or((rest_trim, ""), |(e, c)| (e.trim(), c.trim()));
+                                if expr.is_empty() || command.is_empty() {
+                                    let _ = core_tx_clone
+                                        .send(CoreEvent::Error(
+                                            "Usage: /cron create <cron-expr> <command>".into(),
+                                        ))
+                                        .await;
+                                    None
+                                } else {
+                                    Some((
+                                        "cron_create",
+                                        serde_json::json!({
+                                            "cron": expr,
+                                            "command": command,
+                                        }),
+                                    ))
+                                }
+                            }
+                            "delete" => {
+                                let id = rest.trim();
+                                if id.is_empty() {
+                                    let _ = core_tx_clone
+                                        .send(CoreEvent::Error("Usage: /cron delete <id>".into()))
+                                        .await;
+                                    None
+                                } else {
+                                    Some(("cron_delete", serde_json::json!({ "id": id })))
+                                }
+                            }
+                            other => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!(
+                                        "Unknown /cron subcommand: {other}. Use list/create/delete.",
+                                    )))
+                                    .await;
+                                None
+                            }
+                        };
+                        if let Some((tool_name, input)) = dispatch {
+                            let registry = engine_clone.tool_registry().clone();
+                            let ctx = engine_clone.tool_context().clone();
+                            match registry.execute(tool_name, input, &ctx).await {
+                                Ok(res) => {
+                                    let sys_msg = Message {
+                                        id: uuid::Uuid::new_v4().to_string(),
+                                        role: Role::Assistant,
+                                        content: vec![ContentBlock::Text { text: res.content }],
+                                        model: None,
+                                        stop_reason: None,
+                                        created_at: chrono::Utc::now(),
+                                        usage: None,
+                                    };
+                                    state_store_clone.push_message(sys_msg);
+                                    let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                                }
+                                Err(e) => {
+                                    let _ = core_tx_clone
+                                        .send(CoreEvent::Error(format!("/cron failed: {e}")))
+                                        .await;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // /schedule <cron-expr> <command> — friendly alias for cron_create.
+                    if name == "schedule" {
+                        let args_trimmed = args.trim();
+                        if args_trimmed.is_empty() {
+                            let sys_msg = Message {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                role: Role::Assistant,
+                                content: vec![ContentBlock::Text {
+                                    text: "Usage: /schedule <cron-expr> <command>".into(),
+                                }],
+                                model: None,
+                                stop_reason: None,
+                                created_at: chrono::Utc::now(),
+                                usage: None,
+                            };
+                            state_store_clone.push_message(sys_msg);
+                            let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            continue;
+                        }
+                        let (expr, command) = args_trimmed
+                            .split_once(' ')
+                            .map_or((args_trimmed, ""), |(e, c)| (e.trim(), c.trim()));
+                        if expr.is_empty() || command.is_empty() {
+                            let _ = core_tx_clone
+                                .send(CoreEvent::Error(
+                                    "/schedule requires <cron-expr> and <command>".into(),
+                                ))
+                                .await;
+                            continue;
+                        }
+                        let registry = engine_clone.tool_registry().clone();
+                        let ctx = engine_clone.tool_context().clone();
+                        let input = serde_json::json!({
+                            "cron": expr,
+                            "command": command,
+                            "description": "scheduled via /schedule",
+                        });
+                        match registry.execute("cron_create", input, &ctx).await {
+                            Ok(res) => {
+                                let sys_msg = Message {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    role: Role::Assistant,
+                                    content: vec![ContentBlock::Text { text: res.content }],
+                                    model: None,
+                                    stop_reason: None,
+                                    created_at: chrono::Utc::now(),
+                                    usage: None,
+                                };
+                                state_store_clone.push_message(sys_msg);
+                                let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            }
+                            Err(e) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!("/schedule failed: {e}")))
+                                    .await;
+                            }
+                        }
+                        continue;
+                    }
+
+                    // /worktree create <branch> [path] — list/exit fall through to sync.
+                    // (Underlying enter_worktree tool requires `branch`; path optional.)
+                    if name == "worktree" && args.trim_start().starts_with("create") {
+                        let after = args.trim_start()[6..].trim();
+                        if after.is_empty() {
+                            let _ = core_tx_clone
+                                .send(CoreEvent::Error(
+                                    "Usage: /worktree create <branch> [path]".into(),
+                                ))
+                                .await;
+                            continue;
+                        }
+                        let (branch, path) = after
+                            .split_once(' ')
+                            .map_or((after, ""), |(b, p)| (b.trim(), p.trim()));
+                        let mut input = serde_json::json!({ "branch": branch });
+                        if !path.is_empty() {
+                            input["path"] = serde_json::Value::String(path.into());
+                        }
+                        let registry = engine_clone.tool_registry().clone();
+                        let ctx = engine_clone.tool_context().clone();
+                        match registry.execute("enter_worktree", input, &ctx).await {
+                            Ok(res) => {
+                                let sys_msg = Message {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    role: Role::Assistant,
+                                    content: vec![ContentBlock::Text { text: res.content }],
+                                    model: None,
+                                    stop_reason: None,
+                                    created_at: chrono::Utc::now(),
+                                    usage: None,
+                                };
+                                state_store_clone.push_message(sys_msg);
+                                let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            }
+                            Err(e) => {
+                                let _ = core_tx_clone
+                                    .send(CoreEvent::Error(format!(
+                                        "/worktree create failed: {e}"
+                                    )))
+                                    .await;
+                            }
+                        }
+                        continue;
+                    }
+
+                    // /retry — replay the last user message by truncating back to
+                    // the most recent Role::User and re-running a turn.
+                    if name == "retry" {
+                        let last_user_idx = conversation
+                            .api_messages()
+                            .iter()
+                            .rposition(|m| m.role == Role::User);
+                        let Some(idx) = last_user_idx else {
+                            let _ = core_tx_clone
+                                .send(CoreEvent::Error("No previous message to retry.".into()))
+                                .await;
+                            continue;
+                        };
+                        let keep = idx + 1;
+                        conversation.messages.truncate(keep);
+                        state_store_clone.update(|s| s.messages.truncate(keep));
+
+                        // Re-run a turn with the existing tail user message.
+                        let (turn_tx, mut turn_rx) =
+                            tokio::sync::mpsc::channel::<oxicode_core::TurnEvent>(256);
+                        let core_tx_fwd = core_tx_clone.clone();
+                        let forwarder = tokio::spawn(async move {
+                            while let Some(te) = turn_rx.recv().await {
+                                let _ = core_tx_fwd.send(translate_turn_event(te)).await;
+                            }
+                        });
+                        let result = engine_clone
+                            .execute_turn_with_cancel(
+                                &mut conversation,
+                                Some(&turn_tx),
+                                Some(&cancel_flag_engine),
+                            )
+                            .await;
+                        drop(turn_tx);
+                        let _ = forwarder.await;
+                        cancel_flag_engine.store(false, std::sync::atomic::Ordering::SeqCst);
+                        match result {
+                            Ok(_) => {
+                                let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            }
+                            Err(e) => {
+                                let _ = core_tx_clone.send(CoreEvent::Error(e.to_string())).await;
+                                let _ = core_tx_clone.send(CoreEvent::MessageComplete).await;
+                            }
+                        }
+                        continue;
+                    }
+
                     let current = state_store_clone.current();
                     let command_ctx = commands::CommandContext {
                         state_store: state_store_clone.clone(),

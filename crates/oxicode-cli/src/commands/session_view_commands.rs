@@ -169,13 +169,16 @@ impl SlashCommand for CronCommand {
         "cron"
     }
     fn description(&self) -> &str {
-        "Manage cron schedules"
+        "Manage cron schedules (list/create/delete) — TUI mode required"
     }
-    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        match args.trim() {
-            "list" | "" => CommandOutput::Message("No active cron jobs.".into()),
-            _ => CommandOutput::Message(format!("Cron operation: {args}")),
-        }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
+        // Sync fallback for `oxicode -p` mode. The TUI engine task intercepts
+        // /cron in main.rs and dispatches to cron_create / cron_list /
+        // cron_delete tools (Phase 2 wiring). Outside the TUI, slash commands
+        // can't reach async tools — direct the user instead.
+        CommandOutput::Message(
+            "/cron requires the interactive TUI (cannot run from -p / pipe mode).".into(),
+        )
     }
 }
 
@@ -185,14 +188,12 @@ impl SlashCommand for ScheduleCommand {
         "schedule"
     }
     fn description(&self) -> &str {
-        "Schedule a recurring remote agent"
+        "Schedule a one-shot task (alias for /cron create) — TUI mode required"
     }
-    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        if args.is_empty() {
-            CommandOutput::Message("Usage: /schedule <cron-expr> <prompt>".into())
-        } else {
-            CommandOutput::Message(format!("Schedule created: {args}"))
-        }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
+        CommandOutput::Message(
+            "/schedule requires the interactive TUI (cannot run from -p / pipe mode).".into(),
+        )
     }
 }
 
@@ -205,9 +206,12 @@ impl SlashCommand for WorktreeCommand {
         "Manage git worktrees"
     }
     fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandOutput {
-        let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
+        let (sub, _rest) = args.split_once(' ').unwrap_or((args, ""));
         match sub.trim() {
-            "create" => CommandOutput::Message(format!("Creating worktree: {rest}")),
+            "create" => CommandOutput::Message(
+                "/worktree create requires the interactive TUI (cannot run from -p / pipe mode)."
+                    .into(),
+            ),
             "list" => match run_command("git", &["worktree", "list"]) {
                 Ok(out) => CommandOutput::Message(format!("Worktrees:\n{out}")),
                 Err(e) => CommandOutput::Error(format!("Failed: {e}")),
@@ -288,10 +292,12 @@ impl SlashCommand for RetryCommand {
         "retry"
     }
     fn description(&self) -> &str {
-        "Retry the last query"
+        "Retry the last user message — TUI mode required"
     }
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
-        CommandOutput::Message("Retrying last query...".into())
+        CommandOutput::Message(
+            "/retry requires the interactive TUI (cannot run from -p / pipe mode).".into(),
+        )
     }
 }
 
