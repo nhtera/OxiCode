@@ -11,3 +11,7 @@ pub mod local_file_logger;
 
 #[cfg(feature = "telemetry-otlp")]
 pub mod otlp_exporter;
+
+/// OTLP tracing layer (tracing-opentelemetry integration).
+#[cfg(feature = "telemetry-otlp")]
+pub mod otlp;

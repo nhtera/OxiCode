@@ -14,7 +14,7 @@ dream = ["oxicode-tasks/dream", "oxicode-tools/dream"]
 teammate = ["oxicode-tasks/teammate", "oxicode-tools/teammate"]
 voice = ["dep:cpal"]
 bridge = ["dep:tokio-tungstenite", "dep:jsonwebtoken"]
-telemetry-otlp = ["dep:opentelemetry", "dep:opentelemetry-otlp"]
+telemetry-otlp = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry", "dep:tonic"]
 enterprise = []
 full = ["voice", "bridge", "telemetry-otlp"]
 all = ["remote", "dream", "teammate", "voice", "bridge", "telemetry-otlp", "enterprise"]
@@ -22,6 +22,11 @@ all = ["remote", "dream", "teammate", "voice", "bridge", "telemetry-otlp", "ente
 [[bin]]
 name = "oxicode"
 path = "src/main.rs"
+
+# Expose modules for integration tests (bridge_smoke, etc.).
+[lib]
+name = "oxicode_cli"
+path = "src/lib.rs"
 
 [dependencies]
 oxicode-common = { workspace = true }
@@ -54,6 +59,7 @@ tracing-subscriber = { workspace = true }
 toml = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+git2 = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 base64 = { workspace = true }
@@ -68,8 +74,13 @@ tar = { workspace = true }
 cpal = { version = "0.15", optional = true }
 tokio-tungstenite = { workspace = true, optional = true }
 jsonwebtoken = { version = "9", optional = true }
-opentelemetry = { version = "0.22", optional = true }
-opentelemetry-otlp = { version = "0.15", optional = true, features = ["http-proto"] }
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", optional = true, features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", optional = true, features = ["tonic", "trace"] }
+tracing-opentelemetry = { version = "0.28", optional = true }
+# tonic is pulled in transitively by opentelemetry-otlp; we pin the same version
+# to access MetadataMap directly in telemetry_pipeline/otlp.rs.
+tonic = { version = "0.12", optional = true, default-features = false }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -78,6 +89,9 @@ tokio = { workspace = true, features = ["test-util", "macros"] }
 serde_json = { workspace = true }
 oxicode-api = { workspace = true, features = ["test-support"] }
 ratatui = { workspace = true }
+# Used by bridge_smoke integration test to mint JWTs without unsafe env access.
+jsonwebtoken = { version = "9" }
+tokio-tungstenite = { workspace = true }
 
 [[bench]]
 name = "startup"

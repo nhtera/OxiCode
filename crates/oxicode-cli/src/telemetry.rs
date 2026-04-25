@@ -11,7 +11,7 @@ use std::time::Instant;
 /// Whether telemetry collection is currently enabled.
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// TODO(gap-phase-7): replace with OTLP exporter
+/// Default OTLP gRPC endpoint used by `TelemetryConfig`.
 const DEFAULT_OTLP_ENDPOINT: &str = "http://localhost:4317";
 
 /// Global singleton metrics collector.
@@ -273,6 +273,36 @@ pub fn init(config: &TelemetryConfig) {
             "Telemetry enabled"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// OTLP layer composition
+// ---------------------------------------------------------------------------
+
+/// Compose an OTLP tracing layer onto `subscriber` when the `telemetry-otlp`
+/// feature is enabled.
+///
+/// With the feature enabled the returned subscriber wraps the input with an
+/// OpenTelemetry layer that batches spans to the configured OTLP gRPC endpoint.
+/// Without the feature the input subscriber is returned unchanged, preserving
+/// the default file-based tracing behaviour.
+#[cfg(feature = "telemetry-otlp")]
+pub fn install_otlp_layer<S>(subscriber: S) -> impl tracing::Subscriber + Send + Sync
+where
+    S: tracing::Subscriber
+        + Send
+        + Sync
+        + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
+{
+    use tracing_subscriber::layer::SubscriberExt;
+    let maybe_layer = crate::telemetry_pipeline::otlp::build_layer::<S>();
+    subscriber.with(maybe_layer)
+}
+
+/// No-op pass-through when `telemetry-otlp` feature is disabled.
+#[cfg(not(feature = "telemetry-otlp"))]
+pub fn install_otlp_layer<S>(subscriber: S) -> S {
+    subscriber
 }
 
 #[cfg(test)]
