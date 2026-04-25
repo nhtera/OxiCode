@@ -290,7 +290,7 @@ fn render_file_read(
         .unwrap_or(input_summary);
 
     // Claude Code style: ✓ Read(path)
-    let summary = format!("{file_path}");
+    let summary = file_path.to_string();
     lines.push(tool_header(icon, color, "Read", &summary, started_at));
 
     // Result line: └ Read N lines

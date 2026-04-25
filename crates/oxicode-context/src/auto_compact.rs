@@ -91,6 +91,7 @@ mod tests {
 
     /// Verify summary max tokens is reasonable.
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn summary_max_tokens_reasonable() {
         assert!(SUMMARY_MAX_TOKENS >= 1024);
         assert!(SUMMARY_MAX_TOKENS <= 8192);

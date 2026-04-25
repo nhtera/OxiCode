@@ -119,7 +119,7 @@ fn test_router_explicit_provider_prefix() {
 // ── Live API test (requires credentials) ────────────────────────
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN and ANTHROPIC_BASE_URL env vars"]
 async fn test_from_env_with_auth_token() {
     // Requires ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL env vars.
     let token =

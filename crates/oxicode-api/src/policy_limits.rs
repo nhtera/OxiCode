@@ -252,7 +252,7 @@ mod tests {
         client.update(PolicyLimits {
             policies,
             etag: Some("W/\"abc123\"".to_string()),
-            last_updated: 1234567890,
+            last_updated: 1_234_567_890,
         });
 
         assert!(!client.is_allowed(policy::ALLOW_MCP));

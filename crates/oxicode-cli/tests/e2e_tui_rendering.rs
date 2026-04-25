@@ -333,7 +333,7 @@ fn test_render_many_messages_no_panic() {
 
     // Add 50 messages (25 turns).
     for i in 0..25 {
-        state_store.push_message(Message::user(&format!("Question {i}")));
+        state_store.push_message(Message::user(format!("Question {i}")));
         let mut reply = Message::assistant();
         reply.content.push(ContentBlock::Text {
             text: format!("Answer {i} with some longer text to test wrapping and layout."),

@@ -206,12 +206,12 @@ impl HooksTab {
                         Span::styled(cursor_ch, Style::default().fg(DIALOG_ACCENT)),
                         Span::styled(branch, Style::default().fg(DIALOG_MUTED)),
                         Span::styled(
-                            format!("{:<17} ", src_label),
+                            format!("{src_label:<17} "),
                             Style::default().fg(DIALOG_MUTED),
                         ),
                         Span::styled("matcher: ", Style::default().fg(DIALOG_MUTED)),
                         Span::styled(
-                            format!("{:<14} ", matcher_display),
+                            format!("{matcher_display:<14} "),
                             Style::default().fg(DIALOG_TEXT),
                         ),
                         Span::styled(

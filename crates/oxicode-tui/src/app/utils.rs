@@ -1,4 +1,4 @@
-/// Utility free functions used across app submodules.
+//! Utility free functions used across app submodules.
 
 /// Summarize tool input for display (show the most relevant field).
 pub(crate) fn summarize_input(input: &serde_json::Value) -> String {

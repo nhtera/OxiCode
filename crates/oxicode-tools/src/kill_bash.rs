@@ -181,8 +181,10 @@ mod tests {
         let tool = KillBashTool;
         let ctx = ToolContext::default();
 
-        // Spawn a long-running sleep process.
-        let child = std::process::Command::new("sleep")
+        // Spawn a long-running sleep process. We intentionally do not wait — the tool
+        // kills it by PID; the OS will reap it once killed.
+        #[allow(clippy::zombie_processes)]
+        let mut child = std::process::Command::new("sleep")
             .arg("60")
             .spawn()
             .expect("spawn sleep");
@@ -214,5 +216,8 @@ mod tests {
         // Verify removed from map.
         let map = ctx.bash_processes.lock().unwrap();
         assert!(!map.contains_key(task_id));
+
+        // Reap the (already killed) child to avoid zombie.
+        let _ = child.wait();
     }
 }

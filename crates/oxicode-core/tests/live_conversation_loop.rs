@@ -3,6 +3,7 @@
 //! Tests the full agent loop: user prompt → API → tool use → tool result → response.
 //! Requires `ANTHROPIC_AUTH_TOKEN` env var. Gated behind `#[ignore]`.
 //! Run with: `cargo test -p oxicode-core --test live_conversation_loop -- --ignored --nocapture`
+#![allow(clippy::await_holding_lock)]
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -64,7 +65,7 @@ fn make_live_engine(dir: &Path) -> (Arc<QueryEngine>, Arc<StateStore>) {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN env var"]
 async fn test_simple_text_conversation() {
     let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -100,7 +101,7 @@ async fn test_simple_text_conversation() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN env var"]
 async fn test_conversation_with_tool_use() {
     let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -141,7 +142,7 @@ async fn test_conversation_with_tool_use() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN env var"]
 async fn test_conversation_bash_tool() {
     let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -163,7 +164,7 @@ async fn test_conversation_bash_tool() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN env var"]
 async fn test_conversation_glob_tool() {
     let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -193,7 +194,7 @@ async fn test_conversation_glob_tool() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN env var"]
 async fn test_conversation_multi_tool_sequence() {
     let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -234,7 +235,7 @@ async fn test_conversation_multi_tool_sequence() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN env var"]
 async fn test_conversation_state_has_usage() {
     let _lock = LIVE_API_TEST_LOCK.lock().expect("live test lock");
     let tmp = tempfile::tempdir().unwrap();

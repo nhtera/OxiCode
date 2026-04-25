@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn deserialize_from_toml() {
-        let toml_str = r#"
+        let toml_str = r"
 extended_thinking = false
 prompt_caching = true
 proactive_agents = true
@@ -216,7 +216,7 @@ voice_input = false
 vim_mode = true
 lsp_integration = false
 custom_experiment = true
-"#;
+";
         let flags: FeatureFlags = toml::from_str(toml_str).unwrap();
         assert!(!flags.is_enabled(flag::EXTENDED_THINKING));
         assert!(flags.is_enabled(flag::PROACTIVE_AGENTS));

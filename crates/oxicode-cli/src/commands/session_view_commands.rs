@@ -332,8 +332,7 @@ impl SlashCommand for ForkCommand {
                 let msg_count = tree
                     .branches
                     .get(&current_branch)
-                    .map(|b| b.messages.len())
-                    .unwrap_or(0);
+                    .map_or(0, |b| b.messages.len());
 
                 // Also include in-memory messages from state that may not be persisted yet.
                 let state_msg_count = ctx.state_store.current().messages.len();

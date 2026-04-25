@@ -221,7 +221,7 @@ mod tests {
         MemoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
             content: content.to_string(),
-            tags: tags.iter().map(|s| s.to_string()).collect(),
+            tags: tags.iter().map(|s| (*s).to_string()).collect(),
             source: "manual".to_string(),
             session_id: None,
             created_at: Utc::now(),

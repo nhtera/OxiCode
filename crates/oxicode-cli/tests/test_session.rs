@@ -48,7 +48,7 @@ fn test_session_list() {
 
     for i in 0..3 {
         let mut session = Session::new("model");
-        session.push_message(Message::user(&format!("Message {i}")));
+        session.push_message(Message::user(format!("Message {i}")));
         oxicode_session::save_session(&session, Some(&config_dir)).unwrap();
     }
 

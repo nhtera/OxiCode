@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn extract_from_messages_with_markers() {
-        let messages = vec![
+        let messages = [
             Message::user("I prefer using snake_case for all variable names"),
             Message::assistant(),
             Message::user("Always use Rust for CLI tools please"),
@@ -189,7 +189,7 @@ mod tests {
         // Test the core extraction logic (no disk I/O).
         let conversation_text = messages
             .iter()
-            .map(|m| m.text())
+            .map(Message::text)
             .collect::<Vec<_>>()
             .join("\n");
         let extracted = memory::extract_memories_from_text(&conversation_text, "test-session");
@@ -202,14 +202,14 @@ mod tests {
 
     #[test]
     fn extract_no_markers() {
-        let messages = vec![
+        let messages = [
             Message::user("What is the weather today?"),
             Message::assistant(),
         ];
 
         let conversation_text = messages
             .iter()
-            .map(|m| m.text())
+            .map(Message::text)
             .collect::<Vec<_>>()
             .join("\n");
         let extracted = memory::extract_memories_from_text(&conversation_text, "test-session");
@@ -217,11 +217,13 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn content_similarity_identical() {
         assert_eq!(content_similarity("hello world", "hello world"), 1.0);
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn content_similarity_no_overlap() {
         assert_eq!(content_similarity("hello world", "foo bar"), 0.0);
     }
@@ -234,6 +236,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn content_similarity_empty() {
         assert_eq!(content_similarity("", ""), 1.0);
     }
@@ -300,7 +303,7 @@ mod tests {
         // Verify files exist.
         let files: Vec<_> = std::fs::read_dir(&mem_dir)
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
             .collect();
         assert_eq!(files.len(), result.saved_count);
@@ -310,12 +313,12 @@ mod tests {
     fn max_extraction_cap() {
         // Create many messages with markers to trigger many extractions.
         let messages: Vec<Message> = (0..20)
-            .map(|i| Message::user(&format!("I prefer method {i} for everything always")))
+            .map(|i| Message::user(format!("I prefer method {i} for everything always")))
             .collect();
 
         let conversation_text = messages
             .iter()
-            .map(|m| m.text())
+            .map(Message::text)
             .collect::<Vec<_>>()
             .join("\n");
         let mut extracted = memory::extract_memories_from_text(&conversation_text, "test-cap");

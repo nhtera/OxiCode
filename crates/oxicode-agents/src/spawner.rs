@@ -63,7 +63,7 @@ impl AgentConfig {
 
             // Use the type's default model unless caller explicitly overrode it.
             if !self.model_override {
-                self.model = at.default_model().to_string();
+                self.model = at.default_model();
             }
 
             // Set tool whitelist from the agent type (General = no restriction).

@@ -84,7 +84,7 @@ fn translate_turn_event(te: TurnEvent) -> CoreEvent {
 }
 
 /// Spawn a forwarder task matching the pattern in main.rs run_tui().
-async fn spawn_forwarder(
+fn spawn_forwarder(
     mut turn_rx: mpsc::Receiver<TurnEvent>,
     core_tx: mpsc::Sender<CoreEvent>,
 ) -> tokio::task::JoinHandle<()> {
@@ -102,7 +102,7 @@ async fn test_text_delta_forwarded() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
 
     turn_tx
         .send(TurnEvent::TextDelta("Hello world".to_string()))
@@ -126,7 +126,7 @@ async fn test_turn_start_maps_to_stream_start() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
     turn_tx.send(TurnEvent::TurnStart).await.unwrap();
     drop(turn_tx);
 
@@ -145,7 +145,7 @@ async fn test_turn_end_maps_to_stream_end() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
     turn_tx.send(TurnEvent::TurnEnd).await.unwrap();
     drop(turn_tx);
 
@@ -164,7 +164,7 @@ async fn test_tool_use_start_forwarded() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
     turn_tx
         .send(TurnEvent::ToolUseStart {
             id: "tu_1".to_string(),
@@ -194,7 +194,7 @@ async fn test_tool_result_forwarded() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
     turn_tx
         .send(TurnEvent::ToolResult {
             tool_use_id: "tu_1".to_string(),
@@ -228,7 +228,7 @@ async fn test_tool_result_error_forwarded() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
     turn_tx
         .send(TurnEvent::ToolResult {
             tool_use_id: "tu_err".to_string(),
@@ -262,7 +262,7 @@ async fn test_permission_ask_forwarded_with_reply_channel() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
 
     let (reply_tx, _reply_rx) = oneshot::channel::<PermissionResponse>();
     turn_tx
@@ -302,7 +302,7 @@ async fn test_error_forwarded() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
     turn_tx
         .send(TurnEvent::Error("API failure".to_string()))
         .await
@@ -324,7 +324,7 @@ async fn test_rate_limited_forwarded() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
     turn_tx
         .send(TurnEvent::RateLimited {
             message: "429 Too Many Requests".to_string(),
@@ -361,7 +361,7 @@ async fn test_full_turn_event_sequence() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let _handle = spawn_forwarder(turn_rx, core_tx).await;
+    let _handle = spawn_forwarder(turn_rx, core_tx);
 
     // Simulate a typical turn: Start → TextDelta → TextDelta → End.
     turn_tx.send(TurnEvent::TurnStart).await.unwrap();
@@ -395,7 +395,7 @@ async fn test_turn_with_tool_use_sequence() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, mut core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
 
     // Simulate: Start → ToolUseStart → ToolResult → TextDelta → End.
     turn_tx.send(TurnEvent::TurnStart).await.unwrap();
@@ -446,7 +446,7 @@ async fn test_forwarder_completes_when_sender_drops() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, _core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let fwd = spawn_forwarder(turn_rx, core_tx).await;
+    let fwd = spawn_forwarder(turn_rx, core_tx);
 
     // Drop the sender immediately.
     drop(turn_tx);
@@ -467,7 +467,7 @@ async fn test_forwarder_handles_dropped_receiver() {
     let (turn_tx, turn_rx) = mpsc::channel::<TurnEvent>(32);
     let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
 
-    let handle = spawn_forwarder(turn_rx, core_tx).await;
+    let handle = spawn_forwarder(turn_rx, core_tx);
 
     // Drop the CoreEvent receiver — forwarder should still drain without panic.
     drop(core_rx);

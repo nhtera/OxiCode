@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn test_bundled_skills_have_correct_names() {
         let skills = bundled_skills();
-        let names: Vec<&str> = skills.iter().map(|s| s.name()).collect();
+        let names: Vec<&str> = skills.iter().map(Skill::name).collect();
         assert!(names.contains(&"debug"));
         assert!(names.contains(&"remember"));
         assert!(names.contains(&"simplify"));

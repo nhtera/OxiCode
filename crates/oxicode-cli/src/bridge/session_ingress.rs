@@ -276,6 +276,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::zero_sized_map_values)]
     fn route_to_existing_session() {
         let mut sessions = HashMap::new();
         sessions.insert("sess-1".to_string(), ());
@@ -289,6 +290,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::zero_sized_map_values)]
     fn route_to_missing_session() {
         let sessions: HashMap<String, ()> = HashMap::new();
         let claims = IngressClaims {

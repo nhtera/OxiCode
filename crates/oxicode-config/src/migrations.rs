@@ -445,11 +445,11 @@ mod tests {
 
     #[test]
     fn m003_preserves_existing_features() {
-        let input = r#"
+        let input = r"
 [features]
 extended_thinking = false
 custom_flag = true
-"#;
+";
         let mut value: toml::Value = toml::from_str(input).unwrap();
         m003_add_default_features(&mut value).unwrap();
 

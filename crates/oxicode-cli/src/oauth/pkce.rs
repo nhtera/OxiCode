@@ -2,6 +2,8 @@
 //!
 //! Implements RFC 7636 S256 method for secure CLI OAuth flows.
 //! Reuses the proven SHA-256 and base64url implementations from `oxicode-mcp`.
+#[cfg(test)]
+use std::fmt::Write as _;
 
 /// PKCE challenge pair (verifier + S256 challenge).
 pub struct PkceChallenge {
@@ -306,14 +308,20 @@ mod tests {
     #[test]
     fn test_sha256_known_vectors() {
         let hash = simple_sha256(b"");
-        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+        let hex: String = hash.iter().fold(String::new(), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        });
         assert_eq!(
             hex,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
 
         let hash = simple_sha256(b"hello");
-        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+        let hex: String = hash.iter().fold(String::new(), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        });
         assert_eq!(
             hex,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"

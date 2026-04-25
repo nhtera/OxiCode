@@ -23,7 +23,7 @@ fn model_name() -> String {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_API_KEY env var"]
 async fn test_live_api_simple_text_response() {
     let provider = make_live_provider();
     let request = MessageRequest::new(model_name(), vec![Message::user("Say hello in one word")])
@@ -62,7 +62,7 @@ async fn test_live_api_simple_text_response() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_API_KEY env var"]
 async fn test_live_api_tool_use_response() {
     let provider = make_live_provider();
 
@@ -124,7 +124,7 @@ async fn test_live_api_tool_use_response() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_API_KEY env var"]
 async fn test_live_api_streaming_token_usage() {
     let provider = make_live_provider();
     let request =
@@ -154,7 +154,7 @@ async fn test_live_api_streaming_token_usage() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_AUTH_TOKEN and ANTHROPIC_BASE_URL env vars"]
 async fn test_live_api_custom_base_url() {
     // This test validates that a custom base URL works.
     let token =
@@ -195,7 +195,7 @@ async fn test_live_api_custom_base_url() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live API test — requires ANTHROPIC_API_KEY env var"]
 async fn test_live_api_multi_turn_messages() {
     let provider = make_live_provider();
 

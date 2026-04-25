@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     // Explicit imports required because tests.rs is a submodule of app, not app.rs itself.
     use crate::app::utils::{
@@ -9,6 +10,7 @@ mod tests {
     use crate::app::{PendingPermission, MAX_HOOK_LINE_CHARS};
     use crate::events::{CoreEvent, UiEvent};
     use crate::widgets::permission_dialog::RiskLevel;
+    use crate::widgets::session_browser::SessionBrowserMode;
     use crate::widgets::{Notification, SessionEntry, SlashCommandMeta};
     use crossterm::event::{
         Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -915,7 +917,7 @@ mod tests {
 
         // Push enough messages to exceed the viewport (24 rows minus borders/status/input).
         for i in 1..=30 {
-            store.push_message(Message::user(&format!("Message number {i}")));
+            store.push_message(Message::user(format!("Message number {i}")));
             let mut reply = Message::assistant();
             reply.content.push(oxicode_common::ContentBlock::Text {
                 text: format!("Reply to message {i}"),
@@ -943,7 +945,7 @@ mod tests {
 
         // Push messages exceeding viewport.
         for i in 1..=20 {
-            store.push_message(Message::user(&format!("Line {i}")));
+            store.push_message(Message::user(format!("Line {i}")));
             let mut reply = Message::assistant();
             reply.content.push(oxicode_common::ContentBlock::Text {
                 text: format!("Answer {i}"),
@@ -979,7 +981,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("create test terminal");
 
         for i in 1..=20 {
-            store.push_message(Message::user(&format!("Msg {i}")));
+            store.push_message(Message::user(format!("Msg {i}")));
             let mut reply = Message::assistant();
             reply.content.push(oxicode_common::ContentBlock::Text {
                 text: format!("Resp {i}"),
@@ -1522,7 +1524,7 @@ mod tests {
         ];
 
         for chunk in &chunks {
-            app.handle_core_event(CoreEvent::TextDelta(chunk.to_string()));
+            app.handle_core_event(CoreEvent::TextDelta((*chunk).to_string()));
         }
 
         // Draw during streaming — should show content auto-scrolled to bottom.
@@ -2289,7 +2291,6 @@ mod tests {
             "rename mode should keep browser open"
         );
         // mode should be Rename now
-        use crate::widgets::session_browser::SessionBrowserMode;
         assert!(matches!(
             app.session_browser.mode(),
             SessionBrowserMode::Rename
@@ -2309,7 +2310,6 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE))
             .await;
         // Should still be in rename mode, characters added
-        use crate::widgets::session_browser::SessionBrowserMode;
         assert!(matches!(
             app.session_browser.mode(),
             SessionBrowserMode::Rename
@@ -2352,7 +2352,6 @@ mod tests {
             app.session_browser.is_visible(),
             "Esc in rename should return to browse, not close"
         );
-        use crate::widgets::session_browser::SessionBrowserMode;
         assert!(
             matches!(app.session_browser.mode(), SessionBrowserMode::Browse),
             "Esc in rename should revert to Browse mode"

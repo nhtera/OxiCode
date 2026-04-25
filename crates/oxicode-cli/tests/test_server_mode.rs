@@ -210,7 +210,7 @@ fn test_session_create_params() {
 #[test]
 fn test_session_create_params_empty() {
     // No model specified — should use default.
-    let json = r#"{}"#;
+    let json = r"{}";
     let parsed: Value = serde_json::from_str(json).unwrap();
     assert!(parsed.get("model").is_none() || parsed["model"].is_null());
 }

@@ -5,6 +5,9 @@
 //!
 //! No API key needed — uses MockLlmProvider.
 //! Run with: `cargo test -p oxicode-cli --test test_tui_engine_integration`
+#![allow(clippy::match_wild_err_arm)]
+#![allow(clippy::needless_continue)]
+#![allow(clippy::match_same_arms)]
 
 use std::sync::Arc;
 
@@ -179,7 +182,7 @@ async fn test_user_input_produces_core_events() {
                 }
             }
             Ok(None) => break,
-            Err(_) => panic!("Timed out waiting for core events"),
+            Err(e) => panic!("Timed out waiting for core events: {e}"),
         }
     }
 
@@ -279,7 +282,7 @@ async fn test_multiple_sequential_user_inputs() {
     for (i, input) in ["First message", "Second message"].iter().enumerate() {
         ui_tx
             .send(UiEvent::UserInput {
-                text: input.to_string(),
+                text: (*input).to_string(),
                 images: vec![],
             })
             .await
@@ -290,7 +293,8 @@ async fn test_multiple_sequential_user_inputs() {
             match tokio::time::timeout(std::time::Duration::from_secs(5), core_rx.recv()).await {
                 Ok(Some(CoreEvent::MessageComplete)) => break,
                 Ok(Some(CoreEvent::Error(e))) => panic!("Error on message {}: {e}", i + 1),
-                Ok(Some(_)) => continue,
+                Ok(Some(_)) => {}
+
                 Ok(None) => panic!("Channel closed on message {}", i + 1),
                 Err(_) => panic!("Timeout on message {}", i + 1),
             }

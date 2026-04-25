@@ -41,7 +41,7 @@ impl DisplayPermMode {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_setting(s: &str) -> Self {
         match s {
             "accept_edits" | "accept-edits" => Self::AcceptEdits,
             "bypass" => Self::Bypass,
@@ -140,6 +140,7 @@ impl PermissionsTab {
     }
 
     /// Render the tab body into `area`.
+    #[allow(clippy::too_many_lines)]
     pub fn render(&self, buf: &mut Buffer, area: Rect) {
         if area.height == 0 || area.width == 0 {
             return;

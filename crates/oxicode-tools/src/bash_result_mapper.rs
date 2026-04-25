@@ -112,6 +112,8 @@ fn safe_split_end(s: &str, max_bytes: usize) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use super::*;
 
     #[test]
@@ -138,7 +140,7 @@ mod tests {
         let mut output = String::new();
         output.push_str("HEADER_LINE\n");
         for i in 0..500 {
-            output.push_str(&format!("line-{i:04}\n"));
+            let _ = writeln!(output, "line-{i:04}");
         }
         output.push_str("FOOTER_LINE\n");
 
@@ -210,8 +212,7 @@ mod tests {
         // Should start at a line boundary
         assert!(
             result.starts_with("line") || result.is_empty(),
-            "got: {}",
-            result
+            "got: {result}"
         );
     }
 

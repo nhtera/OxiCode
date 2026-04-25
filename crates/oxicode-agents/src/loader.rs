@@ -156,11 +156,12 @@ fn load_dir_into(dir: &Path, out: &mut Vec<CustomAgent>) {
 
 /// Parse a single agent markdown file into a `CustomAgent`.
 pub fn load_agent_file(path: &Path) -> Result<CustomAgent, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("read {path:?}: {e}"))?;
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let (frontmatter, body) = split_frontmatter(&content)
-        .ok_or_else(|| format!("missing YAML frontmatter in {path:?}"))?;
-    let meta: AgentFrontmatter =
-        serde_yaml::from_str(frontmatter).map_err(|e| format!("invalid YAML in {path:?}: {e}"))?;
+        .ok_or_else(|| format!("missing YAML frontmatter in {}", path.display()))?;
+    let meta: AgentFrontmatter = serde_yaml::from_str(frontmatter)
+        .map_err(|e| format!("invalid YAML in {}: {e}", path.display()))?;
 
     Ok(CustomAgent {
         name: meta.name,

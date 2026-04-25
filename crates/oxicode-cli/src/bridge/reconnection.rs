@@ -137,7 +137,7 @@ mod tests {
                 assert!(d.as_millis() >= 900, "delay too low: {d:?}");
                 assert!(d.as_millis() <= 1100, "delay too high: {d:?}");
             }
-            _ => panic!("Expected RetryAfter"),
+            ReconnectAction::GiveUp { .. } => panic!("Expected RetryAfter"),
         }
     }
 
@@ -147,12 +147,13 @@ mod tests {
         let delays: Vec<Duration> = (0..6)
             .map(|_| match mgr.on_disconnect() {
                 ReconnectAction::RetryAfter(d) => d,
-                _ => panic!("Expected RetryAfter"),
+                ReconnectAction::GiveUp { .. } => panic!("Expected RetryAfter"),
             })
             .collect();
 
         // Each delay should be roughly double the previous (within jitter).
         for i in 1..delays.len() {
+            #[allow(clippy::cast_precision_loss)]
             let ratio = delays[i].as_millis() as f64 / delays[i - 1].as_millis() as f64;
             // Allow wide range due to jitter: 1.5..2.8.
             assert!(
@@ -177,7 +178,7 @@ mod tests {
                 // 30s ± 10% → max ~33s.
                 assert!(d.as_secs() <= 34, "delay exceeds cap: {d:?}");
             }
-            _ => panic!("Expected RetryAfter"),
+            ReconnectAction::GiveUp { .. } => panic!("Expected RetryAfter"),
         }
     }
 

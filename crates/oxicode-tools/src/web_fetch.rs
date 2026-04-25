@@ -264,7 +264,7 @@ mod tests {
         let text = strip_html(html);
         assert!(text.contains("Hello"));
         assert!(text.contains("World"));
-        assert!(!text.contains("<"));
+        assert!(!text.contains('<'));
     }
 
     #[test]

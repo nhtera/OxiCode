@@ -190,7 +190,7 @@ max_reconnect_delay_secs = 60
 
     #[test]
     fn test_partial_toml_uses_defaults() {
-        let toml_str = r#"port = 3000"#;
+        let toml_str = r"port = 3000";
         let value: toml::Value = toml_str.parse().unwrap();
         let config = BridgeConfig::from_toml_value(&value);
         assert_eq!(config.port, 3000);

@@ -381,18 +381,15 @@ async fn main() -> Result<()> {
             let branch_path = oxicode_session::sessions_dir(None)
                 .join(session_id)
                 .join(format!("{branch_id}.json"));
-            match std::fs::read_to_string(&branch_path)
+            if let Some(s) = std::fs::read_to_string(&branch_path)
                 .ok()
                 .and_then(|s| serde_json::from_str::<Session>(&s).ok())
             {
-                Some(s) => {
-                    tracing::info!("Resumed session {} branch {}", session_id, branch_id);
-                    s
-                }
-                None => {
-                    eprintln!("Branch '{branch_id}' not found in session '{session_id}'.");
-                    std::process::exit(1);
-                }
+                tracing::info!("Resumed session {} branch {}", session_id, branch_id);
+                s
+            } else {
+                eprintln!("Branch '{branch_id}' not found in session '{session_id}'.");
+                std::process::exit(1);
             }
         } else {
             match oxicode_session::load_session(session_id, None) {
@@ -945,7 +942,7 @@ fn translate_turn_event(te: oxicode_core::TurnEvent) -> CoreEvent {
 }
 
 /// Run the interactive TUI.
-#[allow(clippy::too_many_lines)] // TUI event loop with many input handlers
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // TUI event loop with many input handlers
 async fn run_tui(
     engine: Arc<QueryEngine>,
     state_store: Arc<StateStore>,
@@ -1150,9 +1147,10 @@ async fn run_tui(
 
                                 // 5. SessionStart hook with source=resume (Claude Code spec —
                                 // no separate SessionLoad event).
-                                use oxicode_hooks::manager::HookFields;
-                                let mut fields = HookFields::default();
-                                fields.source = Some("resume".to_string());
+                                let fields = oxicode_hooks::manager::HookFields {
+                                    source: Some("resume".to_string()),
+                                    ..Default::default()
+                                };
                                 hook_manager_engine
                                     .fire_with_fields(
                                         oxicode_hooks::HookEvent::SessionStart,
@@ -1277,59 +1275,54 @@ async fn run_tui(
                                             .await;
                                     }
                                     Ok(mut tree) => {
-                                        match tree.switch(branch_id) {
-                                            Err(e) => {
+                                        if let Err(e) = tree.switch(branch_id) {
+                                            let _ = core_tx_clone
+                                                .send(CoreEvent::Error(format!(
+                                                    "Cannot switch branch: {e}"
+                                                )))
+                                                .await;
+                                        } else {
+                                            // Persist the updated current pointer.
+                                            if let Err(e) = tree.save(None) {
                                                 let _ = core_tx_clone
                                                     .send(CoreEvent::Error(format!(
-                                                        "Cannot switch branch: {e}"
+                                                        "Branch switch failed to persist: {e}"
                                                     )))
                                                     .await;
+                                                continue;
                                             }
-                                            Ok(()) => {
-                                                // Persist the updated current pointer.
-                                                if let Err(e) = tree.save(None) {
-                                                    let _ = core_tx_clone
-                                                        .send(CoreEvent::Error(format!(
-                                                            "Branch switch failed to persist: {e}"
-                                                        )))
-                                                        .await;
-                                                    continue;
-                                                }
-                                                let branch = tree
-                                                    .branches
-                                                    .get(&branch_id)
-                                                    .expect("just switched to it");
-                                                let new_messages = branch.messages.clone();
-                                                let title = branch.title.clone();
-                                                // Hot-swap conversation + state.
-                                                conversation.replace_messages(new_messages.clone());
-                                                state_store_clone.update(|s| {
-                                                    s.messages = new_messages;
-                                                });
-                                                // Notify TUI to rehydrate + redraw.
-                                                let _ = core_tx_clone
-                                                    .send(CoreEvent::SessionResumed {
-                                                        session_id: session_id.clone(),
-                                                    })
-                                                    .await;
-                                                let sys_msg = Message {
-                                                    id: uuid::Uuid::new_v4().to_string(),
-                                                    role: Role::Assistant,
-                                                    content: vec![ContentBlock::Text {
-                                                        text: format!(
-                                                            "Switched to branch: {title}"
-                                                        ),
-                                                    }],
-                                                    model: None,
-                                                    stop_reason: None,
-                                                    created_at: chrono::Utc::now(),
-                                                    usage: None,
-                                                };
-                                                state_store_clone.push_message(sys_msg);
-                                                let _ = core_tx_clone
-                                                    .send(CoreEvent::MessageComplete)
-                                                    .await;
-                                            }
+                                            let branch = tree
+                                                .branches
+                                                .get(&branch_id)
+                                                .expect("just switched to it");
+                                            let new_messages = branch.messages.clone();
+                                            let title = branch.title.clone();
+                                            // Hot-swap conversation + state.
+                                            conversation.replace_messages(new_messages.clone());
+                                            state_store_clone.update(|s| {
+                                                s.messages = new_messages;
+                                            });
+                                            // Notify TUI to rehydrate + redraw.
+                                            let _ = core_tx_clone
+                                                .send(CoreEvent::SessionResumed {
+                                                    session_id: session_id.clone(),
+                                                })
+                                                .await;
+                                            let sys_msg = Message {
+                                                id: uuid::Uuid::new_v4().to_string(),
+                                                role: Role::Assistant,
+                                                content: vec![ContentBlock::Text {
+                                                    text: format!("Switched to branch: {title}"),
+                                                }],
+                                                model: None,
+                                                stop_reason: None,
+                                                created_at: chrono::Utc::now(),
+                                                usage: None,
+                                            };
+                                            state_store_clone.push_message(sys_msg);
+                                            let _ = core_tx_clone
+                                                .send(CoreEvent::MessageComplete)
+                                                .await;
                                         }
                                     }
                                 }
@@ -1560,13 +1553,11 @@ async fn run_tui(
                     // Update the engine's active model if it changed.
                     engine_clone.set_model(model);
                 }
-                UiEvent::InterruptTurn => {
-                    // No-op: the TUI sets cancel_flag directly via the shared
-                    // Arc<AtomicBool> (signal_interrupt), so the engine sees it
-                    // immediately. Processing this queued event would re-arm the
-                    // flag AFTER it was cleared, poisoning the next turn.
-                }
                 UiEvent::Quit => break,
+                // InterruptTurn is a no-op: the TUI sets cancel_flag directly via the
+                // shared Arc<AtomicBool> (signal_interrupt), so the engine sees it
+                // immediately. Processing this queued event would re-arm the flag AFTER
+                // it was cleared, poisoning the next turn.
                 _ => {}
             }
         }

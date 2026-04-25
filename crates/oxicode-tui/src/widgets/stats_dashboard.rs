@@ -104,6 +104,7 @@ fn format_duration(dur: Duration) -> String {
 }
 
 /// Format a token count with K/M suffixes for readability.
+#[allow(clippy::cast_precision_loss)]
 fn format_tokens(count: u64) -> String {
     if count >= 1_000_000 {
         format!("{:.1}M", count as f64 / 1_000_000.0)

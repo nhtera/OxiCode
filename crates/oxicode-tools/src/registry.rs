@@ -100,6 +100,30 @@ mod tests {
     use async_trait::async_trait;
 
     struct DummyTool;
+    struct OtherTool;
+
+    #[async_trait]
+    impl Tool for OtherTool {
+        fn name(&self) -> &str {
+            "other"
+        }
+        fn description(&self) -> &str {
+            "Another tool"
+        }
+        fn schema(&self) -> ToolSchema {
+            ToolSchema {
+                name: "other".into(),
+                description: "Another tool".into(),
+                input_schema: serde_json::json!({"type": "object", "properties": {}}),
+            }
+        }
+        fn permission_level(&self) -> PermissionLevel {
+            PermissionLevel::ReadOnly
+        }
+        async fn execute(&self, _: serde_json::Value, _: &ToolContext) -> OxiResult<ToolResult> {
+            Ok(ToolResult::success("ok"))
+        }
+    }
 
     #[async_trait]
     impl Tool for DummyTool {
@@ -180,36 +204,6 @@ mod tests {
     fn test_retain_filters_tools() {
         let mut reg = ToolRegistry::new();
         reg.register(Box::new(DummyTool));
-
-        // Create a second dummy tool with a different name.
-        struct OtherTool;
-        #[async_trait]
-        impl Tool for OtherTool {
-            fn name(&self) -> &str {
-                "other"
-            }
-            fn description(&self) -> &str {
-                "Another tool"
-            }
-            fn schema(&self) -> ToolSchema {
-                ToolSchema {
-                    name: "other".into(),
-                    description: "Another tool".into(),
-                    input_schema: serde_json::json!({"type": "object", "properties": {}}),
-                }
-            }
-            fn permission_level(&self) -> PermissionLevel {
-                PermissionLevel::ReadOnly
-            }
-            async fn execute(
-                &self,
-                _: serde_json::Value,
-                _: &ToolContext,
-            ) -> OxiResult<ToolResult> {
-                Ok(ToolResult::success("ok"))
-            }
-        }
-
         reg.register(Box::new(OtherTool));
         assert_eq!(reg.len(), 2);
 

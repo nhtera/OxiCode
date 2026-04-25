@@ -118,9 +118,10 @@ impl<T: VirtualItem> VirtualList<T> {
         if rows < 0 {
             self.sticky_bottom = false;
         }
-        let new_top = self.viewport_top as i64 + i64::from(rows);
+        let new_top = i64::from(self.viewport_top) + i64::from(rows);
         // Clamp to [0, u32::MAX]; actual bottom clamping is done in render().
-        self.viewport_top = new_top.clamp(0, i64::from(u32::MAX)) as u32;
+        self.viewport_top =
+            u32::try_from(new_top.clamp(0, i64::from(u32::MAX))).unwrap_or(u32::MAX);
     }
 
     /// Number of items in the list.
@@ -367,7 +368,7 @@ mod tests {
         list.push(FixedItem::new("b", 3));
         assert_eq!(list.items.len(), 2);
         // Cache entries exist but are None until render triggers computation.
-        assert!(list.height_cache.iter().all(|h| h.is_none()));
+        assert!(list.height_cache.iter().all(Option::is_none));
     }
 
     // ── Test 2: width change invalidates cache ────────────────────────────────
@@ -379,14 +380,14 @@ mod tests {
         let mut buf = Buffer::empty(area80);
         list.render(area80, &mut buf, NoCtx);
         // After render at width 80, cache should be populated.
-        assert!(list.height_cache.iter().all(|h| h.is_some()));
+        assert!(list.height_cache.iter().all(Option::is_some));
 
         // Render at different width → cache cleared and repopulated.
         let area100 = Rect::new(0, 0, 100, 10);
         let mut buf2 = Buffer::empty(area100);
         list.render(area100, &mut buf2, NoCtx);
         assert_eq!(list.cached_width, 100);
-        assert!(list.height_cache.iter().all(|h| h.is_some()));
+        assert!(list.height_cache.iter().all(Option::is_some));
     }
 
     // ── Test 3: scroll_by clamps to 0 ────────────────────────────────────────
@@ -460,7 +461,7 @@ mod tests {
         let mut buf = Buffer::empty(area);
         list.render(area, &mut buf, NoCtx);
         // All cached.
-        assert!(list.height_cache.iter().all(|h| h.is_some()));
+        assert!(list.height_cache.iter().all(Option::is_some));
         // Invalidate middle item.
         list.invalidate(1);
         assert!(list.height_cache[0].is_some());

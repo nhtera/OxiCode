@@ -7,6 +7,10 @@
 //!
 //! No API key needed — uses MockLlmProvider.
 //! Run with: `cargo test -p oxicode-cli --test tui_event_bridge_integration_tests`
+#![allow(clippy::match_wild_err_arm)]
+#![allow(clippy::needless_continue)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::await_holding_lock)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -699,7 +703,7 @@ async fn test_multi_turn_state_accumulates() {
     for (i, input) in ["Turn 1", "Turn 2", "Turn 3"].iter().enumerate() {
         ui_tx
             .send(UiEvent::UserInput {
-                text: input.to_string(),
+                text: (*input).to_string(),
                 images: vec![],
             })
             .await
@@ -860,7 +864,7 @@ fn test_ui_event_debug_display() {
         },
         UiEvent::SlashCommand {
             name: "help".into(),
-            args: "".into(),
+            args: String::new(),
         },
         UiEvent::Quit,
         UiEvent::InterruptTurn,

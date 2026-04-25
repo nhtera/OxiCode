@@ -133,10 +133,12 @@ fn test_default_settings_values() {
 
 #[test]
 fn test_settings_toml_roundtrip() {
-    let mut settings = Settings::default();
-    settings.model = "test-model".to_string();
-    settings.max_tokens = 9999;
-    settings.theme = "dark".to_string();
+    let settings = Settings {
+        model: "test-model".to_string(),
+        max_tokens: 9999,
+        theme: "dark".to_string(),
+        ..Settings::default()
+    };
 
     let toml_str = toml::to_string_pretty(&settings).unwrap();
     let parsed: Settings = toml::from_str(&toml_str).unwrap();

@@ -41,7 +41,7 @@ impl Conversation {
             .iter()
             .rev()
             .find(|m| matches!(m.role, oxicode_common::Role::User))
-            .map(|m| m.text())
+            .map(oxicode_common::Message::text)
     }
 }
 

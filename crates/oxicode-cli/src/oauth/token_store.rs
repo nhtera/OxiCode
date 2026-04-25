@@ -153,7 +153,7 @@ mod tests {
             access_token: "test-access-token".into(),
             refresh_token: Some("test-refresh-token".into()),
             token_type: "Bearer".into(),
-            expires_at: Some(9999999999),
+            expires_at: Some(9_999_999_999),
             email: Some("user@example.com".into()),
         };
 

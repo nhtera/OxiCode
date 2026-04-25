@@ -96,6 +96,7 @@ impl<'a> MarkdownView<'a> {
     }
 
     /// Convert markdown source to styled Ratatui Lines.
+    #[allow(clippy::too_many_lines)]
     pub fn to_lines(&self) -> Vec<Line<'a>> {
         let parser = Parser::new_ext(self.source, Options::ENABLE_TABLES);
         let mut lines: Vec<Line> = Vec::new();

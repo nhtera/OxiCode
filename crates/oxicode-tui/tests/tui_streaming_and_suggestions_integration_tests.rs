@@ -8,6 +8,8 @@
 //! No API key needed — pure logic tests.
 //! Run with: `cargo test -p oxicode-tui --test tui_streaming_and_suggestions_integration_tests`
 
+use std::fmt::Write as _;
+
 use oxicode_common::{ContentBlock, Message, Role};
 use oxicode_tui::streaming_markdown::MarkdownStreamCollector;
 use oxicode_tui::{suggest_prompts, PromptSuggestion, TipsService};
@@ -206,7 +208,7 @@ fn test_large_streaming_payload_1000_lines() {
     for batch in 0..10 {
         let mut chunk = String::new();
         for line in 0..100 {
-            chunk.push_str(&format!("Line {}: batch {batch}\n", batch * 100 + line));
+            let _ = writeln!(chunk, "Line {}: batch {batch}", batch * 100 + line);
         }
         c.push_delta(&chunk);
         let new_lines = c.commit_complete_lines();

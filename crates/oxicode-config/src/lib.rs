@@ -240,7 +240,7 @@ permission_mode = "accept-edits"
         // A backup file should exist.
         let entries: Vec<_> = std::fs::read_dir(tmp.path())
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .filter(|e| e.file_name().to_string_lossy().contains(".bak."))
             .collect();
         assert_eq!(entries.len(), 1);

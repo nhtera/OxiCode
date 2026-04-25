@@ -1,5 +1,13 @@
 use std::path::Path;
 
+struct RawModeGuard;
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = crossterm::terminal::enable_raw_mode();
+    }
+}
+
 pub fn open_in_editor(path: &Path) -> std::io::Result<()> {
     let editor = std::env::var("VISUAL")
         .ok()
@@ -14,26 +22,19 @@ pub fn open_in_editor(path: &Path) -> std::io::Result<()> {
     let args: Vec<&str> = parts.collect();
 
     crossterm::terminal::disable_raw_mode()?;
-    struct RawModeGuard;
-    impl Drop for RawModeGuard {
-        fn drop(&mut self) {
-            let _ = crossterm::terminal::enable_raw_mode();
-        }
-    }
     let _guard = RawModeGuard;
 
     let status = std::process::Command::new(cmd)
         .args(args)
         .arg(path)
         .status()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
 
     if status.success() {
         Ok(())
     } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("editor exited with status: {status}"),
-        ))
+        Err(std::io::Error::other(format!(
+            "editor exited with status: {status}"
+        )))
     }
 }

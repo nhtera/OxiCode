@@ -82,10 +82,7 @@ impl super::App {
                 // Deduplicate: abort_streaming emits TurnEvent::Error AND main.rs also
                 // sends CoreEvent::Error on the same Err return — both arrive in the
                 // same event-drain batch. Skip if last notification has the same text.
-                let is_dup = self
-                    .notifications
-                    .last()
-                    .map_or(false, |n| n.message == msg);
+                let is_dup = self.notifications.last().is_some_and(|n| n.message == msg);
                 if !is_dup {
                     self.notifications.push(Notification::new(
                         msg,

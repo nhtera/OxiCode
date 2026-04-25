@@ -82,8 +82,7 @@ pub async fn generate_agent(
     };
 
     let user_message = Message::user(format!(
-        "Create an agent configuration based on this request: \"{}\".{}\n  Return ONLY the JSON object, no other text.",
-        user_prompt, existing_list
+        "Create an agent configuration based on this request: \"{user_prompt}\".{existing_list}\n  Return ONLY the JSON object, no other text."
     ));
 
     // 2048 was too small — long agent specs (whenToUse + examples + multi-paragraph
@@ -106,7 +105,7 @@ pub async fn generate_agent(
         match event {
             Ok(StreamEvent::TextDelta { text }) => buffer.push_str(&text),
             Ok(StreamEvent::MessageStop { .. }) => break,
-            Ok(StreamEvent::Error { message }) | Ok(StreamEvent::ApiError { message, .. }) => {
+            Ok(StreamEvent::Error { message } | StreamEvent::ApiError { message, .. }) => {
                 return Err(GenerateError::Provider(message));
             }
             Err(e) => return Err(GenerateError::Provider(e.to_string())),

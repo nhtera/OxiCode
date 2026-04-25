@@ -101,7 +101,7 @@ fn test_cli_completions() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live CLI test — requires built binary and ANTHROPIC_API_KEY"]
 async fn test_cli_single_prompt_text() {
     let bin = binary_path();
     let output = Command::new(&bin)
@@ -131,7 +131,7 @@ async fn test_cli_single_prompt_text() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live CLI test — requires built binary and ANTHROPIC_API_KEY"]
 async fn test_cli_single_prompt_json_output() {
     let bin = binary_path();
     let output = Command::new(&bin)
@@ -197,7 +197,7 @@ fn test_cli_no_api_key_exits_cleanly() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live CLI test — requires built binary and ANTHROPIC_API_KEY"]
 async fn test_cli_single_prompt_math() {
     let bin = binary_path();
     let output = Command::new(&bin)
@@ -223,7 +223,7 @@ async fn test_cli_single_prompt_math() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live CLI test — requires built binary and ANTHROPIC_API_KEY"]
 async fn test_cli_json_has_session_events() {
     let bin = binary_path();
     let output = Command::new(&bin)
@@ -255,7 +255,7 @@ async fn test_cli_json_has_session_events() {
     let has_start = events.iter().any(|e| {
         e.get("type")
             .and_then(|t| t.as_str())
-            .map_or(false, |t| t == "session_start")
+            .is_some_and(|t| t == "session_start")
     });
     assert!(has_start, "Should have session_start event");
 
@@ -263,7 +263,7 @@ async fn test_cli_json_has_session_events() {
     let has_end = events.iter().any(|e| {
         e.get("type")
             .and_then(|t| t.as_str())
-            .map_or(false, |t| t == "session_end")
+            .is_some_and(|t| t == "session_end")
     });
     assert!(has_end, "Should have session_end event");
 }

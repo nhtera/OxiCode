@@ -302,7 +302,7 @@ impl LlmProvider for AnthropicProvider {
                                 tracing::warn!("API error (retry {}/{}): status={:?} type={:?} — reconnecting in {:?}",
                                     retry_count, retry_policy.max_retries, api_status, api_error_type, delay);
                                 yield Ok(StreamEvent::Retrying {
-                                    message: format!("API error (status={:?}, type={:?})", api_status, api_error_type),
+                                    message: format!("API error (status={api_status:?}, type={api_error_type:?})"),
                                     attempt: retry_count,
                                     max_retries: retry_policy.max_retries,
                                     retry_in_secs: delay.as_secs_f64(),

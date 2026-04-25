@@ -9,6 +9,10 @@
 //!   export ANTHROPIC_BASE_URL="https://ezaiapi.com"
 //!   export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-4.6"
 //!   cargo test -p oxicode-cli --test e2e_tui_workflow -- --ignored --nocapture
+#![allow(clippy::await_holding_lock)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::needless_continue)]
+#![allow(clippy::match_same_arms)]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -305,9 +309,11 @@ fn spawn_engine_task(
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tui_full_roundtrip_real_api() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
     let (engine, state_store) = live_engine(tmp.path());
 
@@ -375,9 +381,11 @@ async fn e2e_tui_full_roundtrip_real_api() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_streaming_markdown_with_real_deltas() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
     let (engine, _) = live_engine(tmp.path());
 
@@ -424,9 +432,11 @@ async fn e2e_streaming_markdown_with_real_deltas() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_permission_dialog_real_api() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
 
     let (engine, state_store) = live_engine_with_mode(tmp.path(), PermissionMode::ApprovalOnly);
@@ -483,9 +493,11 @@ async fn e2e_permission_dialog_real_api() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_multi_turn_state_preserved() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
     let (engine, state_store) = live_engine(tmp.path());
 
@@ -552,9 +564,11 @@ async fn e2e_multi_turn_state_preserved() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_session_roundtrip_real_data() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
     let (engine, _state_store) = live_engine(tmp.path());
 
@@ -570,7 +584,7 @@ async fn e2e_session_roundtrip_real_data() {
     .expect("execute_turn");
 
     // Build a session from the real conversation.
-    let mut session = oxicode_session::Session::new(&model());
+    let mut session = oxicode_session::Session::new(model());
     session.push_message(conversation.api_messages()[0].clone()); // user
     session.push_message(result.clone()); // assistant
 
@@ -601,9 +615,11 @@ async fn e2e_session_roundtrip_real_data() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_cancel_mid_stream() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
     let (engine, state_store) = live_engine(tmp.path());
 
@@ -677,9 +693,11 @@ async fn e2e_cancel_mid_stream() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tui_bridge_tool_use_real_api() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("tool_bridge_test.txt");
     std::fs::write(&target, "bridge_content_42").unwrap();
@@ -749,9 +767,11 @@ async fn e2e_tui_bridge_tool_use_real_api() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_state_usage_tracking_real_api() {
-    let _lock = LIVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _lock = LIVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let tmp = tempfile::tempdir().unwrap();
     let (engine, state_store) = live_engine(tmp.path());
 

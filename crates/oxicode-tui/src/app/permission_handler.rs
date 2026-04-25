@@ -5,6 +5,7 @@ use crate::widgets::Notification;
 
 impl super::App {
     /// Handle key events when the permission dialog is active.
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_permission_key(&mut self, key: KeyEvent) {
         let Some(ref mut perm) = self.pending_permission else {
             return;

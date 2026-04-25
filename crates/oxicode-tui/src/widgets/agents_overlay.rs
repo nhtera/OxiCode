@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use ratatui::buffer::Buffer;
@@ -300,16 +301,15 @@ impl AgentsOverlayState {
     }
 
     pub fn cancel(&mut self) {
-        match self.mode {
-            AgentsOverlayMode::Browse => self.close(),
-            _ => {
-                self.mode = AgentsOverlayMode::Browse;
-                self.wizard_selected_idx = 0;
-                self.wizard_input.clear();
-                self.wizard_cursor = 0;
-                self.selected_idx = 0;
-                self.scroll_offset = 0;
-            }
+        if self.mode == AgentsOverlayMode::Browse {
+            self.close();
+        } else {
+            self.mode = AgentsOverlayMode::Browse;
+            self.wizard_selected_idx = 0;
+            self.wizard_input.clear();
+            self.wizard_cursor = 0;
+            self.selected_idx = 0;
+            self.scroll_offset = 0;
         }
     }
 
@@ -357,7 +357,7 @@ impl AgentsOverlayState {
     /// async task is using.
     pub fn mark_generate_running(&mut self) {
         if let AgentsOverlayMode::CreateGenerate { status, prompt, .. } = &mut self.mode {
-            *prompt = self.wizard_input.clone();
+            self.wizard_input.clone_into(prompt);
             *status = GenerateStatus::Generating;
         }
     }
@@ -713,10 +713,19 @@ fn display_path(path: &std::path::Path) -> String {
     s
 }
 
+// Flat "visual line plan" for render_library_list: each entry is either a header
+// (not selectable) or a row index into `state.rows` (selectable).
+enum VisualLine<'a> {
+    Header { label: &'a str, path: String },
+    Row(usize, &'a AgentsRow),
+    Spacer,
+}
+
 /// Library tab — Create-new-agent row at top, then agents grouped by source
 /// (Project .oxicode → Project .claude → User .oxicode → User .claude).
 /// Headers are rendered as plain visual rows; only `AgentsRow` entries are
 /// selectable, so headers do not consume an index in `selected_idx`.
+#[allow(clippy::too_many_lines)]
 fn render_library_list(buf: &mut Buffer, area: Rect, state: &AgentsOverlayState) {
     if state.rows.is_empty() {
         let line = Line::from(vec![Span::styled(
@@ -725,15 +734,6 @@ fn render_library_list(buf: &mut Buffer, area: Rect, state: &AgentsOverlayState)
         )]);
         buf.set_line(area.x, area.y, &line, area.width);
         return;
-    }
-
-    // Build a flat "visual line plan": each entry is either a header (not
-    // selectable) or a row index into `state.rows` (selectable). This lets us
-    // scroll by selectable index but still render headers between groups.
-    enum VisualLine<'a> {
-        Header { label: &'a str, path: String },
-        Row(usize, &'a AgentsRow),
-        Spacer,
     }
 
     let mut plan: Vec<VisualLine> = Vec::with_capacity(state.rows.len() + 8);
@@ -807,19 +807,19 @@ fn render_library_list(buf: &mut Buffer, area: Rect, state: &AgentsOverlayState)
                     AgentsRow::Agent(a) => {
                         let mut m = String::new();
                         if let Some(model) = &a.model {
-                            m.push_str(&format!(" · {model}"));
+                            let _ = write!(m, " · {model}");
                         } else {
                             m.push_str(" · inherit");
                         }
                         if let Some(mem) = &a.memory {
-                            m.push_str(&format!(" · {mem} memory"));
+                            let _ = write!(m, " · {mem} memory");
                         }
                         if let Some(shadow) = a.shadowed_by {
                             let by = match shadow {
                                 AgentsOrigin::Project => "project",
                                 AgentsOrigin::User => "user",
                             };
-                            m.push_str(&format!("  ⚠ shadowed by {by}"));
+                            let _ = write!(m, "  ⚠ shadowed by {by}");
                         }
                         (a.name.clone(), m, a.shadowed_by.is_some())
                     }
@@ -933,10 +933,11 @@ fn render_generate_step(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_confirm_step(
     buf: &mut Buffer,
     area: Rect,
-    location: &CreateAgentLocation,
+    location: CreateAgentLocation,
     agent_type: &str,
     description: &str,
     model: &str,
@@ -1030,6 +1031,7 @@ fn bullet_footer(items: &[&str]) -> Line<'static> {
 }
 
 impl Widget for AgentsOverlay<'_> {
+    #[allow(clippy::too_many_lines)]
     fn render(self, area: Rect, buf: &mut Buffer) {
         if !self.state.visible {
             return;
@@ -1156,7 +1158,7 @@ impl Widget for AgentsOverlay<'_> {
                 model,
                 ..
             } => {
-                render_confirm_step(buf, body, location, agent_type, description, model);
+                render_confirm_step(buf, body, *location, agent_type, description, model);
             }
         }
 

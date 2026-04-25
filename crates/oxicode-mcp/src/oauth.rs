@@ -474,18 +474,26 @@ mod tests {
 
     #[test]
     fn test_sha256_empty() {
+        use std::fmt::Write;
         let hash = simple_sha256(b"");
         // SHA-256 of empty string is well-known.
         let expected = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+        let hex: String = hash.iter().fold(String::new(), |mut acc, b| {
+            let _ = write!(acc, "{b:02x}");
+            acc
+        });
         assert_eq!(hex, expected);
     }
 
     #[test]
     fn test_sha256_hello() {
+        use std::fmt::Write;
         let hash = simple_sha256(b"hello");
         let expected = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
-        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+        let hex: String = hash.iter().fold(String::new(), |mut acc, b| {
+            let _ = write!(acc, "{b:02x}");
+            acc
+        });
         assert_eq!(hex, expected);
     }
 

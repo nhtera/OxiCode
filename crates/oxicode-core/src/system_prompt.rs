@@ -52,8 +52,7 @@ pub fn build_env_info_section(working_dir: Option<&str>, model_id: Option<&str>)
                 .output()
                 .ok()
                 .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
-                .unwrap_or_else(|| platform.to_string())
+                .map_or_else(|| platform.to_string(), |s| s.trim().to_string())
         }
     };
 

@@ -174,9 +174,9 @@ fn test_team_message_bus_per_team() {
     let team_x = mgr.get_team("team-x").unwrap();
     let team_y = mgr.get_team("team-y").unwrap();
 
-    let bus_x_ptr = Arc::as_ptr(&team_x.bus);
-    let bus_y_ptr = Arc::as_ptr(&team_y.bus);
-    assert_ne!(bus_x_ptr, bus_y_ptr, "teams should have separate buses");
+    let ptr_x = Arc::as_ptr(&team_x.bus);
+    let ptr_y = Arc::as_ptr(&team_y.bus);
+    assert_ne!(ptr_x, ptr_y, "teams should have separate buses");
 }
 
 #[tokio::test]

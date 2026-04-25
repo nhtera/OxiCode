@@ -173,7 +173,7 @@ fn render_file_list(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
         let path = truncate_path_left(&file.path, max_path_width);
 
         // Stats: "+N -N" or "new" or "bin".
-        let stats = if file.binary {
+        let diff_stats = if file.binary {
             "bin".to_string()
         } else if file.is_new_file && file.removed == 0 {
             format!("+{}", file.added)
@@ -196,7 +196,7 @@ fn render_file_list(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
                 }),
             ),
             Span::styled(
-                format!(" {stats}"),
+                format!(" {diff_stats}"),
                 base_style.fg(if file.is_new_file {
                     crate::render::STATUS_YELLOW
                 } else {
@@ -237,16 +237,13 @@ fn render_diff_detail(buf: &mut Buffer, area: Rect, state: &DiffViewerState) {
         return;
     }
 
-    let file = match state.files.get(state.selected_file) {
-        Some(f) => f,
-        None => {
-            let msg = Line::from(Span::styled(
-                " No file selected",
-                Style::default().fg(DIALOG_MUTED),
-            ));
-            buf.set_line(area.x, area.y, &msg, area.width);
-            return;
-        }
+    let Some(file) = state.files.get(state.selected_file) else {
+        let msg = Line::from(Span::styled(
+            " No file selected",
+            Style::default().fg(DIALOG_MUTED),
+        ));
+        buf.set_line(area.x, area.y, &msg, area.width);
+        return;
     };
 
     // Header: file path + stats.
@@ -617,7 +614,7 @@ mod tests {
     #[test]
     fn gutter_added_only_new() {
         let g = format_gutter(None, Some(5), 10);
-        assert!(g.contains("5"));
+        assert!(g.contains('5'));
         // Old side should be spaces.
         assert!(g.starts_with("    "));
     }
@@ -625,7 +622,7 @@ mod tests {
     #[test]
     fn gutter_removed_only_old() {
         let g = format_gutter(Some(5), None, 10);
-        assert!(g.contains("5"));
+        assert!(g.contains('5'));
     }
 
     #[test]

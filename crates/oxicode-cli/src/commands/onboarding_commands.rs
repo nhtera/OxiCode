@@ -290,8 +290,7 @@ mod tests {
         let ctx = make_ctx();
         let output = cmd.execute("--skip-validation", &ctx);
         match output {
-            CommandOutput::Message(msg) => assert!(!msg.is_empty()),
-            CommandOutput::Error(msg) => assert!(!msg.is_empty()),
+            CommandOutput::Message(msg) | CommandOutput::Error(msg) => assert!(!msg.is_empty()),
             _ => panic!("Expected message or error"),
         }
     }

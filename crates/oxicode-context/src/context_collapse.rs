@@ -138,7 +138,7 @@ mod tests {
 
         // Remaining 3 should match the last 3 original messages (in order).
         let result_ids: Vec<&str> = result[1..].iter().map(|m| m.id.as_str()).collect();
-        let expected_ids: Vec<&str> = original_ids[7..].iter().map(|s| s.as_str()).collect();
+        let expected_ids: Vec<&str> = original_ids[7..].iter().map(String::as_str).collect();
         assert_eq!(result_ids, expected_ids);
     }
 

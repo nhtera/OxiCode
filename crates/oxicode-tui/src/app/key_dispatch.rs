@@ -98,7 +98,7 @@ impl super::App {
 
         // Agents overlay (/agents).
         if self.agents_overlay.is_visible() {
-            self.handle_agents_overlay_key(key).await;
+            self.handle_agents_overlay_key(key);
             return;
         }
 

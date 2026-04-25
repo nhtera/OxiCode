@@ -1,5 +1,7 @@
 /// Overlay and widget key handlers: mouse, paste, model picker, session browser,
 /// rewind, stats dashboard, diff viewer, and keybinding action dispatch.
+use std::fmt::Write as _;
+
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::agent_editor;
@@ -22,10 +24,10 @@ fn is_valid_slug(s: &str) -> bool {
 
 fn build_agent_markdown(name: &str, description: &str, model: &str, prompt: &str) -> String {
     let mut out = String::from("---\n");
-    out.push_str(&format!("name: {name}\n"));
-    out.push_str(&format!("description: {}\n", yaml_escape(description)));
+    let _ = writeln!(out, "name: {name}");
+    let _ = writeln!(out, "description: {}", yaml_escape(description));
     if model != "default" {
-        out.push_str(&format!("model: {model}\n"));
+        let _ = writeln!(out, "model: {model}");
     }
     out.push_str("---\n\n");
     out.push_str(prompt);
@@ -433,7 +435,8 @@ impl super::App {
         self.agents_overlay.open(rows, running);
     }
 
-    pub(super) async fn handle_agents_overlay_key(&mut self, key: KeyEvent) {
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn handle_agents_overlay_key(&mut self, key: KeyEvent) {
         use crate::widgets::agents_overlay::{
             AgentsOverlayMode, CreateAgentLocation, CreateAgentMethod,
         };
@@ -670,7 +673,7 @@ impl super::App {
             .iter()
             .filter_map(|row| match row {
                 crate::widgets::AgentsRow::Agent(a) => Some(a.name.clone()),
-                _ => None,
+                crate::widgets::AgentsRow::CreateNew => None,
             })
             .collect();
 
@@ -841,7 +844,7 @@ impl super::App {
                 _ => {}
             },
             RewindOverlayMode::Confirming => match (key.modifiers, key.code) {
-                (_, KeyCode::Char('y') | KeyCode::Char('Y')) => {
+                (_, KeyCode::Char('y' | 'Y')) => {
                     if let Some(turns) = self.rewind_overlay.confirm_rewind() {
                         let _ = self
                             .ui_tx
@@ -858,7 +861,7 @@ impl super::App {
                         self.auto_scroll = true;
                     }
                 }
-                (_, KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc) => {
+                (_, KeyCode::Char('n' | 'N') | KeyCode::Esc) => {
                     self.rewind_overlay.cancel();
                 }
                 _ => {}
@@ -914,8 +917,7 @@ impl super::App {
                     let depth = branch
                         .parent
                         .and_then(|pid| depth_map.get(&pid))
-                        .map(|d| d + 1)
-                        .unwrap_or(0);
+                        .map_or(0, |d| d + 1);
                     depth_map.insert(branch.id, depth);
                 }
 
@@ -1001,10 +1003,10 @@ impl super::App {
                 _ => {}
             },
             BranchesOverlayMode::Confirm => match (key.modifiers, key.code) {
-                (_, KeyCode::Esc) | (_, KeyCode::Char('n') | KeyCode::Char('N')) => {
+                (_, KeyCode::Esc | KeyCode::Char('n' | 'N')) => {
                     self.branches_overlay.cancel();
                 }
-                (_, KeyCode::Char('y') | KeyCode::Char('Y')) => {
+                (_, KeyCode::Char('y' | 'Y')) => {
                     if let Some(branch_id) = self.branches_overlay.confirm_delete() {
                         self.notifications.push(Notification::new(
                             format!("Deleted branch {}", &branch_id.to_string()[..8]),
@@ -1029,8 +1031,7 @@ impl super::App {
         match (key.modifiers, key.code) {
             (_, KeyCode::Esc) => self.stats_dashboard.cancel(),
             (_, KeyCode::Left) => self.stats_dashboard.prev_tab(),
-            (_, KeyCode::Right) => self.stats_dashboard.next_tab(),
-            (_, KeyCode::Tab) => self.stats_dashboard.next_tab(),
+            (_, KeyCode::Right | KeyCode::Tab) => self.stats_dashboard.next_tab(),
             _ => {}
         }
     }
@@ -1040,8 +1041,8 @@ impl super::App {
         use crate::widgets::diff_viewer::DiffPane;
 
         match (key.modifiers, key.code) {
-            (_, KeyCode::Esc) | (_, KeyCode::Char('q')) => self.diff_viewer.close(),
-            (_, KeyCode::Tab) | (_, KeyCode::Left) | (_, KeyCode::Right) => {
+            (_, KeyCode::Esc | KeyCode::Char('q')) => self.diff_viewer.close(),
+            (_, KeyCode::Tab | KeyCode::Left | KeyCode::Right) => {
                 self.diff_viewer.toggle_pane();
             }
             (_, KeyCode::Up) => {
@@ -1254,7 +1255,7 @@ impl super::App {
                 }
             }
             // Tab cycle (forward / backward).
-            (_, KeyCode::Tab) | (_, KeyCode::Right) => screen.next_tab(),
+            (_, KeyCode::Tab | KeyCode::Right) => screen.next_tab(),
             (KeyModifiers::SHIFT, KeyCode::BackTab) | (_, KeyCode::Left) => screen.prev_tab(),
             // Navigation within the active tab.
             (_, KeyCode::Down) => screen.select_next(),

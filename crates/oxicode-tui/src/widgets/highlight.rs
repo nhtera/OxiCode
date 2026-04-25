@@ -300,8 +300,8 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .filter(|s| {
                 matches!(s.style.fg, Some(Color::Rgb(r, g, b))
-                    if !(r == 255 && g == 255 && b == 255)  // not white
-                    && !(r == 128 && g == 128 && b == 128)) // not gray
+                    if (r != 255 || g != 255 || b != 255)  // not white
+                    && (r != 128 || g != 128 || b != 128)) // not gray
                     && !s.content.trim().is_empty()
             })
             .collect();

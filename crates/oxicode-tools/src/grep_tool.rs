@@ -396,7 +396,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.content.contains("2")); // 2 matches
+        assert!(result.content.contains('2')); // 2 matches
         assert!(result.content.contains("Total:"));
     }
 

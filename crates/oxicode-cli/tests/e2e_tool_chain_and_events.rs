@@ -7,6 +7,8 @@
 //!   export ANTHROPIC_BASE_URL="https://ezaiapi.com"
 //!   export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-4.6"
 //!   cargo test -p oxicode-cli --test e2e_tool_chain_and_events -- --ignored --nocapture
+#![allow(clippy::await_holding_lock)]
+#![allow(clippy::similar_names)]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -237,7 +239,7 @@ async fn bridge(engine: Arc<QueryEngine>, ss: Arc<StateStore>, prompt: &str) -> 
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_write_edit_read_chain() {
     let _lock = LIVE_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -262,7 +264,7 @@ async fn e2e_write_edit_read_chain() {
     assert!(file.exists(), "File should exist after write");
 
     // Step 2: Read it (required before edit).
-    conv.push(Message::user(&format!(
+    conv.push(Message::user(format!(
         "Read the file at {}. Use the file_read tool.",
         file.display()
     )));
@@ -275,7 +277,7 @@ async fn e2e_write_edit_read_chain() {
     .expect("read turn");
 
     // Step 3: Edit it.
-    conv.push(Message::user(&format!(
+    conv.push(Message::user(format!(
         "Edit the file at {} by replacing 'ORIGINAL' with 'MODIFIED'. Use the file_edit tool.",
         file.display()
     )));
@@ -288,7 +290,7 @@ async fn e2e_write_edit_read_chain() {
     .expect("edit turn");
 
     // Step 4: Read again and verify.
-    conv.push(Message::user(&format!(
+    conv.push(Message::user(format!(
         "Read the file at {} and tell me its content. Use the file_read tool.",
         file.display()
     )));
@@ -321,7 +323,7 @@ async fn e2e_write_edit_read_chain() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_grep_tool_finds_pattern() {
     let _lock = LIVE_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -368,7 +370,7 @@ async fn e2e_grep_tool_finds_pattern() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_bash_then_file_read_chain() {
     let _lock = LIVE_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -403,7 +405,7 @@ async fn e2e_bash_then_file_read_chain() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_event_sequence_text_only() {
     let _lock = LIVE_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -453,7 +455,7 @@ async fn e2e_event_sequence_text_only() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_event_sequence_with_tool() {
     let _lock = LIVE_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -578,7 +580,7 @@ async fn event_sequence_mock_tool_then_text() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tool_error_recovery() {
     let _lock = LIVE_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();

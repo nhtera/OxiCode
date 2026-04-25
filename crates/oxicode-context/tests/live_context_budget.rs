@@ -18,7 +18,7 @@ fn make_conversation(count: usize, chars_each: usize) -> Vec<Message> {
     (0..count)
         .map(|i| {
             if i % 2 == 0 {
-                Message::user(&"u".repeat(chars_each))
+                Message::user("u".repeat(chars_each))
             } else {
                 let mut m = Message::assistant();
                 m.content.push(ContentBlock::Text {

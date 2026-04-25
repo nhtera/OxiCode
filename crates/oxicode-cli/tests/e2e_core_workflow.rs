@@ -13,6 +13,10 @@
 //!   export ANTHROPIC_AUTH_TOKEN="sk-..."
 //!   export ANTHROPIC_BASE_URL="https://ezaiapi.com"
 //!   export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-sonnet-4.6"
+#![allow(clippy::await_holding_lock)]
+#![allow(clippy::match_wild_err_arm)]
+#![allow(clippy::needless_continue)]
+#![allow(clippy::match_same_arms)]
 //!   cargo test -p oxicode-cli --test e2e_core_workflow -- --ignored --nocapture
 
 use std::collections::HashMap;
@@ -167,7 +171,7 @@ fn translate_turn_event(te: TurnEvent) -> CoreEvent {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_streaming_text_response() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let provider = make_live_provider();
@@ -200,7 +204,7 @@ async fn e2e_streaming_text_response() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_streaming_tool_use() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let provider = make_live_provider();
@@ -248,7 +252,7 @@ async fn e2e_streaming_tool_use() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_multi_turn_context() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let provider = make_live_provider();
@@ -278,7 +282,7 @@ async fn e2e_multi_turn_context() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_token_usage_tracking() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let provider = make_live_provider();
@@ -299,7 +303,7 @@ async fn e2e_token_usage_tracking() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_custom_base_url() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let base_url = match std::env::var("ANTHROPIC_BASE_URL") {
@@ -335,7 +339,7 @@ async fn e2e_custom_base_url() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_file_read_tool_loop() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -366,7 +370,7 @@ async fn e2e_file_read_tool_loop() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_file_write_tool_loop() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -397,7 +401,7 @@ async fn e2e_file_write_tool_loop() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_file_edit_tool_loop() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -447,7 +451,7 @@ async fn e2e_file_edit_tool_loop() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_bash_tool_loop() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -473,7 +477,7 @@ async fn e2e_bash_tool_loop() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_glob_grep_tool_loop() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -505,7 +509,7 @@ async fn e2e_glob_grep_tool_loop() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_multi_tool_sequence() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -639,7 +643,7 @@ async fn run_tui_bridge(
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tui_bridge_text_flow() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -688,7 +692,7 @@ async fn e2e_tui_bridge_text_flow() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tui_bridge_tool_flow() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -723,7 +727,7 @@ async fn e2e_tui_bridge_tool_flow() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tui_bridge_permission_flow() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -746,7 +750,7 @@ async fn e2e_tui_bridge_permission_flow() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tui_bridge_permission_deny() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -788,7 +792,7 @@ async fn e2e_tui_bridge_permission_deny() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_tui_bridge_error_recovery() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -847,7 +851,7 @@ fn event_name(e: &CoreEvent) -> &'static str {
 // ═══════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_session_save_and_resume() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -884,7 +888,7 @@ async fn e2e_session_save_and_resume() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_session_multi_turn_resume() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -939,7 +943,7 @@ async fn e2e_session_multi_turn_resume() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_session_state_tracks_usage() {
     let _lock = LIVE_TEST_LOCK.lock().expect("lock");
     let tmp = tempfile::tempdir().unwrap();
@@ -991,7 +995,7 @@ fn e2e_cli_version_output() {
         .expect("build");
     assert!(status.success());
 
-    let output = std::process::Command::new(&binary_path())
+    let output = std::process::Command::new(binary_path())
         .arg("--version")
         .output()
         .expect("run --version");
@@ -1006,7 +1010,7 @@ fn e2e_cli_version_output() {
 
 #[test]
 fn e2e_cli_help_lists_flags() {
-    let output = std::process::Command::new(&binary_path())
+    let output = std::process::Command::new(binary_path())
         .arg("--help")
         .output()
         .expect("run --help");
@@ -1019,9 +1023,9 @@ fn e2e_cli_help_lists_flags() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "live e2e test — requires running oxicode binary and ANTHROPIC_API_KEY"]
 async fn e2e_cli_single_prompt_returns_text() {
-    let output = std::process::Command::new(&binary_path())
+    let output = std::process::Command::new(binary_path())
         .args([
             "-p",
             "Say exactly 'cli-e2e-ok' and nothing else",

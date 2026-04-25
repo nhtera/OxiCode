@@ -167,7 +167,7 @@ args = ["index.js"]
     #[test]
     fn test_plugin_dirs() {
         let dirs = plugin_dirs(Some(Path::new("/tmp/project")));
-        assert!(dirs.len() >= 1);
+        assert!(!dirs.is_empty());
         assert!(dirs.last().unwrap().ends_with(".oxicode/plugins"));
     }
 }

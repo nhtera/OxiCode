@@ -144,10 +144,10 @@ impl ProvidersTab {
         let tok_changed = p.auth_token != self.token_buf;
         p.base_url.clone_from(&self.url_buf);
         p.auth_token.clone_from(&self.token_buf);
-        if !self.token_buf.is_empty() {
-            p.status = ProviderStatus::Present;
-        } else {
+        if self.token_buf.is_empty() {
             p.status = ProviderStatus::Missing;
+        } else {
+            p.status = ProviderStatus::Present;
         }
         self.reveal_token = false;
         url_changed || tok_changed
@@ -253,9 +253,9 @@ impl ProvidersTab {
 
             let line = Line::from(vec![
                 Span::styled(cursor, Style::default().fg(DIALOG_ACCENT)),
-                Span::styled(format!("{:<name_w$} ", name_trunc), row_style),
-                Span::styled(format!("{:<url_w$} ", url_trunc), row_style),
-                Span::styled(format!("{:<auth_w$} ", auth_trunc), row_style),
+                Span::styled(format!("{name_trunc:<name_w$} "), row_style),
+                Span::styled(format!("{url_trunc:<url_w$} "), row_style),
+                Span::styled(format!("{auth_trunc:<auth_w$} "), row_style),
                 Span::styled(provider.status.label(), Style::default().fg(DIALOG_MUTED)),
             ]);
             buf.set_line(area.x, row_y, &line, area.width);
@@ -307,8 +307,7 @@ impl ProvidersTab {
         let name = self
             .providers
             .get(idx)
-            .map(|p| p.name.as_str())
-            .unwrap_or("Provider");
+            .map_or("Provider", |p| p.name.as_str());
         let title = format!(" Edit: {name} ");
         let top_line = Line::from(Span::styled(
             title,
@@ -344,10 +343,10 @@ impl ProvidersTab {
         } else if self.token_buf.is_empty() {
             "▊".to_string()
         } else {
-            format!("{}▊", SECRET_MASK)
+            format!("{SECRET_MASK}▊")
         };
         let tok_is_active = self.edit_field == EditField::AuthToken;
-        let tok_line = Line::from(vec![
+        let token_line = Line::from(vec![
             Span::styled(tok_label, Style::default().fg(DIALOG_MUTED)),
             Span::styled(
                 tok_raw,
@@ -360,7 +359,7 @@ impl ProvidersTab {
                 },
             ),
         ]);
-        buf.set_line(dx, dy + 4, &tok_line, dialog_w);
+        buf.set_line(dx, dy + 4, &token_line, dialog_w);
 
         // Hint row.
         let hint = "  [Tab] switch field  [Ctrl+R] reveal  [Enter] save  [Esc] cancel";

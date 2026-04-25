@@ -282,8 +282,8 @@ impl<'a> RewindOverlay<'a> {
 
 /// Build the turn list lines for Selecting mode.
 fn build_turn_lines(state: &RewindOverlayState, body_width: u16) -> Vec<Line<'static>> {
-    let select_bg = Color::Rgb(40, 60, 100);
-    let select_fg = Color::White;
+    let selected_background = Color::Rgb(40, 60, 100);
+    let selected_text = Color::White;
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     if state.turns.is_empty() {
@@ -301,7 +301,7 @@ fn build_turn_lines(state: &RewindOverlayState, body_width: u16) -> Vec<Line<'st
         let real_idx = state.turns.len() - 1 - visual_idx;
         let is_selected = real_idx == state.selected_idx;
         let (fg, bg) = if is_selected {
-            (select_fg, select_bg)
+            (selected_text, selected_background)
         } else {
             (DIALOG_TEXT, PANEL_BG)
         };
@@ -457,11 +457,7 @@ impl Widget for RewindOverlay<'_> {
                 if body.height > 0 {
                     let turns_rm = self.state.turns_to_remove();
                     let msgs_rm = self.state.messages_to_remove();
-                    let target = self
-                        .state
-                        .selected_turn()
-                        .map(|t| t.turn_number)
-                        .unwrap_or(0);
+                    let target = self.state.selected_turn().map_or(0, |t| t.turn_number);
                     let lines = vec![
                         Line::from(""),
                         Line::from(Span::styled(

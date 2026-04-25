@@ -53,7 +53,7 @@ fn test_usage_event_schema() {
 
 #[test]
 fn test_full_ndjson_conversation_parseable() {
-    let events = vec![
+    let events = [
         r#"{"type":"session_start","session_id":"s1","model":"claude-sonnet-4","timestamp":"2026-01-01T00:00:00Z"}"#,
         r#"{"type":"user_message","content":"Fix the bug"}"#,
         r#"{"type":"assistant_text","text":"I'll investigate the issue."}"#,

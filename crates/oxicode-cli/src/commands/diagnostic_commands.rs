@@ -428,7 +428,7 @@ mod tests {
         let ctx = make_ctx();
         for i in 0..10 {
             ctx.state_store
-                .push_message(oxicode_common::Message::user(&format!("msg {i}")));
+                .push_message(oxicode_common::Message::user(format!("msg {i}")));
         }
 
         let cmd = AntTraceCommand;

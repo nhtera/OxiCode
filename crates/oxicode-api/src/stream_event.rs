@@ -305,7 +305,10 @@ mod tests {
                 assert_eq!(parsed_info.remaining, Some(0));
                 assert_eq!(attempt, 1);
                 assert_eq!(max_retries, 3);
-                assert_eq!(retry_in_secs, 30.0);
+                #[allow(clippy::float_cmp)]
+                {
+                    assert_eq!(retry_in_secs, 30.0);
+                }
             }
             _ => panic!("Expected RateLimited event"),
         }

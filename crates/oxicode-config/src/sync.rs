@@ -385,24 +385,30 @@ mod tests {
 
     #[test]
     fn test_validate_warns_on_api_key() {
-        let mut settings = Settings::default();
-        settings.api_key = Some("sk-ant-secret".into());
+        let settings = Settings {
+            api_key: Some("sk-ant-secret".into()),
+            ..Settings::default()
+        };
         let warnings = validate_imported(&settings);
         assert!(warnings.iter().any(|w| w.contains("API key")));
     }
 
     #[test]
     fn test_validate_warns_on_invalid_mode() {
-        let mut settings = Settings::default();
-        settings.permission_mode = "invalid".into();
+        let settings = Settings {
+            permission_mode: "invalid".into(),
+            ..Settings::default()
+        };
         let warnings = validate_imported(&settings);
         assert!(warnings.iter().any(|w| w.contains("permission_mode")));
     }
 
     #[test]
     fn test_validate_warns_on_high_tokens() {
-        let mut settings = Settings::default();
-        settings.max_tokens = 999_999;
+        let settings = Settings {
+            max_tokens: 999_999,
+            ..Settings::default()
+        };
         let warnings = validate_imported(&settings);
         assert!(warnings.iter().any(|w| w.contains("unusually high")));
     }
@@ -419,8 +425,10 @@ mod tests {
             },
         );
 
-        let mut imported = Settings::default();
-        imported.model = "gpt-4o".into();
+        let imported = Settings {
+            model: "gpt-4o".into(),
+            ..Settings::default()
+        };
 
         let conflicts = check_mdm_conflicts(&imported, &managed);
         assert_eq!(conflicts.len(), 1);
@@ -430,9 +438,11 @@ mod tests {
     #[test]
     fn test_merge_skips_locked() {
         let mut target = Settings::default();
-        let mut imported = Settings::default();
-        imported.model = "custom-model".into();
-        imported.theme = "dracula".into();
+        let imported = Settings {
+            model: "custom-model".into(),
+            theme: "dracula".into(),
+            ..Settings::default()
+        };
 
         let mut managed = crate::mdm::ManagedSettings::default();
         managed.settings.insert(

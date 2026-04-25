@@ -687,9 +687,7 @@ fn test_all_default_bindings_present() {
         assert_eq!(
             reg.lookup(&ke),
             Some(expected_action),
-            "Missing default binding for {:?}+{:?}",
-            modifiers,
-            code,
+            "Missing default binding for {modifiers:?}+{code:?}",
         );
     }
 }
@@ -840,6 +838,6 @@ fn test_list_bindings_sorted() {
     // Labels should be sorted.
     let labels: Vec<&str> = list.iter().map(|(label, _)| label.as_str()).collect();
     let mut sorted_labels = labels.clone();
-    sorted_labels.sort();
+    sorted_labels.sort_unstable();
     assert_eq!(labels, sorted_labels, "bindings should be sorted by label");
 }

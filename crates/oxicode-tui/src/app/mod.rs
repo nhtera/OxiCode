@@ -130,6 +130,7 @@ pub(crate) struct PendingPermission {
 // ── App struct ────────────────────────────────────────────────────────────────
 
 /// Main TUI application.
+#[allow(clippy::struct_excessive_bools)]
 pub struct App {
     pub(super) state_rx: watch::Receiver<AppState>,
     pub(super) ui_tx: mpsc::Sender<UiEvent>,

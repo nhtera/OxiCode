@@ -187,7 +187,11 @@ mod tests {
     fn should_poll_true_after_interval_elapsed() {
         let mut poller = PolicyLimitsPoller::new(Some("https://example.com/policies".to_string()))
             .with_interval(Duration::from_nanos(1));
-        poller.last_fetch = Some(Instant::now() - Duration::from_millis(100));
+        poller.last_fetch = Some(
+            Instant::now()
+                .checked_sub(Duration::from_millis(100))
+                .unwrap(),
+        );
         assert!(poller.should_poll());
     }
 

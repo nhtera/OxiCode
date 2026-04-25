@@ -463,6 +463,7 @@ mod tests {
 
     #[test]
     fn test_archive_path_traversal_rejected() {
+        use std::io::Write as _;
         let tmp = tempfile::TempDir::new().unwrap();
         let archive_path = tmp.path().join("malicious.tar.gz");
 
@@ -486,7 +487,7 @@ mod tests {
         // gid at offset 116
         raw[116..123].copy_from_slice(b"0001000");
         // size at offset 124 (12 bytes octal)
-        let size_str = format!("{:011o}", data_len);
+        let size_str = format!("{data_len:011o}");
         raw[124..135].copy_from_slice(size_str.as_bytes());
         // mtime at offset 136
         raw[136..147].copy_from_slice(b"14633466453");
@@ -502,17 +503,16 @@ mod tests {
         let mut cksum: u32 = 0;
         for (i, &b) in raw.iter().enumerate() {
             if (148..156).contains(&i) {
-                cksum += b' ' as u32;
+                cksum += u32::from(b' ');
             } else {
-                cksum += b as u32;
+                cksum += u32::from(b);
             }
         }
-        let cksum_str = format!("{:06o}\0 ", cksum);
+        let cksum_str = format!("{cksum:06o}\0 ");
         raw[148..156].copy_from_slice(cksum_str.as_bytes());
 
         // Write raw header + data + padding to fill 512-byte block.
         let mut output = enc;
-        use std::io::Write as _;
         output.write_all(&raw).unwrap();
         output.write_all(data).unwrap();
         // Pad to 512-byte boundary.

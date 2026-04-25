@@ -121,7 +121,7 @@ impl SettingsScreen {
         }
         let providers = ProvidersTab::new(providers_list);
 
-        let perm_mode = DisplayPermMode::from_str(&settings.permission_mode);
+        let perm_mode = DisplayPermMode::from_setting(&settings.permission_mode);
         let allow_list = settings.always_allow_tools.join(", ");
         let deny_list = settings.always_deny_tools.join(", ");
         let permissions = PermissionsTab::new(perm_mode, allow_list, deny_list);
@@ -477,13 +477,13 @@ fn scan_toml_hooks(
                 let cmd = t.get("command").and_then(|v| v.as_str()).unwrap_or("");
                 let timeout = t
                     .get("timeout_secs")
-                    .and_then(|v| v.as_integer())
+                    .and_then(toml::Value::as_integer)
                     .unwrap_or(10);
                 entries.push(HookEntry {
                     source: clone_source(&source),
                     matcher: String::new(),
                     command_summary: format!("command: {cmd}"),
-                    timeout_secs: timeout as u64,
+                    timeout_secs: u64::try_from(timeout).unwrap_or(10),
                     source_path: path.to_string(),
                 });
             }
@@ -512,13 +512,13 @@ fn scan_toml_hooks(
                         };
                         let timeout = t
                             .get("timeout_secs")
-                            .and_then(|v| v.as_integer())
+                            .and_then(toml::Value::as_integer)
                             .unwrap_or(10);
                         entries.push(HookEntry {
                             source: clone_source(&source),
                             matcher,
                             command_summary: summary,
-                            timeout_secs: timeout as u64,
+                            timeout_secs: u64::try_from(timeout).unwrap_or(10),
                             source_path: path.to_string(),
                         });
                     }
@@ -719,8 +719,8 @@ mod tests {
     }
 
     fn render_to_buf(screen: &SettingsScreen, width: u16, height: u16) -> ratatui::buffer::Buffer {
-        let _backend = TestBackend::new(width, height);
-        let _terminal = Terminal::new(_backend).unwrap();
+        let backend = TestBackend::new(width, height);
+        let _terminal = Terminal::new(backend).unwrap();
         let mut buf =
             ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, width, height));
         let widget = SettingsScreenWidget::new(screen);

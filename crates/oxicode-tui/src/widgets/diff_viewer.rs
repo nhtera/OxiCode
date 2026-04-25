@@ -74,6 +74,12 @@ pub struct DiffViewerState {
     pub collapsed: Vec<bool>,
 }
 
+impl Default for DiffViewerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DiffViewerState {
     pub fn new() -> Self {
         Self {
@@ -211,6 +217,7 @@ fn load_git_diff(cwd: &str) -> String {
 // ── Unified diff parser ──────────────────────────────────────────────────────
 
 /// Parse unified diff text into structured `FileDiffStats`.
+#[allow(clippy::too_many_lines)]
 pub fn parse_unified_diff(input: &str) -> Vec<FileDiffStats> {
     let mut files: Vec<FileDiffStats> = Vec::new();
     let mut current_file: Option<FileDiffStats> = None;

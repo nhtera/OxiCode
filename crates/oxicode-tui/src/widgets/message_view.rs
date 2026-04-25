@@ -1309,7 +1309,7 @@ mod tests {
         let mut cache = MessageRenderCache::new();
 
         // First update: 1 message
-        cache.update(&[msg1.clone()], 80);
+        cache.update(std::slice::from_ref(&msg1), 80);
         assert_eq!(cache.entries.len(), 1);
 
         // Second update: 2 messages — only renders the new one
@@ -1334,7 +1334,7 @@ mod tests {
     #[test]
     fn test_scroll_offset_reported_correctly_for_long_markdown() {
         // Simulate realistic content similar to "what can you do?" response.
-        let long_md = r#"## What It Is
+        let long_md = r"## What It Is
 
 A **Rust-powered CLI agent** — a full-parity port of Claude Code — for software engineering tasks.
 
@@ -1361,7 +1361,7 @@ A **Rust-powered CLI agent** — a full-parity port of Claude Code — for softw
 • Agent system — background tasks, subprocess agents
 • Session persistence — JSONL conversation logs
 • Hook system — 26 lifecycle events
-• Vim mode — optional vim keybindings"#;
+• Vim mode — optional vim keybindings";
 
         let messages = vec![
             Message::user("What can you do?"),
