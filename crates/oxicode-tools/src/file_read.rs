@@ -68,7 +68,9 @@ impl Tool for FileReadTool {
             && check_workspace_boundary(&primary_path, &ctx.working_dir).is_none()
         {
             primary_path
-        } else if !std::path::Path::new(file_path).is_absolute() && !ctx.extra_working_dirs.is_empty() {
+        } else if !std::path::Path::new(file_path).is_absolute()
+            && !ctx.extra_working_dirs.is_empty()
+        {
             // Relative path that doesn't exist/resolve under the primary working_dir —
             // try each extra working directory in insertion order.
             let mut found: Option<std::path::PathBuf> = None;

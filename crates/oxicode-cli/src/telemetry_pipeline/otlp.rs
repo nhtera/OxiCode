@@ -13,11 +13,11 @@
 
 use std::collections::HashMap;
 
-use opentelemetry::KeyValue;
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
 use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
-use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, TracerProvider};
+use opentelemetry_sdk::Resource;
 use tonic::metadata::{Ascii, MetadataKey, MetadataMap, MetadataValue};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::Layer;
@@ -70,12 +70,11 @@ where
     };
 
     // Batch processor — async export via tokio runtime, never blocks the main loop.
-    let batch_processor =
-        opentelemetry_sdk::trace::BatchSpanProcessor::builder(
-            exporter,
-            opentelemetry_sdk::runtime::Tokio,
-        )
-        .build();
+    let batch_processor = opentelemetry_sdk::trace::BatchSpanProcessor::builder(
+        exporter,
+        opentelemetry_sdk::runtime::Tokio,
+    )
+    .build();
 
     let resource = Resource::new(vec![KeyValue::new("service.name", "oxicode-cli")]);
 

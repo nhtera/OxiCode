@@ -62,7 +62,8 @@ pub use search_overlay::{find_matches_in_cache, SearchBar, SearchOverlay};
 pub use session_browser::{SessionBrowser, SessionBrowserState, SessionEntry};
 pub use settings_screen::{SettingsScreen, SettingsScreenWidget, SettingsTab};
 pub use shortcuts_overlay::{
-    default_shortcut_entries, HelpOverlay, HelpOverlayState, ShortcutsPanel, ShortcutsState,
+    default_shortcut_entries, HelpOverlay, HelpOverlayState, HelpTab, ShortcutsPanel,
+    ShortcutsState,
 };
 pub use split_pane::SplitPane;
 pub use stats_dashboard::{StatsDashboard, StatsDashboardState};

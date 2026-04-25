@@ -17,10 +17,25 @@ impl SlashCommand for HelpCommand {
 
     fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandOutput {
         let registry = super::default_registry();
-        let mut output = String::from("Available commands:\n");
+        let mut output = format!(
+            "{} v{}\n\nOxiCode understands your codebase, makes edits with your permission, \
+             and executes commands — right from your terminal.\n\nShortcuts\n  \
+             ! for bash mode      double tap esc to clear input    ctrl + shift + _ to undo\n  \
+             / for commands       shift + tab to auto-accept       ctrl + z to suspend\n  \
+             @ for file paths     ctrl + o for verbose output      ctrl + v to paste images\n  \
+             & for background     ctrl + t to toggle tasks         alt + p to switch model\n  \
+             /btw for side question                                alt + o to toggle fast mode\n\n\
+             Available commands:\n",
+            oxicode_common::constants::APP_DISPLAY_NAME,
+            oxicode_common::constants::VERSION,
+        );
         for (name, desc) in registry.all_commands() {
-            let _ = writeln!(output, "  /{name:<16} {desc}");
+            let _ = writeln!(output, "  /{name:<18} {desc}");
         }
+        let _ = write!(
+            output,
+            "\nFor more help: https://github.com/nhtera/oxicode/docs\n",
+        );
         CommandOutput::Message(output)
     }
 }

@@ -147,11 +147,7 @@ impl SlashCommand for AddDirCommand {
         };
 
         // Set semantics: no-op if already present.
-        let already_present = ctx
-            .state_store
-            .current()
-            .working_dirs
-            .contains(&canonical);
+        let already_present = ctx.state_store.current().working_dirs.contains(&canonical);
 
         if already_present {
             return CommandOutput::Message(format!(

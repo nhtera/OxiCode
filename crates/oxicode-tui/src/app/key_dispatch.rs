@@ -47,14 +47,24 @@ impl super::App {
             return;
         }
 
-        // Help overlay captures keys when visible: filter input, scroll, close.
+        // Help overlay captures keys when visible: tab cycle, filter, scroll, close.
         if self.shortcuts.is_visible() {
-            match (key.modifiers, key.code) {
-                (_, KeyCode::Esc) => self.shortcuts.hide(),
-                (_, KeyCode::Up) => self.shortcuts.scroll_up(),
-                (_, KeyCode::Down) => self.shortcuts.scroll_down(100),
-                (_, KeyCode::Char(c)) => self.shortcuts.push_filter_char(c),
-                (_, KeyCode::Backspace) => self.shortcuts.pop_filter_char(),
+            let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+            match key.code {
+                KeyCode::Esc => self.shortcuts.hide(),
+                KeyCode::BackTab | KeyCode::Left => self.shortcuts.prev_tab(),
+                KeyCode::Tab => {
+                    if shift {
+                        self.shortcuts.prev_tab();
+                    } else {
+                        self.shortcuts.next_tab();
+                    }
+                }
+                KeyCode::Right => self.shortcuts.next_tab(),
+                KeyCode::Up => self.shortcuts.scroll_up(),
+                KeyCode::Down => self.shortcuts.scroll_down(100),
+                KeyCode::Char(c) => self.shortcuts.push_filter_char(c),
+                KeyCode::Backspace => self.shortcuts.pop_filter_char(),
                 _ => {}
             }
             return;

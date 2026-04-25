@@ -1,5 +1,9 @@
-//! Help overlay: two-column modal with keyboard shortcuts (left) and slash
-//! commands (right). Triggered by `?` or `F1`. Supports live search filtering.
+//! Help overlay: tabbed modal mirroring openclaude's `HelpV2` design.
+//!
+//! Three tabs: `general` (concept blurb + shortcuts grid), `commands` (built-in
+//! slash commands), `custom-commands` (user-defined commands, future). Triggered
+//! by `?`, `F1`, or `/help`. Tab/Shift+Tab cycles tabs; live search filters the
+//! current tab.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -8,22 +12,60 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use super::modal_helpers::{
-    begin_modal, category_header, render_modal_title, render_separator, render_vertical_divider,
-    shortcut_line, DIALOG_ACCENT, DIALOG_MUTED, DIALOG_TEXT, PANEL_BG,
+    begin_modal, render_modal_title, render_separator, DIALOG_ACCENT, DIALOG_MUTED, DIALOG_TEXT,
+    PANEL_BG,
 };
 
 /// Maximum number of visible rows in the body area before scrolling kicks in.
 const MAX_BODY_ROWS: u16 = 28;
+
+// ── Tab enum ─────────────────────────────────────────────────────────────────
+
+/// Top-level tabs in the help overlay (matches openclaude `HelpV2` layout).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelpTab {
+    General,
+    Commands,
+    CustomCommands,
+}
+
+impl HelpTab {
+    pub fn label(self) -> &'static str {
+        match self {
+            HelpTab::General => "general",
+            HelpTab::Commands => "commands",
+            HelpTab::CustomCommands => "custom-commands",
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            HelpTab::General => HelpTab::Commands,
+            HelpTab::Commands => HelpTab::CustomCommands,
+            HelpTab::CustomCommands => HelpTab::General,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            HelpTab::General => HelpTab::CustomCommands,
+            HelpTab::Commands => HelpTab::General,
+            HelpTab::CustomCommands => HelpTab::Commands,
+        }
+    }
+}
 
 // ── State ────────────────────────────────────────────────────────────────────
 
 /// Help overlay state tracked by `App`.
 pub struct HelpOverlayState {
     visible: bool,
-    /// Live search filter text.
+    /// Live search filter text (commands tab only).
     filter: String,
-    /// Scroll offset for right-column command list.
+    /// Scroll offset for command lists.
     scroll_offset: u16,
+    /// Currently selected tab.
+    active_tab: HelpTab,
 }
 
 impl HelpOverlayState {
@@ -32,6 +74,7 @@ impl HelpOverlayState {
             visible: false,
             filter: String::new(),
             scroll_offset: 0,
+            active_tab: HelpTab::General,
         }
     }
 
@@ -40,6 +83,7 @@ impl HelpOverlayState {
         if !self.visible {
             self.filter.clear();
             self.scroll_offset = 0;
+            self.active_tab = HelpTab::General;
         }
     }
 
@@ -51,6 +95,7 @@ impl HelpOverlayState {
         self.visible = false;
         self.filter.clear();
         self.scroll_offset = 0;
+        self.active_tab = HelpTab::General;
     }
 
     pub fn push_filter_char(&mut self, c: char) {
@@ -79,6 +124,28 @@ impl HelpOverlayState {
 
     pub fn scroll_offset(&self) -> u16 {
         self.scroll_offset
+    }
+
+    pub fn active_tab(&self) -> HelpTab {
+        self.active_tab
+    }
+
+    pub fn next_tab(&mut self) {
+        self.active_tab = self.active_tab.next();
+        self.scroll_offset = 0;
+        self.filter.clear();
+    }
+
+    pub fn prev_tab(&mut self) {
+        self.active_tab = self.active_tab.prev();
+        self.scroll_offset = 0;
+        self.filter.clear();
+    }
+
+    pub fn set_tab(&mut self, tab: HelpTab) {
+        self.active_tab = tab;
+        self.scroll_offset = 0;
+        self.filter.clear();
     }
 }
 
@@ -207,15 +274,14 @@ pub fn default_shortcut_entries() -> Vec<ShortcutEntry> {
 
 // ── Widget ───────────────────────────────────────────────────────────────────
 
-/// Help overlay widget — two-column modal rendered on top of content.
-///
-/// Left column: keyboard shortcuts grouped by category.
-/// Right column: slash commands filtered by search query.
+/// Help overlay widget — tabbed modal rendered on top of content.
 pub struct HelpOverlay<'a> {
     state: &'a HelpOverlayState,
     shortcuts: &'a [ShortcutEntry],
     /// Slash command entries: (name, description, category).
     commands: &'a [(String, String, String)],
+    /// App version string shown in the title bar.
+    version: &'a str,
 }
 
 impl<'a> HelpOverlay<'a> {
@@ -228,7 +294,13 @@ impl<'a> HelpOverlay<'a> {
             state,
             shortcuts,
             commands,
+            version: oxicode_common::constants::VERSION,
         }
+    }
+
+    pub fn with_version(mut self, version: &'a str) -> Self {
+        self.version = version;
+        self
     }
 }
 
@@ -242,37 +314,201 @@ impl Widget for ShortcutsPanel {
     }
 }
 
-/// Build left-column lines: keyboard shortcuts grouped by category, filtered.
-fn build_shortcut_lines(shortcuts: &[ShortcutEntry], filter: &str) -> Vec<Line<'static>> {
-    let filter_lc = filter.to_lowercase();
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    let mut current_category = "";
+// ── Tab strip ────────────────────────────────────────────────────────────────
 
-    for entry in shortcuts {
-        if !filter_lc.is_empty()
-            && !entry.key.to_lowercase().contains(&filter_lc)
-            && !entry.description.to_lowercase().contains(&filter_lc)
-        {
-            continue;
-        }
-        if entry.category.as_str() != current_category {
-            if !lines.is_empty() {
-                lines.push(Line::from(""));
-            }
-            lines.push(category_header(&entry.category));
-            current_category = entry.category.as_str();
-        }
-        lines.push(shortcut_line(&entry.key, &entry.description));
+fn render_tab_strip(buf: &mut Buffer, area: Rect, active: HelpTab) {
+    if area.height == 0 || area.width == 0 {
+        return;
     }
-    lines
+    let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+    for tab in [HelpTab::General, HelpTab::Commands, HelpTab::CustomCommands] {
+        let label = format!(" {} ", tab.label());
+        if tab == active {
+            spans.push(Span::styled(
+                label,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(DIALOG_ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::styled(
+                label,
+                Style::default().fg(DIALOG_MUTED).bg(PANEL_BG),
+            ));
+        }
+        spans.push(Span::raw(" "));
+    }
+    buf.set_line(area.x, area.y, &Line::from(spans), area.width);
 }
 
-/// Build right-column lines: slash commands grouped by category, filtered.
-/// Returns (lines, filtered_count).
-fn build_command_lines(
+// ── Body builders ────────────────────────────────────────────────────────────
+
+/// Convert a slice of strings into styled text lines for the shortcuts grid.
+fn make_lines(items: &[&str]) -> Vec<Line<'static>> {
+    items
+        .iter()
+        .map(|s| Line::from(Span::styled((*s).to_string(), Style::default().fg(DIALOG_TEXT))))
+        .collect()
+}
+
+/// Three columns of shortcuts shown on the general tab — mirrors openclaude's
+/// `PromptInputHelpMenu` layout (input prefixes, edit shortcuts, app shortcuts).
+const GENERAL_COL_PREFIXES: &[&str] = &[
+    "! for bash mode",
+    "/ for commands",
+    "@ for file paths",
+    "& for background",
+    "/btw for side question",
+];
+const GENERAL_COL_EDITING: &[&str] = &[
+    "double tap esc to clear input",
+    "shift + tab to auto-accept edits",
+    "ctrl + o for verbose output",
+    "ctrl + t to toggle tasks",
+    "shift + \u{23CE} for newline",
+];
+const GENERAL_COL_APP: &[&str] = &[
+    "ctrl + shift + _ to undo",
+    "ctrl + z to suspend",
+    "ctrl + v to paste images",
+    "alt + p to switch model",
+    "alt + o to toggle fast mode",
+    "ctrl + s to stash prompt",
+    "ctrl + g to edit in $EDITOR",
+    "/keybindings to customize",
+];
+
+/// General tab: blurb + 3-column shortcuts grid (matches openclaude PromptInputHelpMenu).
+fn render_general_tab(buf: &mut Buffer, area: Rect) {
+    if area.height == 0 || area.width < 10 {
+        return;
+    }
+
+    let blurb = "OxiCode understands your codebase, makes edits with your permission, and executes commands — right from your terminal.";
+    let blurb_height = ((blurb.len() as u16 / area.width.max(1)) + 1).min(3);
+    let blurb_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: blurb_height,
+    };
+    Paragraph::new(Line::from(Span::styled(
+        blurb,
+        Style::default().fg(DIALOG_TEXT),
+    )))
+    .wrap(Wrap { trim: true })
+    .style(Style::default().bg(PANEL_BG))
+    .render(blurb_area, buf);
+
+    let header_y = area.y + blurb_height + 1;
+    if header_y >= area.y + area.height {
+        return;
+    }
+    let header_area = Rect {
+        x: area.x,
+        y: header_y,
+        width: area.width,
+        height: 1,
+    };
+    buf.set_line(
+        header_area.x,
+        header_area.y,
+        &Line::from(Span::styled(
+            " Shortcuts",
+            Style::default()
+                .fg(DIALOG_ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )),
+        header_area.width,
+    );
+
+    let grid_y = header_y + 1;
+    let avail_h = area.height.saturating_sub(grid_y - area.y);
+    if avail_h == 0 {
+        return;
+    }
+    let grid_area = Rect {
+        x: area.x,
+        y: grid_y,
+        width: area.width,
+        height: avail_h,
+    };
+
+    let layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(28),
+            Constraint::Length(36),
+            Constraint::Min(20),
+        ])
+        .split(grid_area);
+
+    let columns = [
+        (layout[0], GENERAL_COL_PREFIXES),
+        (layout[1], GENERAL_COL_EDITING),
+        (layout[2], GENERAL_COL_APP),
+    ];
+    for (rect, items) in columns {
+        Paragraph::new(make_lines(items))
+            .style(Style::default().bg(PANEL_BG))
+            .render(rect, buf);
+    }
+}
+
+/// Commands tab: filtered list of slash commands with descriptions.
+/// Returns the visible row count for the footer.
+fn render_commands_tab(
+    buf: &mut Buffer,
+    area: Rect,
     commands: &[(String, String, String)],
     filter: &str,
-) -> (Vec<Line<'static>>, usize) {
+    scroll_offset: u16,
+    title: &str,
+    empty_msg: &str,
+) -> usize {
+    if area.height == 0 || area.width < 10 {
+        return 0;
+    }
+
+    // Title row.
+    let title_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: 1,
+    };
+    buf.set_line(
+        title_area.x,
+        title_area.y,
+        &Line::from(Span::styled(
+            format!(" {title}"),
+            Style::default()
+                .fg(DIALOG_ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )),
+        title_area.width,
+    );
+
+    // Filter status line (only if filter is set).
+    let next_y = if filter.is_empty() {
+        area.y + 1
+    } else {
+        let filter_area = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: 1,
+        };
+        let line = Line::from(vec![
+            Span::styled(" \u{1F50D} ", Style::default().fg(DIALOG_ACCENT)),
+            Span::styled(filter.to_string(), Style::default().fg(DIALOG_TEXT)),
+            Span::styled("\u{2588}", Style::default().fg(Color::White)),
+        ]);
+        buf.set_line(filter_area.x, filter_area.y, &line, filter_area.width);
+        area.y + 2
+    };
+
     let filter_lc = filter.to_lowercase();
     let filtered: Vec<&(String, String, String)> = commands
         .iter()
@@ -284,42 +520,56 @@ fn build_command_lines(
         .collect();
 
     let count = filtered.len();
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    lines.push(Line::from(Span::styled(
-        " Slash Commands",
-        Style::default()
-            .fg(DIALOG_ACCENT)
-            .add_modifier(Modifier::BOLD),
-    )));
-    lines.push(Line::from(""));
-
-    let mut current_cat = "";
-    for (name, desc, cat) in &filtered {
-        if cat.as_str() != current_cat {
-            if lines.len() > 2 {
-                lines.push(Line::from(""));
-            }
-            lines.push(category_header(cat));
-            current_cat = cat.as_str();
-        }
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!(" /{name:<16}"),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(desc.clone(), Style::default().fg(DIALOG_TEXT)),
-        ]));
+    if count == 0 {
+        let empty_area = Rect {
+            x: area.x,
+            y: next_y,
+            width: area.width,
+            height: 1,
+        };
+        buf.set_line(
+            empty_area.x,
+            empty_area.y,
+            &Line::from(Span::styled(
+                format!(" {empty_msg}"),
+                Style::default().fg(DIALOG_MUTED),
+            )),
+            empty_area.width,
+        );
+        return 0;
     }
 
-    if filtered.is_empty() {
-        lines.push(Line::from(Span::styled(
-            " No matching commands",
-            Style::default().fg(DIALOG_MUTED),
-        )));
-    }
-    (lines, count)
+    // Render command list as a scrollable Paragraph (one line per command).
+    let mut sorted: Vec<&(String, String, String)> = filtered;
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let lines: Vec<Line<'static>> = sorted
+        .iter()
+        .map(|(name, desc, _)| {
+            Line::from(vec![
+                Span::styled(
+                    format!(" /{name:<18}"),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(desc.clone(), Style::default().fg(DIALOG_TEXT)),
+            ])
+        })
+        .collect();
+
+    let list_area = Rect {
+        x: area.x,
+        y: next_y,
+        width: area.width,
+        height: area.height.saturating_sub(next_y - area.y),
+    };
+    Paragraph::new(lines)
+        .scroll((scroll_offset, 0))
+        .wrap(Wrap { trim: false })
+        .style(Style::default().bg(PANEL_BG))
+        .render(list_area, buf);
+
+    count
 }
 
 impl Widget for HelpOverlay<'_> {
@@ -329,18 +579,14 @@ impl Widget for HelpOverlay<'_> {
         }
 
         // Modal dimensions — scale with terminal size.
-        let dialog_w = 90.min(area.width.saturating_sub(4));
+        let dialog_w = 100.min(area.width.saturating_sub(4));
         let dialog_h = MAX_BODY_ROWS.min(area.height.saturating_sub(4));
-        // header: title(1) + separator(1) + search(1) = 3, footer: hint(1) = 1
+        // header: title(1) + separator(1) + tabs(1) = 3, footer: hint(1) = 1
         let layout = begin_modal(buf, area, dialog_w, dialog_h, 3, 1);
 
         // ── Header ───────────────────────────────────────────────────────────
-        render_modal_title(
-            buf,
-            layout.header_area,
-            "Help — Shortcuts & Commands",
-            "esc",
-        );
+        let title = format!("OxiCode v{}", self.version);
+        render_modal_title(buf, layout.header_area, &title, "esc");
 
         if layout.header_area.height >= 2 {
             let sep_area = Rect {
@@ -352,77 +598,68 @@ impl Widget for HelpOverlay<'_> {
             render_separator(buf, sep_area);
         }
 
-        // Search filter line.
+        // Tab strip (third header row).
         if layout.header_area.height >= 3 {
-            let search_area = Rect {
+            let tab_area = Rect {
                 x: layout.header_area.x,
                 y: layout.header_area.y + 2,
                 width: layout.header_area.width,
                 height: 1,
             };
-            let search_line = if self.state.filter.is_empty() {
-                Line::from(vec![
-                    Span::styled(" \u{1F50D} ", Style::default().fg(DIALOG_MUTED)),
-                    Span::styled("Type to filter...", Style::default().fg(DIALOG_MUTED)),
-                ])
-            } else {
-                Line::from(vec![
-                    Span::styled(" \u{1F50D} ", Style::default().fg(DIALOG_ACCENT)),
-                    Span::styled(self.state.filter.clone(), Style::default().fg(DIALOG_TEXT)),
-                    Span::styled("\u{2588}", Style::default().fg(Color::White)),
-                ])
-            };
-            buf.set_line(
-                search_area.x,
-                search_area.y,
-                &search_line,
-                search_area.width,
-            );
+            render_tab_strip(buf, tab_area, self.state.active_tab);
         }
 
-        // ── Body: two-column layout ──────────────────────────────────────────
+        // ── Body: dispatch by active tab ─────────────────────────────────────
         let body = layout.body_area;
         if body.height == 0 || body.width < 10 {
             return;
         }
 
-        let col_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(42),
-                Constraint::Length(1),
-                Constraint::Min(1),
-            ])
-            .split(body);
+        // Padded inner body for breathing room.
+        let inner = Rect {
+            x: body.x + 1,
+            y: body.y,
+            width: body.width.saturating_sub(2),
+            height: body.height,
+        };
 
-        // Left: shortcuts, Center: divider, Right: commands.
-        let left_lines = build_shortcut_lines(self.shortcuts, &self.state.filter);
-        Paragraph::new(left_lines)
-            .wrap(Wrap { trim: false })
-            .style(Style::default().bg(PANEL_BG))
-            .render(col_chunks[0], buf);
-
-        render_vertical_divider(buf, col_chunks[1]);
-
-        let (right_lines, cmd_count) = build_command_lines(self.commands, &self.state.filter);
-        Paragraph::new(right_lines)
-            .scroll((self.state.scroll_offset, 0))
-            .wrap(Wrap { trim: false })
-            .style(Style::default().bg(PANEL_BG))
-            .render(col_chunks[2], buf);
+        let visible_count = match self.state.active_tab {
+            HelpTab::General => {
+                render_general_tab(buf, inner);
+                self.shortcuts.len()
+            }
+            HelpTab::Commands => render_commands_tab(
+                buf,
+                inner,
+                self.commands,
+                &self.state.filter,
+                self.state.scroll_offset,
+                "Browse default commands:",
+                "No commands found",
+            ),
+            HelpTab::CustomCommands => render_commands_tab(
+                buf,
+                inner,
+                &[],
+                &self.state.filter,
+                self.state.scroll_offset,
+                "Browse custom commands:",
+                "No custom commands found",
+            ),
+        };
 
         // ── Footer ───────────────────────────────────────────────────────────
         let footer = layout.footer_area;
         if footer.height > 0 {
             let footer_line = Line::from(vec![
                 Span::styled(
-                    " Esc ",
+                    " tab ",
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" close  ", Style::default().fg(DIALOG_MUTED)),
+                Span::styled(" switch tab  ", Style::default().fg(DIALOG_MUTED)),
                 Span::styled(
                     " ↑↓ ",
                     Style::default()
@@ -432,7 +669,15 @@ impl Widget for HelpOverlay<'_> {
                 ),
                 Span::styled(" scroll  ", Style::default().fg(DIALOG_MUTED)),
                 Span::styled(
-                    format!(" {cmd_count} commands "),
+                    " esc ",
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" close  ", Style::default().fg(DIALOG_MUTED)),
+                Span::styled(
+                    format!(" {visible_count} items "),
                     Style::default().fg(DIALOG_MUTED),
                 ),
             ]);
@@ -456,6 +701,7 @@ mod tests {
         s.toggle(); // close → resets filter
         assert!(!s.is_visible());
         assert!(s.filter().is_empty());
+        assert_eq!(s.active_tab(), HelpTab::General);
     }
 
     #[test]
@@ -484,41 +730,83 @@ mod tests {
     }
 
     #[test]
+    fn help_state_tab_cycle() {
+        let mut s = HelpOverlayState::new();
+        assert_eq!(s.active_tab(), HelpTab::General);
+        s.next_tab();
+        assert_eq!(s.active_tab(), HelpTab::Commands);
+        s.next_tab();
+        assert_eq!(s.active_tab(), HelpTab::CustomCommands);
+        s.next_tab();
+        assert_eq!(s.active_tab(), HelpTab::General); // wraps
+        s.prev_tab();
+        assert_eq!(s.active_tab(), HelpTab::CustomCommands);
+    }
+
+    #[test]
+    fn help_state_tab_change_resets_filter_and_scroll() {
+        let mut s = HelpOverlayState::new();
+        s.set_tab(HelpTab::Commands);
+        s.push_filter_char('m');
+        s.scroll_down(5);
+        assert_eq!(s.filter(), "m");
+        assert_eq!(s.scroll_offset(), 1);
+        s.next_tab();
+        assert!(s.filter().is_empty());
+        assert_eq!(s.scroll_offset(), 0);
+    }
+
+    #[test]
     fn default_shortcut_entries_non_empty() {
         let entries = default_shortcut_entries();
         assert!(entries.len() >= 10, "should have at least 10 shortcuts");
     }
 
     #[test]
-    fn help_overlay_renders_without_panic() {
-        let state = HelpOverlayState {
-            visible: true,
-            filter: String::new(),
-            scroll_offset: 0,
-        };
+    fn help_overlay_renders_general_tab_without_panic() {
+        let mut state = HelpOverlayState::new();
+        state.toggle();
         let shortcuts = default_shortcut_entries();
         let commands = vec![
-            (
-                "clear".into(),
-                "Clear conversation".into(),
-                "Session".into(),
-            ),
+            ("clear".into(), "Clear conversation".into(), "Session".into()),
             ("help".into(), "Show help".into(), "Session".into()),
+        ];
+        let area = Rect::new(0, 0, 100, 40);
+        let mut buf = Buffer::empty(area);
+        HelpOverlay::new(&state, &shortcuts, &commands).render(area, &mut buf);
+    }
+
+    #[test]
+    fn help_overlay_renders_commands_tab_without_panic() {
+        let mut state = HelpOverlayState::new();
+        state.toggle();
+        state.set_tab(HelpTab::Commands);
+        let shortcuts = default_shortcut_entries();
+        let commands = vec![
+            ("clear".into(), "Clear conversation".into(), "Session".into()),
             ("model".into(), "Switch model".into(), "Model".into()),
         ];
         let area = Rect::new(0, 0, 100, 40);
         let mut buf = Buffer::empty(area);
         HelpOverlay::new(&state, &shortcuts, &commands).render(area, &mut buf);
-        // Should not panic — basic smoke test.
+    }
+
+    #[test]
+    fn help_overlay_renders_custom_tab_with_empty_state() {
+        let mut state = HelpOverlayState::new();
+        state.toggle();
+        state.set_tab(HelpTab::CustomCommands);
+        let shortcuts = default_shortcut_entries();
+        let commands: Vec<(String, String, String)> = vec![];
+        let area = Rect::new(0, 0, 100, 40);
+        let mut buf = Buffer::empty(area);
+        HelpOverlay::new(&state, &shortcuts, &commands).render(area, &mut buf);
     }
 
     #[test]
     fn help_overlay_skips_small_terminal() {
-        let state = HelpOverlayState {
-            visible: true,
-            filter: String::new(),
-            scroll_offset: 0,
-        };
+        let mut state = HelpOverlayState::new();
+        state.toggle();
         let shortcuts = default_shortcut_entries();
         let commands = vec![];
         let area = Rect::new(0, 0, 20, 5); // too small

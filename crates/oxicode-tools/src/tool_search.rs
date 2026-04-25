@@ -70,7 +70,8 @@ pub fn search_tools(registry: &ToolRegistry, query: &str, max: usize) -> Vec<ser
                 100
             } else if name_lc.contains(q.as_str()) {
                 50
-            } else if desc_lc.contains(q.as_str()) || schema_desc_contains(&schema.input_schema, &q) {
+            } else if desc_lc.contains(q.as_str()) || schema_desc_contains(&schema.input_schema, &q)
+            {
                 25
             } else if levenshtein(cap_str(&name_lc, 200), cap_str(&q, 200)) <= 3 {
                 10
@@ -89,11 +90,13 @@ pub fn search_tools(registry: &ToolRegistry, query: &str, max: usize) -> Vec<ser
         .collect();
 
     // Sort descending by score, then alphabetically by name for determinism.
-    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| {
-        let na = a.1["name"].as_str().unwrap_or("");
-        let nb = b.1["name"].as_str().unwrap_or("");
-        na.cmp(nb)
-    }));
+    scored.sort_by(|a, b| {
+        b.0.cmp(&a.0).then_with(|| {
+            let na = a.1["name"].as_str().unwrap_or("");
+            let nb = b.1["name"].as_str().unwrap_or("");
+            na.cmp(nb)
+        })
+    });
 
     scored.into_iter().take(max).map(|(_, v)| v).collect()
 }
@@ -216,7 +219,11 @@ mod tests {
 
     dummy_tool!(FileTool, "file_edit", "Edit a file on disk");
     dummy_tool!(BashTool, "bash", "Execute shell commands");
-    dummy_tool!(NotebookEditTool, "notebook_edit", "Edit Jupyter notebook cells");
+    dummy_tool!(
+        NotebookEditTool,
+        "notebook_edit",
+        "Edit Jupyter notebook cells"
+    );
 
     // ---- levenshtein unit tests ----
 
@@ -266,7 +273,10 @@ mod tests {
         let results = search_tools(&reg, "edit", 5);
         // "file_edit" and "notebook_edit" contain "edit" in name → score 50.
         assert!(results.len() >= 2);
-        let names: Vec<&str> = results.iter().map(|r| r["name"].as_str().unwrap()).collect();
+        let names: Vec<&str> = results
+            .iter()
+            .map(|r| r["name"].as_str().unwrap())
+            .collect();
         assert!(names.contains(&"file_edit"));
         assert!(names.contains(&"notebook_edit"));
         // All results should have score ≥ 25.
@@ -281,8 +291,14 @@ mod tests {
         // "bsh" is Levenshtein 1 from "bash"
         let results = search_tools(&reg, "bsh", 5);
         assert!(!results.is_empty());
-        let names: Vec<&str> = results.iter().map(|r| r["name"].as_str().unwrap()).collect();
-        assert!(names.contains(&"bash"), "fuzzy match should find 'bash' for query 'bsh'");
+        let names: Vec<&str> = results
+            .iter()
+            .map(|r| r["name"].as_str().unwrap())
+            .collect();
+        assert!(
+            names.contains(&"bash"),
+            "fuzzy match should find 'bash' for query 'bsh'"
+        );
     }
 
     #[test]

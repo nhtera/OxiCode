@@ -43,6 +43,15 @@ impl super::App {
                     self.vim.set_enabled(new_state);
                     return;
                 }
+                // Handle /help inline — open tabbed help overlay (don't pollute chat).
+                if trimmed == "help" {
+                    if !self.shortcuts.is_visible() {
+                        self.shortcuts.toggle();
+                    }
+                    self.shortcuts
+                        .set_tab(crate::widgets::shortcuts_overlay::HelpTab::General);
+                    return;
+                }
                 // Handle /sessions (and /session) inline — open browser overlay.
                 // `/resume` and `/continue` with no args share the same UX.
                 if matches!(trimmed, "sessions" | "session" | "resume" | "continue") {

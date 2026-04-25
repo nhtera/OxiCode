@@ -113,11 +113,7 @@ impl Tool for GrepTool {
                 }
                 1 => {} // no matches in this root — continue
                 _ => {
-                    last_error = Some(if stderr.is_empty() {
-                        stdout
-                    } else {
-                        stderr
-                    });
+                    last_error = Some(if stderr.is_empty() { stdout } else { stderr });
                 }
             }
         }

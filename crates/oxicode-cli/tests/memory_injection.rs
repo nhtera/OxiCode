@@ -100,8 +100,14 @@ fn additional_md_files_appear_in_index() {
     .unwrap();
 
     let result = assemble_memory(&mem_dir).expect("should have content");
-    assert!(result.contains("Project context."), "entrypoint should be present");
-    assert!(result.contains("Use async Rust"), "additional file index entry should appear");
+    assert!(
+        result.contains("Project context."),
+        "entrypoint should be present"
+    );
+    assert!(
+        result.contains("Use async Rust"),
+        "additional file index entry should appear"
+    );
 }
 
 #[test]
@@ -133,7 +139,10 @@ fn malformed_frontmatter_does_not_panic() {
 
     // Must not panic.
     let result = assemble_memory(&mem_dir);
-    assert!(result.is_some(), "should still return entrypoint despite broken file");
+    assert!(
+        result.is_some(),
+        "should still return entrypoint despite broken file"
+    );
 }
 
 #[test]
@@ -141,5 +150,8 @@ fn project_memory_dir_key_is_deterministic() {
     let root = std::path::Path::new("/home/user/my-project");
     let dir1 = memdir::project_memory_dir(root);
     let dir2 = memdir::project_memory_dir(root);
-    assert_eq!(dir1, dir2, "memory dir should be deterministic for the same root");
+    assert_eq!(
+        dir1, dir2,
+        "memory dir should be deterministic for the same root"
+    );
 }

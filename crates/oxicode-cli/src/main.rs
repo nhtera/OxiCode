@@ -724,8 +724,7 @@ async fn main() -> Result<()> {
                 "Bridge server starting (WebSocket + JWT)"
             );
 
-            let result =
-                remote::bridge::run_bridge(bridge_config, pool, engine).await;
+            let result = remote::bridge::run_bridge(bridge_config, pool, engine).await;
             mcp_ref.shutdown_all().await;
             return result;
         }

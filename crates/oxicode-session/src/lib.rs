@@ -11,9 +11,9 @@ pub mod prompt_history;
 #[cfg(feature = "team_memory_sync")]
 pub mod team_memory_sync;
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use oxicode_common::constants::{CONFIG_DIR_NAME, SESSIONS_DIR_NAME};

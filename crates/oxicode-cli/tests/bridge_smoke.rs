@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use jsonwebtoken::{EncodingKey, Header, encode as jwt_encode};
+use jsonwebtoken::{encode as jwt_encode, EncodingKey, Header};
 use oxicode_api::MockLlmProvider;
 use oxicode_core::QueryEngine;
 use oxicode_permissions::pipeline::{PermissionMode, PermissionPipeline};
@@ -29,8 +29,8 @@ use serde::Serialize;
 use tokio::sync::Mutex as TokioMutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
-use oxicode_cli::remote::{BridgeConfig, session_pool::SessionPool};
 use oxicode_cli::bridge::{load_jwt_secret, run_bridge};
+use oxicode_cli::remote::{session_pool::SessionPool, BridgeConfig};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -54,7 +54,10 @@ fn mint_token(sub: &str, exp_offset_secs: i64) -> String {
     let exp = (chrono::Utc::now().timestamp() + exp_offset_secs) as u64;
     jwt_encode(
         &Header::default(),
-        &TestClaims { sub: sub.to_string(), exp },
+        &TestClaims {
+            sub: sub.to_string(),
+            exp,
+        },
         &EncodingKey::from_secret(TEST_SECRET),
     )
     .expect("mint_token: encode failed")
@@ -128,20 +131,16 @@ async fn collect_until<F>(
 where
     F: Fn(&serde_json::Value) -> bool,
 {
-    let deadline =
-        tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
     let mut collected = Vec::new();
     loop {
-        let remaining =
-            deadline.saturating_duration_since(tokio::time::Instant::now());
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             break;
         }
         match tokio::time::timeout(remaining, stream.next()).await {
             Ok(Some(Ok(WsMessage::Text(raw)))) => {
-                if let Ok(v) =
-                    serde_json::from_str::<serde_json::Value>(raw.as_str())
-                {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.as_str()) {
                     let done = pred(&v);
                     collected.push(v);
                     if done {
@@ -190,7 +189,10 @@ fn test_load_jwt_secret_missing_env_var() {
     }
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().to_string().contains("OXICODE_BRIDGE_JWT_SECRET"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("OXICODE_BRIDGE_JWT_SECRET"),
         "error should name the missing env var"
     );
 }
@@ -257,7 +259,10 @@ async fn test_valid_jwt_receives_session_start() {
         events.iter().any(|v| v["type"] == "session_start"),
         "Expected session_start, got: {events:?}"
     );
-    let start = events.iter().find(|v| v["type"] == "session_start").unwrap();
+    let start = events
+        .iter()
+        .find(|v| v["type"] == "session_start")
+        .unwrap();
     assert!(!start["session_id"].as_str().unwrap_or("").is_empty());
     assert_eq!(start["protocol"], "oxicode.bridge.v1");
 }
@@ -290,8 +295,7 @@ async fn test_valid_jwt_full_turn_text_delta() {
         .await
         .unwrap();
 
-    let events =
-        collect_until(&mut stream, |v| v["type"] == "text_delta", 10).await;
+    let events = collect_until(&mut stream, |v| v["type"] == "text_delta", 10).await;
 
     server.abort();
     assert!(
@@ -319,11 +323,12 @@ async fn test_invalid_jwt_close_4401() {
         .await
         .unwrap();
 
-    let events =
-        collect_until(&mut stream, |v| v["type"] == "__close__", 5).await;
+    let events = collect_until(&mut stream, |v| v["type"] == "__close__", 5).await;
 
     server.abort();
-    let close = events.iter().find(|v| v["type"] == "__close__")
+    let close = events
+        .iter()
+        .find(|v| v["type"] == "__close__")
         .expect("Expected WS close frame");
     assert_eq!(
         close["code"].as_u64().unwrap_or(0),
@@ -352,11 +357,12 @@ async fn test_expired_jwt_close_4401() {
         .await
         .unwrap();
 
-    let events =
-        collect_until(&mut stream, |v| v["type"] == "__close__", 5).await;
+    let events = collect_until(&mut stream, |v| v["type"] == "__close__", 5).await;
 
     server.abort();
-    let close = events.iter().find(|v| v["type"] == "__close__")
+    let close = events
+        .iter()
+        .find(|v| v["type"] == "__close__")
         .expect("Expected WS close frame");
     assert_eq!(
         close["code"].as_u64().unwrap_or(0),
@@ -385,17 +391,21 @@ async fn test_wrong_signing_key_close_4401() {
     let exp = (chrono::Utc::now().timestamp() + 3600) as u64;
     let token = jwt_encode(
         &Header::default(),
-        &TestClaims { sub: "mallory".to_string(), exp },
+        &TestClaims {
+            sub: "mallory".to_string(),
+            exp,
+        },
         &EncodingKey::from_secret(wrong_secret),
     )
     .unwrap();
     sink.send(WsMessage::Text(token.into())).await.unwrap();
 
-    let events =
-        collect_until(&mut stream, |v| v["type"] == "__close__", 5).await;
+    let events = collect_until(&mut stream, |v| v["type"] == "__close__", 5).await;
 
     server.abort();
-    let close = events.iter().find(|v| v["type"] == "__close__")
+    let close = events
+        .iter()
+        .find(|v| v["type"] == "__close__")
         .expect("Expected WS close frame");
     assert_eq!(
         close["code"].as_u64().unwrap_or(0),

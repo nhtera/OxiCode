@@ -528,7 +528,10 @@ mod tests {
         std::env::set_var(ENV_AUTH_HEADER, "x-api-key");
         let p = AnthropicProvider::with_token_auto_detect("sk-otherproxy-abc123");
         std::env::remove_var(ENV_AUTH_HEADER);
-        assert!(!p.use_bearer_auth, "OXICODE_AUTH_HEADER=x-api-key must override Bearer detection");
+        assert!(
+            !p.use_bearer_auth,
+            "OXICODE_AUTH_HEADER=x-api-key must override Bearer detection"
+        );
     }
 
     #[test]
@@ -537,6 +540,9 @@ mod tests {
         std::env::set_var(ENV_AUTH_HEADER, "bearer");
         let p = AnthropicProvider::with_token_auto_detect("sk-ant-genuine");
         std::env::remove_var(ENV_AUTH_HEADER);
-        assert!(p.use_bearer_auth, "OXICODE_AUTH_HEADER=bearer must override x-api-key detection");
+        assert!(
+            p.use_bearer_auth,
+            "OXICODE_AUTH_HEADER=bearer must override x-api-key detection"
+        );
     }
 }

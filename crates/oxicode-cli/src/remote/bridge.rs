@@ -21,13 +21,13 @@ use std::time::Duration;
 use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
-use tokio_tungstenite::{WebSocketStream, accept_hdr_async};
+use tokio_tungstenite::{accept_hdr_async, WebSocketStream};
 
-use super::jwt::{JwtConfig, verify_token};
-use super::protocol::{BRIDGE_SUBPROTOCOL, InboundMessage, OutboundMessage, decode, encode};
+use super::jwt::{verify_token, JwtConfig};
+use super::protocol::{decode, encode, InboundMessage, OutboundMessage, BRIDGE_SUBPROTOCOL};
 use super::session_pool::{SessionMetadata, SessionPool};
 use crate::remote::BridgeConfig;
 use oxicode_common::PermissionResponse;
@@ -35,11 +35,9 @@ use oxicode_core::{Conversation, QueryEngine, TurnEvent};
 
 // ─── Type aliases ─────────────────────────────────────────────────────────────
 
-type WsSink =
-    futures::stream::SplitSink<WebSocketStream<TcpStream>, WsMessage>;
+type WsSink = futures::stream::SplitSink<WebSocketStream<TcpStream>, WsMessage>;
 type WsStream = futures::stream::SplitStream<WebSocketStream<TcpStream>>;
-type PendingPerms =
-    Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionResponse>>>>;
+type PendingPerms = Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionResponse>>>>;
 
 // ─── Commands forwarded from WS reader to engine loop ─────────────────────────
 
@@ -95,8 +93,7 @@ pub async fn run_bridge(
         }
 
         // Poll with a short timeout so the shutdown flag is checked regularly.
-        let tcp_result =
-            tokio::time::timeout(Duration::from_millis(500), listener.accept()).await;
+        let tcp_result = tokio::time::timeout(Duration::from_millis(500), listener.accept()).await;
 
         let (tcp_stream, peer) = match tcp_result {
             Err(_elapsed) => continue,
@@ -223,8 +220,15 @@ async fn connection_task(
     .await;
 
     // ── 5. Run session loop ───────────────────────────────────────────────────
-    session_loop(stream, sink.clone(), session_id.clone(), engine, pool.clone(), idle_timeout_secs)
-        .await;
+    session_loop(
+        stream,
+        sink.clone(),
+        session_id.clone(),
+        engine,
+        pool.clone(),
+        idle_timeout_secs,
+    )
+    .await;
 
     // ── 6. Release from pool + send session_end ───────────────────────────────
     pool.lock().await.remove(&session_id);
@@ -291,17 +295,13 @@ async fn jwt_auth(
 
 /// Send WS close frame with library close-code 4401 (Unauthorized).
 async fn send_close_unauthorized(sink: Arc<Mutex<WsSink>>) {
-    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
     use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
     let frame = CloseFrame {
         code: CloseCode::Library(4401),
         reason: "Unauthorized: invalid or missing JWT".into(),
     };
-    let _ = sink
-        .lock()
-        .await
-        .send(WsMessage::Close(Some(frame)))
-        .await;
+    let _ = sink.lock().await.send(WsMessage::Close(Some(frame))).await;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -448,11 +448,7 @@ async fn session_loop(
                     let result = {
                         let mut conv = conv_e.lock().await;
                         engine
-                            .execute_turn_with_cancel(
-                                &mut conv,
-                                Some(&event_tx),
-                                Some(&cancel_e),
-                            )
+                            .execute_turn_with_cancel(&mut conv, Some(&event_tx), Some(&cancel_e))
                             .await
                     };
 
@@ -560,11 +556,7 @@ async fn map_turn_event(
 /// Serialize and send one `OutboundMessage` to the WS sink.
 async fn send_msg(sink: &Arc<Mutex<WsSink>>, msg: &OutboundMessage) {
     if let Ok(encoded) = encode(msg) {
-        let _ = sink
-            .lock()
-            .await
-            .send(WsMessage::Text(encoded))
-            .await;
+        let _ = sink.lock().await.send(WsMessage::Text(encoded)).await;
     }
 }
 

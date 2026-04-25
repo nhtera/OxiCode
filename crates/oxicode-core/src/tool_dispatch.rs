@@ -79,12 +79,10 @@ impl QueryEngine {
         // tool itself does not need direct access to its sibling tools.
         if tool_name == "tool_search" {
             let query = input["query"].as_str().unwrap_or("");
-            let max = input["max_results"]
-                .as_u64()
-                .map_or(5, |n| n as usize);
+            let max = input["max_results"].as_u64().map_or(5, |n| n as usize);
             let results = search_tools(&self.tool_registry, query, max);
-            let content = serde_json::to_string_pretty(&results)
-                .unwrap_or_else(|_| "[]".to_string());
+            let content =
+                serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string());
             return ContentBlock::ToolResult {
                 tool_use_id: tool_use_id.to_string(),
                 content,
