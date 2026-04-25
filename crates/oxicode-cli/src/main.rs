@@ -217,6 +217,95 @@ fn build_cli_permission_rules(
     rules
 }
 
+/// Resolve project memory for injection into the system prompt.
+///
+/// Resolution order:
+/// 1. Discover git root via `git2::Repository::discover`; fall back to `cwd`.
+/// 2. Compute the project memory dir (`~/.oxicode/projects/{key}/memory/`).
+/// 3. Return `None` when the dir is missing/empty (preserves prior behavior).
+/// 4. Read `MEMORY.md` entrypoint (truncated to 200 lines / 25 KB by `memdir`).
+/// 5. Scan additional `.md` files (capped at 200, 50 KB each).
+/// 6. Build an index of additional files and combine with entrypoint.
+/// 7. Cap the combined result at 100 KB before returning.
+///
+/// Errors are logged and skipped — this function never panics on malformed
+/// frontmatter or filesystem failures.
+fn build_project_memory(cwd: &std::path::Path) -> Option<String> {
+    use oxicode_session::{memdir, memory_scanner};
+
+    // Resolve git root; fall back to cwd on shallow clones, detached worktrees, etc.
+    let root = git2::Repository::discover(cwd)
+        .ok()
+        .and_then(|repo| {
+            repo.workdir()
+                .map(std::path::Path::to_path_buf)
+                .or_else(|| repo.path().parent().map(std::path::Path::to_path_buf))
+        })
+        .unwrap_or_else(|| cwd.to_path_buf());
+
+    let memory_dir = memdir::project_memory_dir(&root);
+
+    // Bail early when the memory dir doesn't exist.
+    if !memory_dir.exists() {
+        return None;
+    }
+
+    // Read the MEMORY.md entrypoint (already capped at 200 lines / 25 KB).
+    let entrypoint = memdir::read_entrypoint(&memory_dir)
+        .map(|(content, _truncated)| content)
+        .unwrap_or_default();
+
+    // Scan additional memory files; tolerate empty dir or read errors.
+    let headers = match memory_scanner::scan_memory_files(&memory_dir) {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::warn!("memory scan failed for {}: {e}", memory_dir.display());
+            Vec::new()
+        }
+    };
+
+    // Nothing to inject.
+    if entrypoint.is_empty() && headers.is_empty() {
+        return None;
+    }
+
+    // Build combined memory string.
+    let mut combined = String::with_capacity(entrypoint.len() + 512);
+
+    if !entrypoint.is_empty() {
+        combined.push_str(&entrypoint);
+    }
+
+    if !headers.is_empty() {
+        let index = memory_scanner::build_memory_index(&headers);
+        if !index.is_empty() {
+            if combined.is_empty() {
+                combined.push_str("## Additional Memory Files\n\n");
+            } else {
+                combined.push_str("\n\n## Additional Memory Files\n\n");
+            }
+            combined.push_str(&index);
+        }
+    }
+
+    if combined.is_empty() {
+        return None;
+    }
+
+    // Cap total injection at 100 KB.
+    let max_injection_bytes: usize = 100 * 1024;
+    if combined.len() > max_injection_bytes {
+        let mut end = max_injection_bytes;
+        while end > 0 && !combined.is_char_boundary(end) {
+            end -= 1;
+        }
+        combined.truncate(end);
+        combined.push_str("\n\n<!-- Project memory truncated at 100 KB -->");
+    }
+
+    Some(combined)
+}
+
 #[tokio::main]
 #[allow(clippy::too_many_lines)] // CLI entry point with mode dispatch
 async fn main() -> Result<()> {
@@ -256,6 +345,8 @@ async fn main() -> Result<()> {
 
     // Setup tracing — write to log file, NOT stderr.
     // stderr leaks into crossterm's alternate screen and corrupts TUI output.
+    // With `telemetry-otlp` feature: OTLP layer is composed in addition to the
+    // file writer. Without it: behaviour is identical to before (file only).
     let log_dir = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
         .join("oxicode");
@@ -270,14 +361,24 @@ async fn main() -> Result<()> {
                 .open("/dev/null")
                 .expect("failed to open /dev/null")
         });
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("oxicode=info".parse()?),
-        )
-        .with_writer(std::sync::Mutex::new(log_file))
-        .with_ansi(false)
-        .init();
+
+    // Build the base Registry + fmt layer, then optionally compose the OTLP layer.
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        let env_filter = tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive("oxicode=info".parse()?);
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::sync::Mutex::new(log_file))
+            .with_ansi(false);
+        let base = tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt_layer);
+
+        // Conditionally add the OTLP layer (no-op pass-through when feature is off).
+        telemetry::install_otlp_layer(base).init();
+    }
 
     // Load config (env vars and TOML, no CLI secret)
     let mut settings = oxicode_config::load_settings(cli.config_dir.as_deref());
@@ -330,7 +431,7 @@ async fn main() -> Result<()> {
         global_md.as_deref(),
         project_md.as_deref(),
         skills_prompt.as_deref(),
-        None, // TODO(phase-4): inject project memory
+        build_project_memory(&cwd).as_deref(),
     );
 
     // Resolve `-r/--resume`. With a query, fuzzy-match before boot. Without
@@ -459,8 +560,24 @@ async fn main() -> Result<()> {
     let mcp_ref = std::sync::Arc::new(mcp_manager);
     let file_state_ref =
         std::sync::Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default());
+    // Populate extra_working_dirs from resumed session (if any) so the tool
+    // context is immediately aware of previously added directories.
+    let session_extra_dirs = session.working_dirs.clone();
+
+    // Sync session's working_dirs into AppState so commands see the restored set.
+    if !session_extra_dirs.is_empty() {
+        state_store.update(|s| {
+            for dir in &session_extra_dirs {
+                if !s.working_dirs.contains(dir) {
+                    s.working_dirs.push(dir.clone());
+                }
+            }
+        });
+    }
+
     let tool_context = ToolContext {
         working_dir: cwd.clone(),
+        extra_working_dirs: session_extra_dirs,
         file_state: file_state_ref.clone(),
         task_manager: std::sync::Arc::new(std::sync::Mutex::new(
             oxicode_tasks::TaskManager::default(),
@@ -563,44 +680,64 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // TODO(gap-phase-7): implement bridge mode server with multi-session + JWT auth.
     // Bridge mode: headless WebSocket server for IDE extensions and cloud deployment.
     if cli.bridge {
-        let bridge_config = remote::BridgeConfig::default().with_port(cli.port);
-        eprintln!(
-            "Bridge mode starting on {} (max {} sessions)",
-            bridge_config.socket_addr(),
-            bridge_config.max_sessions,
-        );
-        eprintln!("Press Ctrl+C to stop.");
-
-        // Initialize session pool for bridge mode.
-        let _pool = remote::session_pool::SessionPool::new(
-            bridge_config.max_sessions,
-            bridge_config.idle_timeout_secs,
-        );
-
-        // Keep alive until interrupted — full WebSocket server requires
-        // `--features bridge` for tokio-tungstenite dependency.
         #[cfg(feature = "bridge")]
         {
+            use std::sync::Arc;
+            use tokio::sync::Mutex;
+
+            // Read env-configurable limits (with per-spec defaults).
+            let max_sessions = std::env::var("OXICODE_BRIDGE_MAX_SESSIONS")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(16);
+            let idle_timeout_secs = std::env::var("OXICODE_BRIDGE_IDLE_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(600);
+
+            let bridge_config = remote::BridgeConfig {
+                port: cli.port,
+                max_sessions,
+                idle_timeout_secs,
+                ..remote::BridgeConfig::default()
+            };
+
+            eprintln!(
+                "Bridge mode starting on {} (max {} sessions, idle timeout {}s)",
+                bridge_config.socket_addr(),
+                bridge_config.max_sessions,
+                bridge_config.idle_timeout_secs,
+            );
+
+            let pool = Arc::new(Mutex::new(remote::session_pool::SessionPool::new(
+                bridge_config.max_sessions,
+                bridge_config.idle_timeout_secs,
+            )));
+
             tracing::info!(
                 port = cli.port,
                 bind = %bridge_config.bind_address,
-                "Bridge server ready (WebSocket + JWT)"
+                max_sessions,
+                idle_timeout_secs,
+                "Bridge server starting (WebSocket + JWT)"
             );
-        }
-        #[cfg(not(feature = "bridge"))]
-        {
-            tracing::info!(
-                port = cli.port,
-                "Bridge server ready (session pool only — compile with --features bridge for WebSocket)"
-            );
+
+            let result =
+                remote::bridge::run_bridge(bridge_config, pool, engine).await;
+            mcp_ref.shutdown_all().await;
+            return result;
         }
 
-        tokio::signal::ctrl_c().await.ok();
-        mcp_ref.shutdown_all().await;
-        return Ok(());
+        #[cfg(not(feature = "bridge"))]
+        {
+            eprintln!(
+                "Bridge mode requires the `bridge` feature flag. \
+                 Rebuild with: cargo build --features bridge"
+            );
+            std::process::exit(1);
+        }
     }
 
     if matches!(cli.output, OutputFormat::Json) {
@@ -961,12 +1098,15 @@ async fn run_tui(
     }
 
     // Build command registry early to extract metadata for TUI autocomplete.
-    let command_registry = commands::default_registry();
+    let command_registry = Arc::new(commands::default_registry());
+    // Expose slash command count in shared state so TUI status bar can read it.
+    state_store.update(|s| s.slash_command_count = command_registry.len());
     let meta_ctx = commands::CommandContext {
         state_store: state_store.clone(),
         model: settings.model.clone(),
         provider_name: "auto".into(),
         session_id: String::new(),
+        command_registry: Arc::clone(&command_registry),
     };
     let slash_command_meta: Vec<oxicode_tui::SlashCommandMeta> = command_registry
         .all_commands_with_completions(&meta_ctx)
@@ -1482,6 +1622,7 @@ async fn run_tui(
                         model: current.current_model.clone(),
                         provider_name: "auto".into(),
                         session_id: current.session_id.clone(),
+                        command_registry: Arc::clone(&command_registry),
                     };
                     let input_str = format!("/{name} {args}");
                     match command_registry.execute(&input_str, &command_ctx) {
@@ -1574,6 +1715,8 @@ async fn run_tui(
         session.id = state.session_id;
     }
     session.messages = state.messages;
+    // Persist the current working_dirs set so `--session <id>` restores them.
+    session.set_working_dirs(state.working_dirs.clone());
     session.updated_at = chrono::Utc::now();
     oxicode_session::save_session(session, None)?;
 
@@ -1656,6 +1799,7 @@ async fn run_agent_mode(agent_id: &str) -> Result<()> {
 
     let tool_context = ToolContext {
         working_dir: cwd,
+        extra_working_dirs: Vec::new(), // agent mode inherits no extra dirs at spawn
         file_state: Arc::new(oxicode_tools::file_state_tracker::FileStateTracker::default()),
         task_manager: Arc::new(std::sync::Mutex::new(oxicode_tasks::TaskManager::default())),
         task_abort_handles: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
