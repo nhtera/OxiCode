@@ -8,7 +8,13 @@
 //! - SDK message adapter (wire format <-> internal types)
 
 #[cfg(feature = "bridge")]
+pub mod bridge;
+#[cfg(feature = "bridge")]
+pub mod jwt;
+#[cfg(feature = "bridge")]
 pub mod permission_bridge;
+#[cfg(feature = "bridge")]
+pub mod protocol;
 #[cfg(feature = "bridge")]
 pub mod sdk_adapter;
 pub mod session_pool;

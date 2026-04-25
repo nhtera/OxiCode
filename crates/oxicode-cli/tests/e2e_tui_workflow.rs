@@ -55,6 +55,7 @@ fn model() -> String {
 fn tool_ctx(dir: &Path) -> ToolContext {
     ToolContext {
         working_dir: dir.to_path_buf(),
+        extra_working_dirs: Vec::new(),
         file_state: Arc::new(FileStateTracker::default()),
         task_manager: Arc::new(Mutex::new(oxicode_tasks::TaskManager::default())),
         task_abort_handles: Arc::new(Mutex::new(HashMap::new())),
