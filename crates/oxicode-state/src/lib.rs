@@ -140,6 +140,18 @@ impl StateStore {
         });
     }
 
+    /// Remove and return the most recent message, if any.
+    ///
+    /// Used by the max-output-tokens recovery loop to pop the truncated assistant
+    /// turn before pushing the merged version back.
+    pub fn pop_message(&self) -> Option<Message> {
+        let mut popped = None;
+        self.update(|state| {
+            popped = state.messages.pop();
+        });
+        popped
+    }
+
     /// Set streaming flag.
     pub fn set_streaming(&self, streaming: bool) {
         self.update(|state| {

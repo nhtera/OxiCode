@@ -21,6 +21,16 @@ const MAX_TOOL_TURNS: usize = 50;
 /// Typical Claude model context window (used as default budget ceiling).
 const DEFAULT_MODEL_MAX_TOKENS: usize = 200_000;
 
+/// Maximum retries when a turn ends in `StopReason::MaxTokens`.
+///
+/// After this many retries, the truncated assistant message is returned with
+/// stop_reason still `MaxTokens` so the caller can decide what to do.
+pub const MAX_OUTPUT_TOKENS_RECOVERY: u8 = 3;
+
+/// Synthetic user nudge appended to the conversation when continuing past a
+/// `MaxTokens` cutoff. Sent verbatim — the model treats it as a directive.
+pub const CONTINUATION_NUDGE: &str = "Continue from where you left off";
+
 /// Multi-turn query engine with tool execution support.
 pub struct QueryEngine {
     provider: Arc<dyn LlmProvider>,
@@ -91,6 +101,17 @@ impl QueryEngine {
     /// Get max tokens setting.
     pub fn max_tokens(&self) -> u32 {
         self.max_tokens
+    }
+
+    /// Get a reference to the tool registry — used by slash command async
+    /// dispatch in oxicode-cli to invoke built-in tools (cron, worktree, etc.).
+    pub fn tool_registry(&self) -> &Arc<ToolRegistry> {
+        &self.tool_registry
+    }
+
+    /// Get a reference to the tool execution context.
+    pub fn tool_context(&self) -> &ToolContext {
+        &self.tool_context
     }
 
     /// Execute a multi-turn conversation loop.
@@ -187,31 +208,42 @@ impl QueryEngine {
                 .stream_one_turn(conversation, event_tx, cancel_flag)
                 .await;
 
-            let assistant_msg = match assistant_msg {
-                Ok(msg) => {
-                    // Fire Stop hook ONLY on final EndTurn (Claude Code spec —
-                    // not per intermediate tool turn).
-                    let stop = msg.stop_reason.unwrap_or(StopReason::EndTurn);
-                    if matches!(stop, StopReason::EndTurn) {
-                        let post_data = serde_json::json!({
-                            "stop_reason": format!("{stop:?}").to_lowercase(),
-                        });
-                        fire_hook_with_events(
-                            &self.hook_manager,
-                            HookEvent::Stop,
-                            post_data,
-                            event_tx,
-                        )
-                        .await;
-                    }
-                    msg
-                }
+            let mut assistant_msg = match assistant_msg {
+                Ok(msg) => msg,
                 Err(e) => {
                     // Errors flow through stderr / OxiResult; no Error hook
                     // event in Claude Code spec.
                     return Err(e);
                 }
             };
+
+            // Max-output-tokens recovery loop. When the API returns MaxTokens,
+            // append a synthetic nudge and re-stream up to N times so long
+            // code-gen turns don't silently truncate.
+            self.max_tokens_recovery_loop(
+                &mut assistant_msg,
+                conversation,
+                event_tx,
+                cancel_flag,
+            )
+            .await?;
+
+            // Fire Stop hook ONLY on final EndTurn (Claude Code spec —
+            // not per intermediate tool turn). Runs AFTER recovery so the
+            // hook sees the merged assistant message.
+            let stop = assistant_msg.stop_reason.unwrap_or(StopReason::EndTurn);
+            if matches!(stop, StopReason::EndTurn) {
+                let post_data = serde_json::json!({
+                    "stop_reason": format!("{stop:?}").to_lowercase(),
+                });
+                fire_hook_with_events(
+                    &self.hook_manager,
+                    HookEvent::Stop,
+                    post_data,
+                    event_tx,
+                )
+                .await;
+            }
             let stop_reason = assistant_msg.stop_reason.unwrap_or(StopReason::EndTurn);
 
             // Extract tool use blocks from the assistant message.
@@ -325,6 +357,125 @@ impl QueryEngine {
         }
 
         Err(OxiError::Other("Max tool turns exceeded".to_string()))
+    }
+
+    /// Recover from `StopReason::MaxTokens` by appending a continuation nudge
+    /// and re-streaming up to `MAX_OUTPUT_TOKENS_RECOVERY` times.
+    ///
+    /// The truncated assistant message is already at the conversation tail
+    /// (pushed by `stream_one_turn`). For each retry, this method:
+    ///   1. Pushes a synthetic `Continue from where you left off` user message.
+    ///   2. Calls `stream_one_turn` again — the new assistant turn auto-appends.
+    ///   3. Strips the new assistant + nudge + truncated assistant from
+    ///      conversation/state.
+    ///   4. Merges the new assistant into `assistant_msg`.
+    ///   5. Re-pushes the merged assistant so persisted history is clean.
+    ///
+    /// Cancellation short-circuits the loop — never retries a user-cancelled
+    /// turn. On exit, `assistant_msg.stop_reason` is the last iteration's stop
+    /// reason (`EndTurn` if recovery succeeded, `MaxTokens` if all attempts
+    /// also truncated).
+    async fn max_tokens_recovery_loop(
+        &self,
+        assistant_msg: &mut Message,
+        conversation: &mut Conversation,
+        event_tx: Option<&tokio::sync::mpsc::Sender<TurnEvent>>,
+        cancel_flag: Option<&Arc<AtomicBool>>,
+    ) -> OxiResult<()> {
+        let mut attempt: u8 = 0;
+        while assistant_msg.stop_reason == Some(StopReason::MaxTokens)
+            && attempt < MAX_OUTPUT_TOKENS_RECOVERY
+        {
+            if let Some(flag) = cancel_flag {
+                if flag.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+            attempt += 1;
+
+            emit(
+                event_tx,
+                TurnEvent::Retrying {
+                    message: format!(
+                        "Output truncated, continuing ({attempt}/{MAX_OUTPUT_TOKENS_RECOVERY})"
+                    ),
+                    attempt: u32::from(attempt),
+                    max_retries: u32::from(MAX_OUTPUT_TOKENS_RECOVERY),
+                    retry_in_secs: 0.0,
+                },
+            )
+            .await;
+
+            // Push synthetic user nudge so the next API call sees
+            // [..., assistant(truncated), user(nudge)].
+            let nudge = Message::user(CONTINUATION_NUDGE);
+            self.state_store.push_message(nudge.clone());
+            conversation.push(nudge);
+
+            let new_assistant = self
+                .stream_one_turn(conversation, event_tx, cancel_flag)
+                .await?;
+
+            // Strip the three transient messages we added during this attempt
+            // (new_assistant, nudge, original truncated assistant) so the
+            // re-pushed merged message replaces them in-place.
+            conversation.messages.pop();
+            conversation.messages.pop();
+            conversation.messages.pop();
+            self.state_store.pop_message();
+            self.state_store.pop_message();
+            self.state_store.pop_message();
+
+            Self::merge_assistant_messages(assistant_msg, new_assistant);
+
+            self.state_store.push_message(assistant_msg.clone());
+            conversation.push(assistant_msg.clone());
+        }
+        Ok(())
+    }
+
+    /// Merge a continuation assistant message into the base.
+    ///
+    /// Concatenates trailing/leading text blocks (so the user sees one
+    /// continuous response), appends remaining blocks verbatim, accumulates
+    /// usage, and replaces stop_reason with the latest iteration's value.
+    fn merge_assistant_messages(base: &mut Message, next: Message) {
+        let mut next_iter = next.content.into_iter();
+
+        // If both base ends with Text and next starts with Text, splice.
+        if matches!(base.content.last(), Some(ContentBlock::Text { .. })) {
+            if let Some(first) = next_iter.next() {
+                match first {
+                    ContentBlock::Text { text: next_text } => {
+                        if let Some(ContentBlock::Text { text }) = base.content.last_mut() {
+                            text.push_str(&next_text);
+                        }
+                    }
+                    other => base.content.push(other),
+                }
+            }
+        }
+        for block in next_iter {
+            base.content.push(block);
+        }
+
+        // Accumulate token usage so /cost stays accurate across retries.
+        if let Some(next_usage) = next.usage {
+            let base_usage = base.usage.get_or_insert_with(oxicode_common::Usage::default);
+            base_usage.input_tokens = base_usage.input_tokens.saturating_add(next_usage.input_tokens);
+            base_usage.output_tokens =
+                base_usage.output_tokens.saturating_add(next_usage.output_tokens);
+            base_usage.cache_read_input_tokens = sum_opt(
+                base_usage.cache_read_input_tokens,
+                next_usage.cache_read_input_tokens,
+            );
+            base_usage.cache_creation_input_tokens = sum_opt(
+                base_usage.cache_creation_input_tokens,
+                next_usage.cache_creation_input_tokens,
+            );
+        }
+
+        base.stop_reason = next.stop_reason;
     }
 
     /// Repair the conversation after an interrupt that stopped tool execution.
@@ -686,5 +837,14 @@ impl QueryEngine {
         conversation.push(assistant_msg.clone());
 
         Ok(assistant_msg)
+    }
+}
+
+/// Sum two `Option<u32>` values, treating `None` as zero. Returns `None`
+/// only when both inputs are `None`.
+fn sum_opt(a: Option<u32>, b: Option<u32>) -> Option<u32> {
+    match (a, b) {
+        (None, None) => None,
+        (a, b) => Some(a.unwrap_or(0).saturating_add(b.unwrap_or(0))),
     }
 }

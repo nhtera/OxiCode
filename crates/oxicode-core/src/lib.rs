@@ -19,7 +19,7 @@ pub use auto_dream_service::{AutoDreamService, Suggestion};
 pub use conversation::Conversation;
 pub use diagnostic_tracker::DiagnosticTracker;
 pub use perf_metrics::{PerfMetrics, PerfSummary};
-pub use query_engine::QueryEngine;
+pub use query_engine::{QueryEngine, CONTINUATION_NUDGE, MAX_OUTPUT_TOKENS_RECOVERY};
 pub use thinking_block_store::ThinkingBlockStore;
 pub use tool_use_summary::ToolUseSummary;
 pub use turn_event::{HookMessageKind, HookState, TurnEvent};
