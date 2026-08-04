@@ -145,6 +145,8 @@ fn is_process_alive(pid: u32) -> bool {
 mod tests {
     use super::*;
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[test]
     fn test_is_process_alive_self() {
         // Our own process should be alive.
@@ -172,6 +174,8 @@ mod tests {
         assert!(result.content.contains("No running bash process"));
     }
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_kill_bash_terminates_process() {
         use crate::tool_trait::BashProcess;

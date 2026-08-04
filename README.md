@@ -15,9 +15,18 @@ A Rust-powered CLI agent for software engineering — an experimental port of Cl
 | TUI, MCP, agents, skills, plugins | Partial / in progress |
 | Config format, CLI flags, output schema | Unstable — may change |
 | Provider coverage beyond Anthropic | Incomplete |
+| Shell-backed tools on Windows | Not supported yet — see below |
 
 Feature counts below describe what exists in the codebase today, not a guarantee that
 everything is fully polished or at parity with Claude Code.
+
+### Platform support
+
+macOS and Linux are the supported platforms today. OxiCode **builds** on Windows and
+the TUI runs, but the tools that shell out — `bash`, background tasks, `kill_bash`, and
+the subprocess plugin runner — spawn a POSIX shell (`sh`/`bash`) and do not work there
+yet. Their tests are `#[cfg(unix)]` so CI reflects this honestly rather than appearing
+to pass. Windows still runs the full build, clippy, and the rest of the test suite.
 
 ## Screenshots
 

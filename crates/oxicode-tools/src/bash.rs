@@ -297,6 +297,8 @@ async fn run_command_tracked(
 mod tests {
     use super::*;
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_bash_echo() {
         let tool = BashTool;
@@ -325,6 +327,8 @@ mod tests {
         assert!(result.content.contains("exit 1"));
     }
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_bash_timeout() {
         let tool = BashTool;
@@ -342,6 +346,8 @@ mod tests {
         assert!(result.content.contains("timed out"));
     }
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_bash_working_dir() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -443,6 +449,8 @@ mod tests {
         assert!(result.content.contains("command not found") || result.content.contains("exit"));
     }
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_env_isolation() {
         let tool = BashTool;
@@ -504,6 +512,8 @@ mod tests {
         assert!(result.content.contains("path escapes"));
     }
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_safe_relative_path_allowed() {
         let tool = BashTool;
@@ -523,6 +533,8 @@ mod tests {
         assert!(result.content.contains("safe content"));
     }
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_no_path_command_allowed() {
         let tool = BashTool;

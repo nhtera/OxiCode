@@ -60,6 +60,8 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    // Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_run_simple_script() {
         let dir = PathBuf::from("/tmp");
