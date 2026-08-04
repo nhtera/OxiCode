@@ -73,6 +73,15 @@ pub fn check_path_safety(path: &Path) -> Option<ToolResult> {
     None
 }
 
+/// Canonicalize when possible, falling back to the path as given.
+///
+/// Comparisons against a canonicalized path must use canonicalized prefixes:
+/// on Windows `canonicalize` returns a `\\?\` verbatim path whose components do
+/// not match an ordinary `C:\...` prefix.
+fn canonicalized(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Check if a path is within the working directory boundary.
 /// Returns an error ToolResult if the path escapes the workspace.
 pub fn check_workspace_boundary(path: &Path, working_dir: &Path) -> Option<ToolResult> {
@@ -87,11 +96,19 @@ pub fn check_workspace_boundary(path: &Path, working_dir: &Path) -> Option<ToolR
     }
 
     // Allow common system temp directories (including macOS canonical paths)
-    let mut allowed_prefixes = vec!["/tmp", "/var/tmp", "/private/tmp", "/private/var/folders"];
-    // Also allow the OS-reported temp dir
+    let mut allowed_prefixes: Vec<String> =
+        ["/tmp", "/var/tmp", "/private/tmp", "/private/var/folders"]
+            .iter()
+            .map(|p| (*p).to_string())
+            .collect();
+
+    // Also allow the OS-reported temp dir, in both raw and canonical form.
+    // `canonical_path` is only canonicalized when the target already exists, and
+    // on Windows `canonicalize` yields a `\\?\` verbatim path that never matches
+    // a plain `C:\...` prefix — so both spellings have to be accepted.
     let sys_tmp = std::env::temp_dir();
-    let sys_tmp_str = sys_tmp.to_string_lossy().to_string();
-    allowed_prefixes.push(&sys_tmp_str);
+    allowed_prefixes.push(sys_tmp.to_string_lossy().into_owned());
+    allowed_prefixes.push(canonicalized(&sys_tmp).to_string_lossy().into_owned());
     for prefix in &allowed_prefixes {
         if canonical_path.starts_with(prefix) {
             return None;
@@ -101,7 +118,7 @@ pub fn check_workspace_boundary(path: &Path, working_dir: &Path) -> Option<ToolR
     // Allow home directory (for config files like ~/.oxicode)
     // Sensitive sub-paths are already caught by check_path_safety above.
     if let Some(home) = dirs::home_dir() {
-        if canonical_path.starts_with(&home) {
+        if canonical_path.starts_with(&home) || canonical_path.starts_with(canonicalized(&home)) {
             return None;
         }
     }

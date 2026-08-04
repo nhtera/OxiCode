@@ -21,7 +21,7 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
     use ratatui::Terminal;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     use tokio::sync::mpsc;
@@ -458,8 +458,25 @@ mod tests {
         let state_store = Arc::new(StateStore::default());
         let (ui_tx, ui_rx) = mpsc::channel::<UiEvent>(32);
         let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
-        let app = App::new(&state_store, ui_tx, core_rx, Vec::new());
+        let mut app = App::new(&state_store, ui_tx, core_rx, Vec::new());
+        app.history = isolated_history();
         (app, ui_rx, core_tx)
+    }
+
+    /// Prompt history pointed at a throwaway location.
+    ///
+    /// `App::new` loads the real `~/.oxicode/history.jsonl`. Without this every
+    /// test that submits input appends to the developer's own history file, and
+    /// tests running in parallel observe each other's entries. The directory is
+    /// only created if a test actually writes, so this costs nothing otherwise.
+    fn isolated_history() -> oxicode_session::prompt_history::PersistentHistory {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "oxicode-tui-test-history-{}-{n}",
+            std::process::id()
+        ));
+        oxicode_session::prompt_history::PersistentHistory::load(Some(&dir))
     }
 
     fn normalized_rendered_text(terminal: &Terminal<TestBackend>) -> String {
@@ -573,7 +590,8 @@ mod tests {
         let state_store = Arc::new(StateStore::default());
         let (ui_tx, ui_rx) = mpsc::channel::<UiEvent>(32);
         let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
-        let app = App::new(&state_store, ui_tx, core_rx, make_test_slash_commands());
+        let mut app = App::new(&state_store, ui_tx, core_rx, make_test_slash_commands());
+        app.history = isolated_history();
         (app, ui_rx, core_tx)
     }
 
@@ -969,7 +987,8 @@ mod tests {
         let state_store = Arc::new(StateStore::default());
         let (ui_tx, ui_rx) = mpsc::channel::<UiEvent>(32);
         let (core_tx, core_rx) = mpsc::channel::<CoreEvent>(32);
-        let app = App::new(&state_store, ui_tx, core_rx, Vec::new());
+        let mut app = App::new(&state_store, ui_tx, core_rx, Vec::new());
+        app.history = isolated_history();
         (app, state_store, ui_rx, core_tx)
     }
 
@@ -3222,6 +3241,7 @@ mod tests {
         let (ui_tx, _ui_rx) = mpsc::channel::<UiEvent>(8);
         let (_core_tx, core_rx) = mpsc::channel::<CoreEvent>(8);
         let mut app = App::new(&store, ui_tx, core_rx, Vec::new());
+        app.history = isolated_history();
 
         app.hydrate_image_paths_from_session();
 

@@ -10,12 +10,24 @@
 //! pin behavior at the boundary the dispatcher actually crosses: the tool
 //! registry call.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+use tokio::sync::{Mutex, MutexGuard};
 
 use oxicode_tools::{
     cron::{CronCreateTool, CronDeleteTool, CronListTool},
     ToolContext, ToolRegistry,
 };
+
+/// `HOME` is process-global but tests in a binary run in parallel, so two tests
+/// repointing it at once would read and write each other's schedule store. Hold
+/// this for the whole body of any test that calls [`isolated_ctx`].
+///
+/// An async mutex, because the guard is held across the `.await`s that follow.
+async fn home_guard() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().await
+}
 
 fn registry_with_cron() -> Arc<ToolRegistry> {
     let mut reg = ToolRegistry::new();
@@ -34,6 +46,7 @@ fn isolated_ctx(tmp_home: &tempfile::TempDir) -> ToolContext {
 
 #[tokio::test]
 async fn cron_dispatch_create_then_list_then_delete() {
+    let _home = home_guard().await;
     let tmp = tempfile::tempdir().unwrap();
     let ctx = isolated_ctx(&tmp);
     let reg = registry_with_cron();
@@ -95,6 +108,7 @@ async fn cron_dispatch_create_then_list_then_delete() {
 async fn schedule_dispatch_creates_one_shot_via_cron_create() {
     // /schedule routes to cron_create with a description tag — verify the
     // descriptor lands on disk by listing afterwards.
+    let _home = home_guard().await;
     let tmp = tempfile::tempdir().unwrap();
     let ctx = isolated_ctx(&tmp);
     let reg = registry_with_cron();
@@ -123,6 +137,7 @@ async fn cron_create_rejects_missing_fields() {
     // Same shape the dispatcher would NOT build (it validates first), but
     // pin tool-side behavior so we know what error surfaces if the
     // dispatcher's validation regresses.
+    let _home = home_guard().await;
     let tmp = tempfile::tempdir().unwrap();
     let ctx = isolated_ctx(&tmp);
     let reg = registry_with_cron();
