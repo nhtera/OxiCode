@@ -536,11 +536,16 @@ mod tests {
             .collect();
 
         // ASCII frames also occur in ordinary text (paths, box art, prose), so
-        // only collapse one sitting directly before the thinking indicator.
-        let needle: Vec<char> = " Thinking".chars().collect();
-        for i in 1..chars.len() {
-            if chars[i..].starts_with(&needle) && ASCII_FRAMES.contains(&chars[i - 1]) {
-                chars[i - 1] = SPINNER_CANON;
+        // collapse one only where a spinner can actually be: the first glyph
+        // after the pane border, on a line carrying a normalized elapsed time.
+        // Requiring the elapsed marker keeps a leading "- " list bullet, which
+        // sits in the same column, from being mistaken for a spinner.
+        if line.contains("(0.0s)") {
+            let is_border = |c: char| c.is_whitespace() || "│┌└├┤┬┴┼─".contains(c);
+            if let Some(i) = chars.iter().position(|c| !is_border(*c)) {
+                if ASCII_FRAMES.contains(&chars[i]) && chars.get(i + 1) == Some(&' ') {
+                    chars[i] = SPINNER_CANON;
+                }
             }
         }
         chars.into_iter().collect()
@@ -576,10 +581,15 @@ mod tests {
         );
         assert_eq!(normalize_spinner("⠧ Bash($ x)"), "⠋ Bash($ x)");
         // The Windows ASCII indicator collapses to the same glyph, so both
-        // platforms produce the identical snapshot.
+        // platforms produce the identical snapshot — for the thinking line and
+        // for running tool lines.
         assert_eq!(
             normalize_spinner("│  / Thinking... (0.0s)"),
             "│  ⠋ Thinking... (0.0s)"
+        );
+        assert_eq!(
+            normalize_spinner("│  / bash(echo hello) (0.0s)"),
+            normalize_spinner("│  ⠹ bash(echo hello) (0.0s)")
         );
         assert_eq!(
             normalize_spinner("│  \\ Thinking... (0.0s)"),
@@ -590,6 +600,15 @@ mod tests {
             normalize_spinner("✓ Bash($ ls -la a/b | wc -l)"),
             "✓ Bash($ ls -la a/b | wc -l)"
         );
+        assert_eq!(
+            normalize_spinner("│  ✓ Bash($ a/b | wc) (0.0s)"),
+            "│  ✓ Bash($ a/b | wc) (0.0s)"
+        );
+        // A list bullet sits in the spinner column but is not a spinner. It is
+        // spared because the line carries no elapsed marker — a bullet on a line
+        // that happens to contain one would still be collapsed, which no
+        // snapshot currently renders.
+        assert_eq!(normalize_spinner("│  - item"), "│  - item");
     }
 
     #[test]
