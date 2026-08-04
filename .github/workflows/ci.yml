@@ -80,7 +80,8 @@ jobs:
             esac
           fi
           rg --version
-      - run: cargo test --workspace --target ${{ matrix.target }}
+      # --no-fail-fast so one broken crate does not hide failures in the rest.
+      - run: cargo test --workspace --target ${{ matrix.target }} --no-fail-fast
 
   build:
     name: Build (${{ matrix.target }})

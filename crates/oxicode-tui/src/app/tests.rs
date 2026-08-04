@@ -465,9 +465,73 @@ mod tests {
     fn normalized_rendered_text(terminal: &Terminal<TestBackend>) -> String {
         format!("{}", terminal.backend())
             .lines()
-            .map(str::trim_end)
+            .map(|line| normalize_elapsed(line.trim_end()))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// Rewrite rendered elapsed times — `(1.3s)` becomes `(0.0s)` — so snapshots
+    /// do not depend on how fast the machine running them happens to be. A
+    /// loaded CI runner takes long enough for a spinner to tick past 0.05s,
+    /// which would otherwise fail the assertion.
+    fn normalize_elapsed(line: &str) -> String {
+        let chars: Vec<char> = line.chars().collect();
+        let mut out = String::with_capacity(line.len());
+        let mut i = 0;
+
+        while i < chars.len() {
+            if chars[i] == '(' {
+                if let Some(end) = match_elapsed(&chars, i + 1) {
+                    out.push_str("(0.0s)");
+                    i = end;
+                    continue;
+                }
+            }
+            out.push(chars[i]);
+            i += 1;
+        }
+        out
+    }
+
+    /// If `chars[start..]` begins with `<digits>.<digits>s)`, return the index
+    /// just past the closing paren.
+    fn match_elapsed(chars: &[char], start: usize) -> Option<usize> {
+        let mut i = start;
+        while chars.get(i).is_some_and(char::is_ascii_digit) {
+            i += 1;
+        }
+        if i == start || chars.get(i) != Some(&'.') {
+            return None;
+        }
+        i += 1;
+        let frac = i;
+        while chars.get(i).is_some_and(char::is_ascii_digit) {
+            i += 1;
+        }
+        if i == frac || chars.get(i) != Some(&'s') || chars.get(i + 1) != Some(&')') {
+            return None;
+        }
+        Some(i + 2)
+    }
+
+    #[test]
+    fn normalize_elapsed_collapses_timings() {
+        // Any elapsed value collapses to the canonical one.
+        assert_eq!(
+            normalize_elapsed("│  ✓ Bash($ echo hello) (0.1s)"),
+            "│  ✓ Bash($ echo hello) (0.0s)"
+        );
+        assert_eq!(
+            normalize_elapsed("⠹ Thinking... (12.7s)"),
+            "⠹ Thinking... (0.0s)"
+        );
+        // Already-canonical text is unchanged.
+        assert_eq!(normalize_elapsed("(0.0s)"), "(0.0s)");
+        // Non-timing parentheses are left alone.
+        assert_eq!(
+            normalize_elapsed("Bash($ echo hi) (abc) (1s) (1.s) (.1s)"),
+            "Bash($ echo hi) (abc) (1s) (1.s) (.1s)"
+        );
     }
 
     fn make_test_slash_commands() -> Vec<SlashCommandMeta> {
