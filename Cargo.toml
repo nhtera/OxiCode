@@ -92,7 +92,11 @@ uuid = { version = "1", features = ["v4", "serde"] }
 base64 = "0.22"
 
 # Git
-git2 = "0.19"
+# Local repository operations only (status, branches, worktrees). Default
+# features would pull libgit2's https/ssh backends — and with them openssl-sys
+# and libssh2-sys, which have no prebuilt ARM64 libraries in the cross-compile
+# container. Nothing here talks to a remote, so they are dead weight.
+git2 = { version = "0.19", default-features = false }
 
 # Markdown + syntax + diff
 pulldown-cmark = "0.12"
