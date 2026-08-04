@@ -1793,9 +1793,7 @@ async fn run_tui(
                             }
                             Err(e) => {
                                 let _ = core_tx_clone
-                                    .send(CoreEvent::Error(format!(
-                                        "/worktree create failed: {e}"
-                                    )))
+                                    .send(CoreEvent::Error(format!("/worktree create failed: {e}")))
                                     .await;
                             }
                         }

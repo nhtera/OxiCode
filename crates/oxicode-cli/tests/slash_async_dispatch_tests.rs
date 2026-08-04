@@ -47,7 +47,11 @@ async fn cron_dispatch_create_then_list_then_delete() {
         .execute("cron_create", create_input, &ctx)
         .await
         .expect("cron_create");
-    assert!(!create_res.is_error, "create failed: {}", create_res.content);
+    assert!(
+        !create_res.is_error,
+        "create failed: {}",
+        create_res.content
+    );
     // Format: "Schedule created: <uuid> (<cron>)"
     let id = create_res
         .content

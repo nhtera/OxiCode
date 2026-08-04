@@ -220,13 +220,8 @@ impl QueryEngine {
             // Max-output-tokens recovery loop. When the API returns MaxTokens,
             // append a synthetic nudge and re-stream up to N times so long
             // code-gen turns don't silently truncate.
-            self.max_tokens_recovery_loop(
-                &mut assistant_msg,
-                conversation,
-                event_tx,
-                cancel_flag,
-            )
-            .await?;
+            self.max_tokens_recovery_loop(&mut assistant_msg, conversation, event_tx, cancel_flag)
+                .await?;
 
             // Fire Stop hook ONLY on final EndTurn (Claude Code spec —
             // not per intermediate tool turn). Runs AFTER recovery so the
@@ -236,13 +231,8 @@ impl QueryEngine {
                 let post_data = serde_json::json!({
                     "stop_reason": format!("{stop:?}").to_lowercase(),
                 });
-                fire_hook_with_events(
-                    &self.hook_manager,
-                    HookEvent::Stop,
-                    post_data,
-                    event_tx,
-                )
-                .await;
+                fire_hook_with_events(&self.hook_manager, HookEvent::Stop, post_data, event_tx)
+                    .await;
             }
             let stop_reason = assistant_msg.stop_reason.unwrap_or(StopReason::EndTurn);
 
@@ -461,10 +451,15 @@ impl QueryEngine {
 
         // Accumulate token usage so /cost stays accurate across retries.
         if let Some(next_usage) = next.usage {
-            let base_usage = base.usage.get_or_insert_with(oxicode_common::Usage::default);
-            base_usage.input_tokens = base_usage.input_tokens.saturating_add(next_usage.input_tokens);
-            base_usage.output_tokens =
-                base_usage.output_tokens.saturating_add(next_usage.output_tokens);
+            let base_usage = base
+                .usage
+                .get_or_insert_with(oxicode_common::Usage::default);
+            base_usage.input_tokens = base_usage
+                .input_tokens
+                .saturating_add(next_usage.input_tokens);
+            base_usage.output_tokens = base_usage
+                .output_tokens
+                .saturating_add(next_usage.output_tokens);
             base_usage.cache_read_input_tokens = sum_opt(
                 base_usage.cache_read_input_tokens,
                 next_usage.cache_read_input_tokens,

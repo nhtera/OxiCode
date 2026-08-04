@@ -348,7 +348,12 @@ fn render_tab_strip(buf: &mut Buffer, area: Rect, active: HelpTab) {
 fn make_lines(items: &[&str]) -> Vec<Line<'static>> {
     items
         .iter()
-        .map(|s| Line::from(Span::styled((*s).to_string(), Style::default().fg(DIALOG_TEXT))))
+        .map(|s| {
+            Line::from(Span::styled(
+                (*s).to_string(),
+                Style::default().fg(DIALOG_TEXT),
+            ))
+        })
         .collect()
 }
 
@@ -768,7 +773,11 @@ mod tests {
         state.toggle();
         let shortcuts = default_shortcut_entries();
         let commands = vec![
-            ("clear".into(), "Clear conversation".into(), "Session".into()),
+            (
+                "clear".into(),
+                "Clear conversation".into(),
+                "Session".into(),
+            ),
             ("help".into(), "Show help".into(), "Session".into()),
         ];
         let area = Rect::new(0, 0, 100, 40);
@@ -783,7 +792,11 @@ mod tests {
         state.set_tab(HelpTab::Commands);
         let shortcuts = default_shortcut_entries();
         let commands = vec![
-            ("clear".into(), "Clear conversation".into(), "Session".into()),
+            (
+                "clear".into(),
+                "Clear conversation".into(),
+                "Session".into(),
+            ),
             ("model".into(), "Switch model".into(), "Model".into()),
         ];
         let area = Rect::new(0, 0, 100, 40);
