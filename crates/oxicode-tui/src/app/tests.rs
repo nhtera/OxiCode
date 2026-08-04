@@ -536,19 +536,37 @@ mod tests {
             .collect();
 
         // ASCII frames also occur in ordinary text (paths, box art, prose), so
-        // collapse one only where a spinner can actually be: the first glyph
-        // after the pane border, on a line carrying a normalized elapsed time.
-        // Requiring the elapsed marker keeps a leading "- " list bullet, which
-        // sits in the same column, from being mistaken for a spinner.
-        if line.contains("(0.0s)") {
-            let is_border = |c: char| c.is_whitespace() || "│┌└├┤┬┴┼─".contains(c);
-            if let Some(i) = chars.iter().position(|c| !is_border(*c)) {
-                if ASCII_FRAMES.contains(&chars[i]) && chars.get(i + 1) == Some(&' ') {
-                    chars[i] = SPINNER_CANON;
-                }
+        // collapse one only where a spinner actually sits: standing alone as its
+        // own word, immediately before the thinking indicator or a tool call.
+        // Anchoring on what follows avoids assuming anything about the pane
+        // layout to the left of the spinner.
+        for i in 0..chars.len() {
+            if !ASCII_FRAMES.contains(&chars[i]) {
+                continue;
+            }
+            let free_left = i == 0 || chars[i - 1].is_whitespace();
+            if !free_left || chars.get(i + 1) != Some(&' ') {
+                continue;
+            }
+            let rest: String = chars[i + 2..].iter().collect();
+            if starts_a_spinner_label(&rest) {
+                chars[i] = SPINNER_CANON;
             }
         }
         chars.into_iter().collect()
+    }
+
+    /// Whether `rest` is the label a spinner precedes: the thinking indicator,
+    /// or a tool call rendered as `name(args)`.
+    fn starts_a_spinner_label(rest: &str) -> bool {
+        if rest.starts_with("Thinking") {
+            return true;
+        }
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        !name.is_empty() && rest[name.len()..].starts_with('(')
     }
 
     /// If `chars[start..]` begins with `<digits>.<digits>s)`, return the index
@@ -604,11 +622,25 @@ mod tests {
             normalize_spinner("│  ✓ Bash($ a/b | wc) (0.0s)"),
             "│  ✓ Bash($ a/b | wc) (0.0s)"
         );
-        // A list bullet sits in the spinner column but is not a spinner. It is
-        // spared because the line carries no elapsed marker — a bullet on a line
-        // that happens to contain one would still be collapsed, which no
-        // snapshot currently renders.
+        // A list bullet is not a spinner: nothing tool-like follows it.
         assert_eq!(normalize_spinner("│  - item"), "│  - item");
+        assert_eq!(
+            normalize_spinner("│  - took (0.0s) to run"),
+            "│  - took (0.0s) to run"
+        );
+
+        // The real rendered lines: padded to the pane width and closed by a
+        // border, exactly as the snapshot records them.
+        for raw in [
+            format!("│  / Thinking... (0.0s){:56}│", ""),
+            format!("│  / bash(echo hello) (0.0s){:51}│", ""),
+        ] {
+            let got = normalize_spinner(&raw);
+            assert!(
+                got.contains('⠋') && !got.contains('/'),
+                "padded line not normalized: {got:?}"
+            );
+        }
     }
 
     #[test]
