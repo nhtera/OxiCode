@@ -28,7 +28,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: oxicode
-          - os: macos-13
+          # macos-13 was retired in December 2025; macos-15-intel is the
+          # remaining x86_64 image.
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact: oxicode
           - os: windows-latest
