@@ -148,7 +148,7 @@ impl BridgeDebugLogger {
             messages_received: self.received.load(Ordering::Relaxed),
             errors: self.errors.load(Ordering::Relaxed),
             connection_events: self.connection_events.load(Ordering::Relaxed),
-            avg_latency_us: if count > 0 { sum / count } else { 0 },
+            avg_latency_us: sum.checked_div(count).unwrap_or(0),
         }
     }
 

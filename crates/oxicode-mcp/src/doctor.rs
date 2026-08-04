@@ -96,11 +96,7 @@ async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResu
 
             match ().serve(transport).await {
                 Ok(client) => {
-                    let has_tools = !client
-                        .list_all_tools()
-                        .await
-                        .map(|t| t.is_empty())
-                        .unwrap_or(true);
+                    let has_tools = !client.list_all_tools().await.map_or(true, |t| t.is_empty());
                     let _ = client.cancel().await;
                     Ok(has_tools)
                 }
@@ -122,11 +118,7 @@ async fn diagnose_server_inner(name: &str, config: &McpServerConfig) -> DiagResu
 
             match ().serve(transport).await {
                 Ok(client) => {
-                    let has_tools = !client
-                        .list_all_tools()
-                        .await
-                        .map(|t| t.is_empty())
-                        .unwrap_or(true);
+                    let has_tools = !client.list_all_tools().await.map_or(true, |t| t.is_empty());
                     let _ = client.cancel().await;
                     Ok(has_tools)
                 }

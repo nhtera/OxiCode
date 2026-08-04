@@ -200,7 +200,7 @@ impl Widget for HistorySearchWidget<'_> {
                 // Truncate long lines.
                 let max_w = chunks[2].width.saturating_sub(2) as usize;
                 let display = if content.len() > max_w {
-                    format!("{}…", &content.chars().take(max_w - 1).collect::<String>())
+                    format!("{}…", content.chars().take(max_w - 1).collect::<String>())
                 } else {
                     content.clone()
                 };

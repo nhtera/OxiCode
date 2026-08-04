@@ -87,7 +87,7 @@ impl LocalFileLogger {
     /// Rotate log file if it exceeds the size limit.
     fn maybe_rotate(&self) -> Result<(), String> {
         let path = self.log_path();
-        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let size = fs::metadata(&path).map_or(0, |m| m.len());
 
         if size < MAX_FILE_SIZE {
             return Ok(());
@@ -122,7 +122,7 @@ impl LocalFileLogger {
 
     /// Current log file size in bytes.
     pub fn current_size(&self) -> u64 {
-        fs::metadata(self.log_path()).map(|m| m.len()).unwrap_or(0)
+        fs::metadata(self.log_path()).map_or(0, |m| m.len())
     }
 }
 

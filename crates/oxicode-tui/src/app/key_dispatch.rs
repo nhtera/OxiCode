@@ -288,19 +288,17 @@ impl super::App {
                 self.input_cursor = self.input_text.chars().count();
             }
             // Tab: accept ghost completion → select first suggestion → toggle panel.
-            (_, KeyCode::Tab) => {
-                if !self.accept_ghost_text() {
-                    if self.input_text.is_empty() && !self.suggestions.is_empty() {
-                        // Select the first suggestion chip.
-                        if let Some(suggestion) = self.suggestions.first() {
-                            self.input_text.clone_from(&suggestion.prompt);
-                            self.input_cursor = self.input_text.chars().count();
-                            self.suggestions.clear();
-                            self.submit_input().await;
-                        }
-                    } else {
-                        self.split_pane.toggle_right();
+            (_, KeyCode::Tab) if !self.accept_ghost_text() => {
+                if self.input_text.is_empty() && !self.suggestions.is_empty() {
+                    // Select the first suggestion chip.
+                    if let Some(suggestion) = self.suggestions.first() {
+                        self.input_text.clone_from(&suggestion.prompt);
+                        self.input_cursor = self.input_text.chars().count();
+                        self.suggestions.clear();
+                        self.submit_input().await;
                     }
+                } else {
+                    self.split_pane.toggle_right();
                 }
             }
             _ => {}

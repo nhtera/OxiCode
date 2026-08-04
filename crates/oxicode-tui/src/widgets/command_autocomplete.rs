@@ -3,6 +3,8 @@
 //! Shows a filtered list of slash commands above the input area when the user
 //! types `/`. Supports keyboard navigation (Up/Down) and selection (Enter/Tab).
 
+use std::cmp::Reverse;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -106,7 +108,7 @@ pub fn filter_commands(commands: &[SlashCommandMeta], query: &str) -> Vec<usize>
         .collect();
 
     // Higher score = better match.
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.sort_by_key(|s| Reverse(s.1));
     scored.into_iter().map(|(i, _)| i).collect()
 }
 

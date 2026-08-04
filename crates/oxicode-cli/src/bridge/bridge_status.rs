@@ -124,8 +124,7 @@ impl BridgeStatus {
     pub fn state(&self) -> ConnectionState {
         self.state
             .lock()
-            .map(|guard| *guard)
-            .unwrap_or(ConnectionState::Disconnected)
+            .map_or(ConnectionState::Disconnected, |guard| *guard)
     }
 
     /// Uptime since last successful connection (None if never connected).

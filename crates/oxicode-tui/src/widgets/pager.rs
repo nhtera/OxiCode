@@ -113,11 +113,10 @@ impl Widget for PagerView<'_> {
             .map(|l| Line::from(l.as_str()))
             .collect();
 
-        let progress = if total > 0 {
-            let pct = ((offset + visible_height).min(total) * 100) / total;
-            format!(" {pct}% | line {}/{total} ", offset + 1)
-        } else {
-            " empty ".to_string()
+        // `checked_div` yields `None` for an empty buffer (total == 0).
+        let progress = match ((offset + visible_height).min(total) * 100).checked_div(total) {
+            Some(pct) => format!(" {pct}% | line {}/{total} ", offset + 1),
+            None => " empty ".to_string(),
         };
 
         let title = if self.pager.title.is_empty() {

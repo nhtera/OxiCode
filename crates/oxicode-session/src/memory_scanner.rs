@@ -4,6 +4,7 @@
 //! `.md` files, sorts by modification time (newest first), and caps at
 //! 200 files. Skips files > 50KB for safety.
 
+use std::cmp::Reverse;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -30,7 +31,7 @@ pub fn scan_memory_files(dir: &Path) -> Result<Vec<MemoryHeader>, String> {
     walk_dir(dir, 0, &mut headers)?;
 
     // Sort newest first.
-    headers.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    headers.sort_by_key(|h| Reverse(h.mtime));
 
     // Cap at MAX_FILES.
     headers.truncate(MAX_FILES);

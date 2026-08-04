@@ -46,7 +46,7 @@ impl DenialTracker {
 
     /// Number of recorded denials.
     pub fn count(&self) -> usize {
-        self.entries.lock().map(|e| e.len()).unwrap_or(0)
+        self.entries.lock().map_or(0, |e| e.len())
     }
 }
 

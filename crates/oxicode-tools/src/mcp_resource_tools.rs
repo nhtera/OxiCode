@@ -182,7 +182,7 @@ mod tests {
         let tool = ListMcpResourcesTool;
         let schema = tool.schema();
         assert_eq!(schema.name, "list_mcp_resources");
-        assert!(schema.input_schema["type"] == "object");
+        assert_eq!(schema.input_schema["type"], "object");
     }
 
     #[test]

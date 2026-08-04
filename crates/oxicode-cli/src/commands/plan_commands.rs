@@ -56,7 +56,7 @@ impl SlashCommand for PlanCommand {
                     Ok(entries) => {
                         let mut dirs: Vec<_> = entries
                             .filter_map(Result::ok)
-                            .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+                            .filter(|e| e.file_type().is_ok_and(|ft| ft.is_dir()))
                             .filter(|e| {
                                 // Skip hidden directories and reports.
                                 let name = e.file_name();
@@ -141,7 +141,7 @@ fn find_plan_dir(plans_dir: &std::path::Path, query: &str) -> Option<std::path::
     std::fs::read_dir(plans_dir)
         .ok()?
         .filter_map(Result::ok)
-        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+        .filter(|e| e.file_type().is_ok_and(|ft| ft.is_dir()))
         .find(|e| e.file_name().to_string_lossy().contains(query))
         .map(|e| e.path())
 }

@@ -3,6 +3,7 @@
 //! Stores JSON memory entries in `~/.oxicode/memory/` with tags for searchability.
 //! Memories are auto-extracted from conversations or manually added via `/memory add`.
 
+use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -142,7 +143,7 @@ pub fn load_all_memories() -> Result<Vec<MemoryEntry>, String> {
         }
     }
 
-    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    entries.sort_by_key(|e| Reverse(e.created_at));
     Ok(entries)
 }
 

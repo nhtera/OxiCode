@@ -72,7 +72,7 @@ impl super::App {
         ) = {
             let state = self.state_rx.borrow();
             // Update render cache with new messages (incremental — only renders new ones).
-            let term_width = terminal.size().map(|s| s.width).unwrap_or(80);
+            let term_width = terminal.size().map_or(80, |s| s.width);
             self.message_cache.update(&state.messages, term_width);
             let msg_count = state.messages.len();
             let last_role = state.messages.last().map(|m| m.role);

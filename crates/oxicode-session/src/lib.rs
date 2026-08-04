@@ -11,6 +11,7 @@ pub mod prompt_history;
 #[cfg(feature = "team_memory_sync")]
 pub mod team_memory_sync;
 
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -297,7 +298,7 @@ pub fn list_sessions(config_dir_override: Option<&Path>) -> OxiResult<Vec<Sessio
         }
     }
 
-    summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    summaries.sort_by_key(|s| Reverse(s.updated_at));
     Ok(summaries)
 }
 

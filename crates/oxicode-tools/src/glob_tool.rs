@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -91,7 +92,7 @@ impl Tool for GlobTool {
         }
 
         // Sort by modification time, most recent first.
-        files.sort_by(|a, b| b.1.cmp(&a.1));
+        files.sort_by_key(|f| Reverse(f.1));
 
         let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
         let count = paths.len();

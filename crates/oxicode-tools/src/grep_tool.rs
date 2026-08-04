@@ -1,5 +1,6 @@
 //! Grep tool: search file contents using ripgrep (rg) subprocess.
 
+use std::cmp::Reverse;
 use std::path::Path;
 use std::time::Duration;
 
@@ -253,7 +254,7 @@ fn format_output(
                 (*l, mtime)
             })
             .collect();
-        entries.sort_by(|a, b| b.1.cmp(&a.1)); // newest first
+        entries.sort_by_key(|e| Reverse(e.1)); // newest first
         let paths: Vec<String> = entries
             .iter()
             .map(|(p, _)| relativize(p, working_dir))

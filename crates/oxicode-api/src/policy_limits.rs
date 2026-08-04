@@ -71,10 +71,10 @@ impl PolicyLimitsClient {
 
     /// Check if a specific policy is allowed. Fail-open on any error.
     pub fn is_allowed(&self, policy_name: &str) -> bool {
+        // Fail-open on lock poison.
         self.limits
             .read()
-            .map(|l| l.is_allowed(policy_name))
-            .unwrap_or(true) // Fail-open on lock poison
+            .map_or(true, |l| l.is_allowed(policy_name))
     }
 
     /// Get a snapshot of all current policies.

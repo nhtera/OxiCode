@@ -156,12 +156,11 @@ impl HooksTab {
         let footer_rows: u16 = if self.hint_path.is_some() { 2 } else { 1 };
         let body_height = area.height.saturating_sub(footer_rows);
 
-        // Render tree body.
-        let mut row = area.y;
-        for (flat_idx, &tree_line) in lines.iter().enumerate() {
-            if row >= area.y + body_height {
-                break;
-            }
+        // Render tree body. Zipping against the row range bounds the loop to
+        // the visible area, so it stops at whichever runs out first.
+        for (flat_idx, (&tree_line, row)) in
+            lines.iter().zip(area.y..area.y + body_height).enumerate()
+        {
             let is_cursor = flat_idx == self.cursor;
             match tree_line {
                 TreeLine::Group(gi) => {
@@ -229,7 +228,6 @@ impl HooksTab {
                     buf.set_line(area.x, row, &line, area.width);
                 }
             }
-            row += 1;
         }
 
         // Footer: show hint path when Enter was pressed on an entry.

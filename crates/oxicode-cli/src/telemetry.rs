@@ -140,16 +140,8 @@ impl MetricsCollector {
         let tokens_out = self.inner.tokens_output.load(Ordering::Relaxed);
         let sessions = self.inner.sessions_started.load(Ordering::Relaxed);
 
-        let api_avg = if api_calls > 0 {
-            api_latency_sum / api_calls
-        } else {
-            0
-        };
-        let tool_avg = if tool_execs > 0 {
-            tool_latency_sum / tool_execs
-        } else {
-            0
-        };
+        let api_avg = api_latency_sum.checked_div(api_calls).unwrap_or(0);
+        let tool_avg = tool_latency_sum.checked_div(tool_execs).unwrap_or(0);
         #[allow(clippy::cast_precision_loss)]
         let error_rate = if api_calls > 0 {
             (api_errors as f64 / api_calls as f64) * 100.0

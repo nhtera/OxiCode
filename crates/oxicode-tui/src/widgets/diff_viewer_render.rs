@@ -411,11 +411,7 @@ fn render_scrollbar(buf: &mut Buffer, area: Rect, visible: usize, total: usize, 
     let thumb_size = ((bar_height * bar_height) / total).max(1).min(bar_height);
     let track_space = bar_height.saturating_sub(thumb_size);
     let max_scroll = total.saturating_sub(visible);
-    let thumb_pos = if max_scroll > 0 {
-        (scroll * track_space) / max_scroll
-    } else {
-        0
-    };
+    let thumb_pos = (scroll * track_space).checked_div(max_scroll).unwrap_or(0);
 
     for i in 0..bar_height {
         let row = bar_y + i as u16;

@@ -420,13 +420,11 @@ fn estimate_memory_tokens() -> usize {
     let home = dirs::home_dir().unwrap_or_default();
     let claude_md = home.join(".oxicode").join("CLAUDE.md");
     if claude_md.exists() {
-        std::fs::metadata(&claude_md)
-            .map(|m| {
-                #[allow(clippy::cast_possible_truncation)]
-                let size = m.len() as usize;
-                size / 4 // ~4 chars per token
-            })
-            .unwrap_or(2_000)
+        std::fs::metadata(&claude_md).map_or(2_000, |m| {
+            #[allow(clippy::cast_possible_truncation)]
+            let size = m.len() as usize;
+            size / 4 // ~4 chars per token
+        })
     } else {
         2_000
     }

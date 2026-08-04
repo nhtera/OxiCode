@@ -142,9 +142,7 @@ pub fn build_message(state: &RateLimitState, model: &str) -> RateLimitMessage {
             status_label: format!("{utilization_pct}%"),
         },
         RateLimitState::Rejected { resets_at } => {
-            let reset_str = resets_at
-                .map(format_duration_until)
-                .unwrap_or_else(|| "soon".to_string());
+            let reset_str = resets_at.map_or_else(|| "soon".to_string(), format_duration_until);
             RateLimitMessage {
                 severity: MessageSeverity::Error,
                 text: format!(
@@ -154,9 +152,10 @@ pub fn build_message(state: &RateLimitState, model: &str) -> RateLimitMessage {
             }
         }
         RateLimitState::OverageActive { resets_at } => {
-            let reset_str = resets_at
-                .map(format_duration_until)
-                .unwrap_or_else(|| "end of billing period".to_string());
+            let reset_str = resets_at.map_or_else(
+                || "end of billing period".to_string(),
+                format_duration_until,
+            );
             RateLimitMessage {
                 severity: MessageSeverity::Error,
                 text: format!("Overage active — extra charges apply. Resets {reset_str}."),
