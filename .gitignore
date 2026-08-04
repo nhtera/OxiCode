@@ -3,6 +3,9 @@
 **/*.rs.bk
 Cargo.lock
 
+# insta snapshot artifacts from failed/pending assertions
+**/*.snap.new
+
 # IDE
 .idea/
 .vscode/
