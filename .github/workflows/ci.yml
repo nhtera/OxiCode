@@ -68,6 +68,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      # The grep tool shells out to ripgrep; its tests need the binary present.
+      - name: Install ripgrep
+        shell: bash
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            case "${{ runner.os }}" in
+              macOS)   brew install ripgrep ;;
+              Windows) choco install ripgrep -y ;;
+              Linux)   sudo apt-get update && sudo apt-get install -y ripgrep ;;
+            esac
+          fi
+          rg --version
       - run: cargo test --workspace --target ${{ matrix.target }}
 
   build:

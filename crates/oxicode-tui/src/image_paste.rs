@@ -233,10 +233,11 @@ fn try_save_linux_image(path: &Path) -> bool {
         .args(["-selection", "clipboard", "-t", "image/png", "-o"])
         .output()
     {
-        if out.status.success() && !out.stdout.is_empty() {
-            if std::fs::write(path, &out.stdout).is_ok() {
-                return true;
-            }
+        if out.status.success()
+            && !out.stdout.is_empty()
+            && std::fs::write(path, &out.stdout).is_ok()
+        {
+            return true;
         }
     }
     // Fallback: wl-paste.
@@ -244,10 +245,11 @@ fn try_save_linux_image(path: &Path) -> bool {
         .args(["--type", "image/png"])
         .output()
     {
-        if out.status.success() && !out.stdout.is_empty() {
-            if std::fs::write(path, &out.stdout).is_ok() {
-                return true;
-            }
+        if out.status.success()
+            && !out.stdout.is_empty()
+            && std::fs::write(path, &out.stdout).is_ok()
+        {
+            return true;
         }
     }
     false
@@ -276,8 +278,7 @@ fn read_image_windows() -> Option<PastedImage> {
     let path = make_temp_png();
     let path_str = path.to_string_lossy().replace('\'', "''");
     let script = format!(
-        "$img = Get-Clipboard -Format Image; $img.Save('{}', [System.Drawing.Imaging.ImageFormat]::Png)",
-        path_str
+        "$img = Get-Clipboard -Format Image; $img.Save('{path_str}', [System.Drawing.Imaging.ImageFormat]::Png)"
     );
     let save = Command::new("powershell")
         .args(["-NoProfile", "-Command", &script])

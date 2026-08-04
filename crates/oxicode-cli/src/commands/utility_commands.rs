@@ -393,11 +393,21 @@ mod tests {
         }
     }
 
+    /// A directory that exists on every platform, usable as a `/add-dir` arg.
+    fn temp_dir_arg() -> String {
+        std::env::temp_dir().to_string_lossy().into_owned()
+    }
+
+    /// The canonical form `/add-dir` stores for `temp_dir_arg()`.
+    fn temp_dir_canonical() -> std::path::PathBuf {
+        std::fs::canonicalize(std::env::temp_dir()).expect("canonicalize temp dir")
+    }
+
     #[test]
     fn test_add_dir_valid() {
         let cmd = AddDirCommand;
         let ctx = make_ctx();
-        let output = cmd.execute("/tmp", &ctx);
+        let output = cmd.execute(&temp_dir_arg(), &ctx);
         match output {
             CommandOutput::Message(msg) => assert!(msg.contains("Added working directory")),
             _ => panic!("Expected message"),
@@ -407,18 +417,19 @@ mod tests {
     #[test]
     fn test_add_dir_persists_to_state() {
         let ctx = make_ctx();
-        AddDirCommand.execute("/tmp", &ctx);
+        AddDirCommand.execute(&temp_dir_arg(), &ctx);
         let dirs = ctx.state_store.current().working_dirs;
         assert_eq!(dirs.len(), 1);
-        // /tmp may canonicalize to /private/tmp on macOS.
-        assert!(dirs[0].to_string_lossy().contains("tmp"));
+        // Stored canonicalized, so compare against the canonical form
+        // (/tmp resolves to /private/tmp on macOS, and Windows adds a prefix).
+        assert_eq!(dirs[0], temp_dir_canonical());
     }
 
     #[test]
     fn test_add_dir_duplicate_noop() {
         let ctx = make_ctx();
-        AddDirCommand.execute("/tmp", &ctx);
-        let output = AddDirCommand.execute("/tmp", &ctx);
+        AddDirCommand.execute(&temp_dir_arg(), &ctx);
+        let output = AddDirCommand.execute(&temp_dir_arg(), &ctx);
         match output {
             CommandOutput::Message(msg) => assert!(msg.contains("already in working set")),
             _ => panic!("Expected 'already in working set' message"),
@@ -439,10 +450,11 @@ mod tests {
     #[test]
     fn test_list_dirs_shows_added() {
         let ctx = make_ctx();
-        AddDirCommand.execute("/tmp", &ctx);
+        AddDirCommand.execute(&temp_dir_arg(), &ctx);
         let output = ListDirsCommand.execute("", &ctx);
+        let expected = temp_dir_canonical().display().to_string();
         match output {
-            CommandOutput::Message(msg) => assert!(msg.contains("tmp")),
+            CommandOutput::Message(msg) => assert!(msg.contains(&expected)),
             _ => panic!("Expected message"),
         }
     }
@@ -470,9 +482,9 @@ mod tests {
     #[test]
     fn test_remove_dir_success() {
         let ctx = make_ctx();
-        AddDirCommand.execute("/tmp", &ctx);
+        AddDirCommand.execute(&temp_dir_arg(), &ctx);
         assert_eq!(ctx.state_store.current().working_dirs.len(), 1);
-        let output = RemoveDirCommand.execute("/tmp", &ctx);
+        let output = RemoveDirCommand.execute(&temp_dir_arg(), &ctx);
         match output {
             CommandOutput::Message(msg) => assert!(msg.contains("Removed working directory")),
             _ => panic!("Expected message"),

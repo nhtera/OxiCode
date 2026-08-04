@@ -91,10 +91,14 @@ async fn run_subprocess(command: &str, payload_json: &str) -> Result<HookRespons
 
     // Write payload to stdin.
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload_json.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write to hook stdin: {e}"))?;
+        // A hook that never reads stdin (a bare `echo`, say) can exit before the
+        // payload is fully written, which closes the pipe. That is legitimate —
+        // keep going and read whatever it wrote to stdout instead of failing.
+        if let Err(e) = stdin.write_all(payload_json.as_bytes()).await {
+            if e.kind() != std::io::ErrorKind::BrokenPipe {
+                return Err(format!("Failed to write to hook stdin: {e}"));
+            }
+        }
         // Drop stdin to signal EOF.
     }
 
