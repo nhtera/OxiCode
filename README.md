@@ -1,6 +1,23 @@
 # OxiCode
 
-A Rust-powered CLI agent for software engineering — full-parity port of Claude Code.
+> ⚠️ **Experimental — work in progress.**
+> This project is an experiment and is under active development. Expect incomplete
+> features, breaking changes without notice, rough edges, and unstable APIs/config.
+> Not recommended for production use. Feedback and issues are welcome.
+
+A Rust-powered CLI agent for software engineering — an experimental port of Claude Code.
+
+## Status
+
+| Area | State |
+|------|-------|
+| Core query loop, tools, permissions | Working, still evolving |
+| TUI, MCP, agents, skills, plugins | Partial / in progress |
+| Config format, CLI flags, output schema | Unstable — may change |
+| Provider coverage beyond Anthropic | Incomplete |
+
+Feature counts below describe what exists in the codebase today, not a guarantee that
+everything is fully polished or at parity with Claude Code.
 
 ## Features
 
@@ -18,6 +35,9 @@ A Rust-powered CLI agent for software engineering — full-parity port of Claude
 - **Cross-platform** — macOS (arm64, x86_64), Linux (x86_64, arm64), Windows (x86_64)
 
 ## Installation
+
+While the project is experimental, building **from source** is the recommended path —
+prebuilt release channels may lag behind `main`.
 
 ### Quick install (macOS / Linux)
 
