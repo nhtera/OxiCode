@@ -33,8 +33,13 @@ fn read_log(path: &std::path::Path) -> String {
 }
 
 /// Build a hook that appends `token` to `log_path` and exits.
+///
+/// Hooks run through `sh`, which treats `\` as an escape character, so a
+/// Windows path has to be handed over with forward slashes and quoted in case
+/// it contains spaces.
 fn echo_hook_command(token: &str, log_path: &std::path::Path) -> String {
-    format!("echo {} >> {}", token, log_path.display())
+    let path = log_path.display().to_string().replace('\\', "/");
+    format!("echo {token} >> \"{path}\"")
 }
 
 #[tokio::test]
