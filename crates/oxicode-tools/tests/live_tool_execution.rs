@@ -211,6 +211,8 @@ async fn test_grep_tool() {
 
 // ── bash ───────────────────────────────────────────────────────────
 
+// Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+#[cfg(unix)]
 #[tokio::test]
 async fn test_bash_tool_echo() {
     let tmp = tempfile::tempdir().unwrap();
@@ -248,6 +250,8 @@ async fn test_bash_tool_error_exit() {
     assert!(result.is_error, "bash `false` should return is_error=true");
 }
 
+// Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+#[cfg(unix)]
 #[tokio::test]
 async fn test_bash_tool_timeout() {
     let tmp = tempfile::tempdir().unwrap();
@@ -274,6 +278,8 @@ async fn test_bash_tool_timeout() {
     );
 }
 
+// Spawns a POSIX shell; oxicode's shell-backed tools are unix-only for now.
+#[cfg(unix)]
 #[tokio::test]
 async fn test_bash_tool_working_dir() {
     let tmp = tempfile::tempdir().unwrap();

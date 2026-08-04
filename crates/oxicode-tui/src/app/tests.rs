@@ -482,7 +482,7 @@ mod tests {
     fn normalized_rendered_text(terminal: &Terminal<TestBackend>) -> String {
         format!("{}", terminal.backend())
             .lines()
-            .map(|line| normalize_elapsed(line.trim_end()))
+            .map(|line| normalize_spinner(&normalize_elapsed(line.trim_end())))
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -510,6 +510,42 @@ mod tests {
         out
     }
 
+    /// Canonical spinner glyph that snapshots record.
+    const SPINNER_CANON: char = '⠋';
+    /// Braille frames, used for tool lines on every platform.
+    const BRAILLE_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    /// ASCII frames, used for the thinking indicator on Windows.
+    const ASCII_FRAMES: &[char] = &['|', '/', '-', '\\'];
+
+    /// Collapse spinner frames to a fixed glyph.
+    ///
+    /// Which frame renders depends on elapsed time, and the thinking indicator
+    /// uses Braille on unix but ASCII on Windows, so the raw glyph is neither
+    /// deterministic nor portable.
+    fn normalize_spinner(line: &str) -> String {
+        // Braille frames only ever come from a spinner, so collapse them anywhere.
+        let mut chars: Vec<char> = line
+            .chars()
+            .map(|c| {
+                if BRAILLE_FRAMES.contains(&c) {
+                    SPINNER_CANON
+                } else {
+                    c
+                }
+            })
+            .collect();
+
+        // ASCII frames also occur in ordinary text (paths, box art, prose), so
+        // only collapse one sitting directly before the thinking indicator.
+        let needle: Vec<char> = " Thinking".chars().collect();
+        for i in 1..chars.len() {
+            if chars[i..].starts_with(&needle) && ASCII_FRAMES.contains(&chars[i - 1]) {
+                chars[i - 1] = SPINNER_CANON;
+            }
+        }
+        chars.into_iter().collect()
+    }
+
     /// If `chars[start..]` begins with `<digits>.<digits>s)`, return the index
     /// just past the closing paren.
     fn match_elapsed(chars: &[char], start: usize) -> Option<usize> {
@@ -529,6 +565,31 @@ mod tests {
             return None;
         }
         Some(i + 2)
+    }
+
+    #[test]
+    fn normalize_spinner_collapses_frames_on_every_platform() {
+        // Braille frames collapse wherever they appear.
+        assert_eq!(
+            normalize_spinner("│  ⠹ Thinking... (0.0s)"),
+            "│  ⠋ Thinking... (0.0s)"
+        );
+        assert_eq!(normalize_spinner("⠧ Bash($ x)"), "⠋ Bash($ x)");
+        // The Windows ASCII indicator collapses to the same glyph, so both
+        // platforms produce the identical snapshot.
+        assert_eq!(
+            normalize_spinner("│  / Thinking... (0.0s)"),
+            "│  ⠋ Thinking... (0.0s)"
+        );
+        assert_eq!(
+            normalize_spinner("│  \\ Thinking... (0.0s)"),
+            normalize_spinner("│  ⠙ Thinking... (0.0s)")
+        );
+        // ASCII frame characters elsewhere are left alone.
+        assert_eq!(
+            normalize_spinner("✓ Bash($ ls -la a/b | wc -l)"),
+            "✓ Bash($ ls -la a/b | wc -l)"
+        );
     }
 
     #[test]
