@@ -974,28 +974,17 @@ async fn e2e_session_state_tracks_usage() {
 // ═══════════════════════════════════════════════════════════════════
 
 /// Get the path to the compiled oxicode binary.
+/// Path to the compiled binary.
+///
+/// Cargo builds the binary before running integration tests and exposes its
+/// path here, so this stays correct under `--target`, custom `CARGO_TARGET_DIR`,
+/// and the `.exe` suffix on Windows.
 fn binary_path() -> String {
-    let target_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target")
-        .join("debug")
-        .join("oxicode");
-    target_dir.to_string_lossy().to_string()
+    env!("CARGO_BIN_EXE_oxicode").to_string()
 }
 
 #[test]
 fn e2e_cli_version_output() {
-    // Build first.
-    let status = std::process::Command::new("cargo")
-        .args(["build", "-p", "oxicode-cli"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .status()
-        .expect("build");
-    assert!(status.success());
-
     let output = std::process::Command::new(binary_path())
         .arg("--version")
         .output()

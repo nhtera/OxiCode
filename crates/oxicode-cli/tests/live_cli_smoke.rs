@@ -6,31 +6,12 @@
 use std::process::Command;
 
 /// Get the path to the compiled binary.
+///
+/// Cargo builds the binary before running integration tests and exposes its
+/// path here, so this stays correct under `--target`, custom `CARGO_TARGET_DIR`,
+/// and the `.exe` suffix on Windows.
 fn binary_path() -> String {
-    // Build the binary first.
-    let status = Command::new("cargo")
-        .args(["build", "-p", "oxicode-cli"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .status()
-        .expect("Failed to build oxicode-cli");
-    assert!(status.success(), "cargo build failed");
-
-    // The binary name is "oxicode" (from [[bin]] in Cargo.toml).
-    let target_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target")
-        .join("debug")
-        .join("oxicode");
-
-    assert!(
-        target_dir.exists(),
-        "Binary not found at: {}",
-        target_dir.display()
-    );
-    target_dir.to_string_lossy().to_string()
+    env!("CARGO_BIN_EXE_oxicode").to_string()
 }
 
 #[test]
