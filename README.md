@@ -19,6 +19,17 @@ A Rust-powered CLI agent for software engineering — an experimental port of Cl
 Feature counts below describe what exists in the codebase today, not a guarantee that
 everything is fully polished or at parity with Claude Code.
 
+## Screenshots
+
+> Captured from a development build (v0.1.0) — the UI is still changing.
+
+| | |
+|---|---|
+| ![Welcome screen](assets/screenshots/tui-welcome-screen.png) | ![Model selector](assets/screenshots/tui-model-selector.png) |
+| **Welcome screen** — ratatui TUI with status bar showing provider, model, token counts, cost, and permission mode | **Model selector** (`alt+p`) — filterable picker with per-model reasoning effort |
+| ![Help overlay](assets/screenshots/tui-help-overlay.png) | ![Conversation](assets/screenshots/tui-conversation.png) |
+| **Help overlay** (`/help`) — tabbed reference for shortcuts, commands, and custom commands | **Conversation view** — streaming replies with per-turn token counts, latency, and inline quick-reply options |
+
 ## Features
 
 - **Multi-provider LLM** — Anthropic (Claude), with extensible provider trait
